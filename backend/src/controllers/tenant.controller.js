@@ -1,8 +1,8 @@
 /**
- * These two endpoints exist only to DEMONSTRATE tenant resolution
+ * These endpoints exist only to DEMONSTRATE the middleware pipeline
  * working correctly. Real event/venue/booking controllers (Week 2)
- * will follow the same pattern: read req.organizationId, scope
- * every query by it.
+ * will follow the exact same pattern: read req.organizationId (and
+ * req.membership.role where relevant), scope every query by it.
  */
 
 // Public — no login needed. This is the shape a ticket-buyer request
@@ -18,11 +18,9 @@ const getPublicInfo = (req, res) => {
   });
 };
 
-// Protected — requires login AND a resolved tenant. Simulates the
-// organizer-side request shape. Membership/role checking is NOT
-// done here yet (that's Week 1 Day 4-5) — this only proves that,
-// on the same request, we know both "who is logged in" (req.user)
-// and "which tenant this request is for" (req.organization).
+// Protected — full pipeline: authenticate -> resolveTenant ->
+// loadMembership. Proves that on one request we know: who is logged
+// in, which tenant it's for, AND what role they hold in that tenant.
 const whoAmI = (req, res) => {
   res.json({
     user: {
@@ -35,7 +33,20 @@ const whoAmI = (req, res) => {
       name: req.organization.name,
       slug: req.organization.slug,
     },
+    membership: {
+      role: req.membership.role,
+    },
   });
 };
 
-module.exports = { getPublicInfo, whoAmI };
+// Role-restricted demo — only owner/admin can reach this.
+// A "staff" member (or a non-member entirely) gets blocked by
+// checkRole before this handler ever runs.
+const settingsPreview = (req, res) => {
+  res.json({
+    message: `Welcome ${req.membership.role} — you can view/edit org settings.`,
+    organization: req.organization.name,
+  });
+};
+
+module.exports = { getPublicInfo, whoAmI, settingsPreview };

@@ -8,16 +8,20 @@ const eventController = require("../controllers/event.controller");
 
 const router = express.Router({ mergeParams: true });
 
-// Same pipeline as venues — proven, reusable, no rewriting.
+// Public storefront reads: no login required, but we still resolve the org
+// from :orgSlug so every query stays tenant-scoped.
+router.get("/", resolveTenant, eventController.list);
+router.get("/:eventId", resolveTenant, eventController.getOne);
+
+// Organizer writes stay protected.
 router.use(authenticate, resolveTenant, loadMembership);
 
-// upload.single("banner") runs BEFORE the controller: it reads the
-// multipart/form-data request, saves the file to disk, and attaches
-// req.file. Field name must be "banner" on the client side.
 router.post("/", upload.single("banner"), eventController.create);
-router.get("/", eventController.list);
-router.get("/:eventId", eventController.getOne);
 router.put("/:eventId", upload.single("banner"), eventController.update);
-router.delete("/:eventId", checkRole(["owner", "admin"]), eventController.remove);
+router.delete(
+  "/:eventId",
+  checkRole(["owner", "admin"]),
+  eventController.remove,
+);
 
 module.exports = router;

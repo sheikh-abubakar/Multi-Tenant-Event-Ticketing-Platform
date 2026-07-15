@@ -92,7 +92,28 @@ ticketing-platform/
     └── TECHNICAL_DOCUMENTATION.md    # This file
 ```
 
-### 3.2 MVC Pattern — Request Flow
+### 3.3 Frontend Routing
+
+| Path | Access | Page |
+|---|---|---|
+| `/` | Public (shows different content if logged in) | Home — landing or "My Organizations" grid |
+| `/signup`, `/login` | Public | Auth forms |
+| `/create-organization` | Protected | Create Organization |
+| `/o/:orgSlug/dashboard` | Protected (must be a member) | Organizer dashboard shell |
+| `/o/:orgSlug/manage/venues` | Protected (must be a member) | Venue management (organizer) |
+| `/o/:orgSlug/manage/events` | Protected (must be a member) | Event management (organizer) |
+| `/o/:orgSlug/events` | Public — no login | Buyer-facing storefront (event listing) |
+| `/o/:orgSlug/events/:eventId` | Public — no login | Buyer-facing event detail |
+
+> **Note on this structure:** the original plan describes the public storefront
+> living at `/o/:orgSlug/events`. Since the organizer's own event-management
+> screen would otherwise collide with that same path in this single frontend app,
+> organizer-facing management pages were placed under a `/manage/` prefix instead.
+> The underlying REST API is unaffected — both the storefront and the dashboard
+> call the same `/api/o/:orgSlug/events` endpoints, just with different HTTP
+> methods (see §7.5).
+
+
 
 The backend follows a strict layered pattern. A controller **never** talks to
 the database directly — it always goes through a service.
@@ -345,16 +366,15 @@ All routes: authenticate → resolveTenant → loadMembership (applied at router
 
 ### 7.5 Events — `/api/o/:orgSlug/events`
 
-All routes: authenticate → resolveTenant → loadMembership (applied at router level).
-Create/Update accept `multipart/form-data` (for banner image upload).
+Reading is public for the storefront; writing requires organizer membership.
 
-| Method | Endpoint | Role restriction | Body (form fields) | Notes |
-|---|---|---|---|---|
-| POST | `/api/o/:orgSlug/events` | any member | `name, dateTime, venueId, description?, ticketTypes? (JSON string), banner (file)?` | Validates `venueId` belongs to the same org |
-| GET | `/api/o/:orgSlug/events` | any member | — | Populates venue name/city, sorted by date |
-| GET | `/api/o/:orgSlug/events/:eventId` | any member | — | 404 if event belongs to a different org |
-| PUT | `/api/o/:orgSlug/events/:eventId` | any member | any subset, `banner` file optional | Re-validates `venueId` if changed |
-| DELETE | `/api/o/:orgSlug/events/:eventId` | owner/admin only | — | 204 on success |
+| Method | Endpoint | Auth | Role restriction | Body (form fields) | Notes |
+|---|---|---|---|---|---|
+| GET | `/api/o/:orgSlug/events` | No | — | — | Public listing. Populates venue name/city, sorted by date. This is the storefront's data source. |
+| GET | `/api/o/:orgSlug/events/:eventId` | No | — | — | Public detail. 404 if event belongs to a different org. |
+| POST | `/api/o/:orgSlug/events` | Yes | any member | `name, dateTime, venueId, description?, ticketTypes? (JSON string), banner (file)?` | Validates `venueId` belongs to the same org |
+| PUT | `/api/o/:orgSlug/events/:eventId` | Yes | any member | any subset, `banner` file optional | Re-validates `venueId` if changed |
+| DELETE | `/api/o/:orgSlug/events/:eventId` | Yes | owner/admin only | — | 204 on success |
 
 ### 7.6 Image Hosting
 
@@ -365,7 +385,6 @@ from Cloudinary's CDN, not from this backend.
 
 ### 7.7 Not Yet Built
 
-- Public storefront listing (`GET /o/:orgSlug/events` — public-facing HTML/React page, distinct from the JSON API above)
 - Cart endpoints
 - Checkout / Stripe integration
 - Booking confirmation, QR code generation
@@ -390,15 +409,16 @@ from Cloudinary's CDN, not from this backend.
 - Venue CRUD (tenant-scoped, resource-ownership guarded)
 - Event CRUD (tenant-scoped, resource-ownership guarded)
 - Embedded ticket types (name, price, quantity) per event
-- Event banner image upload (local disk storage)
+- Event banner image upload (Cloudinary-hosted)
 - Cross-resource validation (event's venue must belong to the same org)
 - Frontend: auth (signup/login), org creation, "My Organizations" listing
 - Frontend: Venue management UI (organizer dashboard)
-- Frontend: Event management UI (organizer dashboard, incl. ticket types + banner upload)
+- Frontend: Event management UI (organizer dashboard, incl. ticket types and banner upload)
+- Frontend: public event storefront listing page
+- Frontend: public event detail page with ticket types and remaining quantity
 
 ### 🔜 Planned (see [Roadmap](#12-roadmap--remaining-work) for detail)
 
-- Public event storefront (buyer-facing pages)
 - Cart + checkout (Stripe test mode)
 - Overselling-safe ticket quantity decrement
 - QR code generation + booking confirmation email
@@ -407,7 +427,6 @@ from Cloudinary's CDN, not from this backend.
 - Team invites (email-based, role assignment)
 - Organizer analytics dashboard
 - Soft-delete for organization deletion
-- Frontend: full buyer storefront + organizer dashboard UI
 - Testing (unit + integration)
 - Deployment to staging
 
@@ -566,6 +585,14 @@ original project plan.
   status tracking, real-time locking, and new frontend UI (see [Key
   Technical Decisions](#9-key-technical-decisions)).
 
+### Week 2, Day 3 — Public Event Storefront
+- Split event routing so public GET requests are no longer protected by `authenticate`/`loadMembership`, while organizer write routes remain protected.
+- Added a public frontend event listing page at `/o/:orgSlug/events` that fetches public org info plus org-scoped events.
+- Added a public event detail page at `/o/:orgSlug/events/:eventId` that shows event banner, venue, description, ticket types, and remaining quantity.
+- Moved organizer event management UI to `/o/:orgSlug/manage/events` to avoid collision with the public storefront route.
+- Preserved the existing tenant-isolation rule by continuing to resolve the organization from `:orgSlug` on all event requests.
+
+
 ### Frontend — Stage 1: Foundation, Auth, Org Creation
 - Scaffolded frontend architecture: `react-router-dom` for routing,
   `axios` client (`src/api/client.js`) with an interceptor that
@@ -616,8 +643,6 @@ are struck through in spirit (see [Implementation Log](#11-implementation-log)
 above for what's actually complete); this section lists what's **left**.
 
 ### Week 2 — Core Ticketing Features (remaining)
-- [ ] Public, org-scoped event listing page (`/o/:orgSlug/events` — frontend, buyer-facing)
-- [ ] Event detail page (ticket types + remaining quantity)
 - [ ] Session-based cart (add/remove ticket type + quantity)
 - [ ] Booking creation on checkout start
 - [ ] Overselling-safe quantity decrement under concurrent requests
@@ -658,3 +683,4 @@ above for what's actually complete); this section lists what's **left**.
 | 2026-07-15 | Frontend Stage 1 built (auth, org creation, dashboard shell); added GET /organizations/mine + "My Organizations" card grid UI | API Endpoints (7.2), Implementation Log, Roadmap |
 | 2026-07-15 | Frontend Stage 2 built: full Venue + Event management UI (organizer dashboard), including ticket types and banner upload | Feature List, Implementation Log, Roadmap |
 
+| 2026-07-15 | Implemented public event storefront and event detail pages; split organizer event management route to `/manage/events` | Architecture, API Endpoints (7.5), Feature List, Implementation Log, Roadmap |

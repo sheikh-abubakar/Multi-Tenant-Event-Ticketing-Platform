@@ -8,6 +8,8 @@ import CreateOrganization from "./pages/CreateOrganization";
 import Dashboard from "./pages/Dashboard";
 import Venues from "./pages/Venues";
 import Events from "./pages/Events";
+import PublicEvents from "./pages/PublicEvents";
+import EventDetail from "./pages/EventDetail";
 
 function App() {
   return (
@@ -41,13 +43,15 @@ function App() {
           }
         />
         <Route
-          path="/o/:orgSlug/events"
+          path="/o/:orgSlug/manage/events"
           element={
             <ProtectedRoute>
               <Events />
             </ProtectedRoute>
           }
         />
+        <Route path="/o/:orgSlug/events" element={<PublicEvents />} />
+        <Route path="/o/:orgSlug/events/:eventId" element={<EventDetail />} />
       </Routes>
     </Layout>
   );

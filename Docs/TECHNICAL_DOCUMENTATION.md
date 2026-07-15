@@ -57,6 +57,10 @@ even though everything lives in shared MongoDB collections.
 | ODM | Mongoose |
 | Authentication | JWT (jsonwebtoken), bcryptjs for password hashing |
 | File uploads | Multer (in-memory) → Cloudinary (hosted image storage) |
+| Payment processing | Stripe (test mode) |
+| Email | Nodemailer (Gmail SMTP / App Password) |
+| QR Code generation | `qrcode` npm package (data URL format) |
+| Session management | `express-session` (in-memory, for cart) |
 | Frontend framework | React |
 | Frontend build tool | Vite |
 | Package manager | npm |
@@ -74,13 +78,13 @@ even though everything lives in shared MongoDB collections.
 ticketing-platform/
 ├── backend/
 │   ├── src/
-│   │   ├── config/       # DB connection setup
-│   │   ├── models/       # Mongoose schemas
+│   │   ├── config/       # DB connection setup, Stripe init, Cloudinary init, email transporter
+│   │   ├── models/       # Mongoose schemas (User, Organization, OrganizationMember, Venue, Event, Booking)
 │   │   ├── controllers/  # HTTP request/response handlers (thin layer)
 │   │   ├── services/     # Business logic (all DB queries live here)
 │   │   ├── routes/       # Express routers
 │   │   ├── middlewares/  # auth, tenant resolution, role checks, uploads
-│   │   ├── utils/        # jwt helpers, slugify helper
+│   │   ├── utils/        # jwt helpers, slugify helper, cloudinaryUpload helper
 │   │   ├── app.js        # Express app assembly (mounts all routes)
 │   │   └── server.js     # Entry point — connects DB, starts server
 │   ├── uploads/          # Locally stored uploaded files (gitignored)
@@ -91,6 +95,15 @@ ticketing-platform/
     ├── PROJECT_PLAN.md               # Original shared requirements doc
     └── TECHNICAL_DOCUMENTATION.md    # This file
 ```
+
+### 3.2 Config Files (`backend/src/config/`)
+
+| File | Purpose | Key exports |
+|---|---|---|
+| `db.js` | MongoDB/Mongoose connection setup | (connects to MONGO_URI) |
+| `cloudinary.js` | Cloudinary SDK config from env vars | configured cloudinary instance |
+| `stripe.js` | Stripe SDK initialization | configured Stripe instance |
+| `email.js` | Nodemailer transporter + HTML email template | `sendBookingConfirmation(booking, event, qrCodeUrl)` |
 
 ### 3.3 Frontend Routing
 
@@ -103,7 +116,10 @@ ticketing-platform/
 | `/o/:orgSlug/manage/venues` | Protected (must be a member) | Venue management (organizer) |
 | `/o/:orgSlug/manage/events` | Protected (must be a member) | Event management (organizer) |
 | `/o/:orgSlug/events` | Public — no login | Buyer-facing storefront (event listing) |
-| `/o/:orgSlug/events/:eventId` | Public — no login | Buyer-facing event detail |
+| `/o/:orgSlug/events/:eventId` | Public — no login | Buyer-facing event detail (with ticket qty input + "Add to Cart") |
+| `/o/:orgSlug/cart/:eventId` | Public — no login | Session-based cart (quantity +/-, remove, subtotal) |
+| `/o/:orgSlug/checkout/:eventId` | Public — no login | Checkout form (buyer name/email + Stripe redirect) |
+| `/o/:orgSlug/bookings/:bookingId/confirmation` | Public — no login | Booking confirmation (QR code, ticket summary, email status) |
 
 > **Note on this structure:** the original plan describes the public storefront
 > living at `/o/:orgSlug/events`. Since the organizer's own event-management
@@ -112,8 +128,6 @@ ticketing-platform/
 > The underlying REST API is unaffected — both the storefront and the dashboard
 > call the same `/api/o/:orgSlug/events` endpoints, just with different HTTP
 > methods (see §7.5).
-
-
 
 The backend follows a strict layered pattern. A controller **never** talks to
 the database directly — it always goes through a service.
@@ -196,7 +210,8 @@ deletes a tenant-owned document.
 | `User` | Global | Not tied to any org. One login, many possible org memberships. |
 | `Organization` | Is the tenant | The thing being isolated. |
 | `OrganizationMember` | Links User ↔ Organization | Carries the role. A user can have a different role in each org. |
-| `Venue`, `Event` (and everything built after) | Tenant-owned | Always carries `organizationId`. |
+| `Venue`, `Event`, `Booking` | Tenant-owned | Always carries `organizationId`. |
+| Cart (session-based) | Session-scoped | Lives in `req.session`, not persisted to MongoDB. Tenant-scoped by storing `organizationId` inside the cart object. |
 
 ---
 
@@ -261,15 +276,47 @@ is no seat-map complexity (flat price + quantity only).
 | `description` | String | optional |
 | `dateTime` | Date | required |
 | `bannerImageUrl` | String | optional, set via image upload |
-| `ticketTypes` | Array of `{ name, price, quantityTotal, quantityBooked }` | embedded; `quantityBooked` defaults to 0, incremented at checkout time |
+| `ticketTypes` | Array of `{ name, price, quantityTotal, quantityBooked }` | embedded; `quantityBooked` defaults to 0, incremented atomically at checkout via MongoDB transaction |
 | `createdAt` / `updatedAt` | Date | auto |
 
-### 5.6 Planned / Not Yet Built
+### 5.6 `Booking`
+Tenant-owned. Records a completed ticket purchase after Stripe payment.
 
-| Model | Purpose | Target Week |
+| Field | Type | Notes |
 |---|---|---|
-| `Booking` | Records a completed ticket purchase (buyer info, event, ticket type, quantity, QR code, payment status) | Week 2 |
-| Cart (likely session-based, may not be a persisted model) | Buyer's in-progress selection before checkout | Week 2 |
+| `organizationId` | ObjectId → `Organization` | required, indexed |
+| `eventId` | ObjectId → `Event` | required, indexed |
+| `buyerName` | String | required, trim |
+| `buyerEmail` | String | required, lowercase, trim |
+| `items` | Array of `{ ticketTypeName, ticketTypeIndex, quantity, unitPrice, lineTotal }` | embedded, no `_id` on subdocs |
+| `totalAmount` | Number | required, min 0 |
+| `currency` | String | default `"PKR"` |
+| `status` | String enum | `pending` \| `confirmed` \| `cancelled`, default `pending`, indexed |
+| `paymentStatus` | String enum | `pending` \| `paid` \| `failed`, default `pending`, indexed |
+| `stripeSessionId` | String | nullable, indexed — stores Stripe Checkout Session ID for lookup |
+| `confirmationCode` | String | unique, sparse — auto-generated (`BK-<timestamp>-<random hex>`) |
+| `qrCodeUrl` | String | nullable — data URL of generated QR code, set on confirmation |
+| `createdAt` / `updatedAt` | Date | auto (timestamps) |
+
+**Compound indexes:** `{ organizationId: 1, eventId: 1 }`, `{ buyerEmail: 1, createdAt: -1 }`
+
+### 5.7 Cart (Session-Based, Not Persisted to MongoDB)
+
+The cart is NOT a MongoDB model. It lives only in `req.session.carts` as a
+JavaScript object keyed by `cart:<organizationId>:<eventId>`. Each cart entry
+contains:
+
+| Field | Type | Notes |
+|---|---|---|
+| `organizationId` | string (ObjectId) | Stored for tenant-scoping |
+| `eventId` | string (ObjectId) | The event this cart is for |
+| `items` | Array of `{ ticketTypeIndex, ticketTypeName, quantity, unitPrice }` | The selected tickets |
+| `createdAt` | ISO string | When cart was first created |
+| `updatedAt` | ISO string | Updated on every add/remove/change |
+
+**Why session-based instead of a DB model?** Carts are ephemeral — they don't
+need to survive server restarts or be queried. A DB-backed cart would add
+complexity (orphaned carts, cleanup jobs) for no real benefit at this scope.
 
 ---
 
@@ -376,21 +423,62 @@ Reading is public for the storefront; writing requires organizer membership.
 | PUT | `/api/o/:orgSlug/events/:eventId` | Yes | any member | any subset, `banner` file optional | Re-validates `venueId` if changed |
 | DELETE | `/api/o/:orgSlug/events/:eventId` | Yes | owner/admin only | — | 204 on success |
 
-### 7.6 Image Hosting
+### 7.6 Cart — `/api/o/:orgSlug/cart`
+
+All cart routes are **public** (no login required) and use **only** `resolveTenant` middleware. The cart lives in the buyer's session (express-session) and is tenant-scoped via `:orgSlug`.
+
+> **Important note on session cookies:** The frontend axios client must be
+> configured with `withCredentials: true` to send the session cookie on every
+> request. See `frontend/src/api/client.js`.
+
+| Method | Endpoint | Body | Notes |
+|---|---|---|---|
+| GET | `/api/o/:orgSlug/cart/:eventId` | — | Returns the cart + event details (populated venue). Creates an empty cart if one doesn't exist for this (org, event) pair. |
+| POST | `/api/o/:orgSlug/cart/:eventId/items` | `{ ticketTypeIndex, quantity }` | Adds quantity to an existing ticket type, or creates a new entry. Validates remaining capacity before adding (409 if sold out). |
+| PUT | `/api/o/:orgSlug/cart/:eventId/items` | `{ ticketTypeIndex, quantity }` | Sets exact quantity for a ticket type. Setting `quantity: 0` removes the item. Validates remaining capacity. |
+| DELETE | `/api/o/:orgSlug/cart/:eventId/items/:ticketTypeIndex` | — | Removes a specific ticket type from the cart. |
+| DELETE | `/api/o/:orgSlug/cart/:eventId` | — | Clears the entire cart for this event. |
+
+### 7.7 Bookings — `/api/o/:orgSlug/events/:eventId/bookings`
+
+All booking routes are **public** (no login) and use `resolveTenant` only — ticket buyers do not need an account. The exception is `GET /` (list all bookings for an event), which requires organizer membership.
+
+| Method | Endpoint | Middleware | Body | Notes |
+|---|---|---|---|---|
+| POST | `/api/o/:orgSlug/events/:eventId/bookings/checkout` | resolveTenant | `{ buyerName, buyerEmail, items: [{ ticketTypeIndex, quantity }], cartKey? }` | **Creates a pending booking** inside a MongoDB transaction + **decrements quantityBooked atomically**. Creates a Stripe Checkout Session. Returns `{ bookingId, stripeSessionId, stripeUrl }`. The frontend redirects the browser to `stripeUrl` for card payment. |
+| GET | `/api/o/:orgSlug/events/:eventId/bookings/confirm?session_id=xxx` | resolveTenant | — | Verifies Stripe payment status, generates QR code (data URL), updates booking status to `confirmed`, sends confirmation email. Idempotent — safe to call multiple times. |
+| GET | `/api/o/:orgSlug/events/:eventId/bookings/:bookingId` | resolveTenant | — | Returns a single booking by ID (tenant-scoped). Populates event name/date/venue. |
+| GET | `/api/o/:orgSlug/events/:eventId/bookings` | authenticate + resolveTenant + loadMembership | — | **Organizer only.** Lists all bookings for an event, sorted newest first. |
+
+### 7.8 Bookings (Alternative Simplified Path) — `/api/o/:orgSlug/bookings`
+
+Stripe redirects the buyer back to the frontend confirmation page with a URL
+like `/o/:orgSlug/bookings/:bookingId/confirmation?session_id=xxx`. The
+frontend then calls these API endpoints:
+
+| Method | Endpoint | Middleware | Body | Notes |
+|---|---|---|---|---|
+| GET | `/api/o/:orgSlug/bookings/:bookingId/confirm?session_id=xxx` | resolveTenant | — | Same as §7.7 confirm, but without requiring `eventId` in the URL path. |
+| GET | `/api/o/:orgSlug/bookings/:bookingId` | resolveTenant | — | Same as §7.7 getOne, but without requiring `eventId` in the URL path. |
+
+### 7.9 Stripe Webhook — `/api/webhooks/stripe`
+
+| Method | Endpoint | Middleware | Body | Notes |
+|---|---|---|---|---|
+| POST | `/api/webhooks/stripe` | `express.raw({ type: "application/json" })` | Stripe event payload | **Must be registered BEFORE `express.json()` in app.js.** Constructs the event using Stripe's signature verification (`STRIPE_WEBHOOK_SECRET`). On `checkout.session.completed`, it calls `confirmBooking()` as a fallback in case the browser redirect fails. |
+
+### 7.10 Image Hosting
 
 Uploaded event banner images are streamed directly to **Cloudinary** (no
 local disk storage). The `bannerImageUrl` field on an `Event` stores the
 Cloudinary-hosted `secure_url` directly — the frontend loads images straight
 from Cloudinary's CDN, not from this backend.
 
-### 7.7 Not Yet Built
+### 7.11 Planned / Not Yet Built
 
-- Cart endpoints
-- Checkout / Stripe integration
-- Booking confirmation, QR code generation
-- Team invite endpoints
-- Org settings update endpoint
-- Analytics/dashboard endpoints
+- Team invite endpoints (invite member by email, assign role)
+- Org settings update endpoint (name, slug, logo)
+- Analytics/dashboard endpoints (per-org bookings, revenue, tickets sold)
 
 ---
 
@@ -415,13 +503,19 @@ from Cloudinary's CDN, not from this backend.
 - Frontend: Venue management UI (organizer dashboard)
 - Frontend: Event management UI (organizer dashboard, incl. ticket types and banner upload)
 - Frontend: public event storefront listing page
-- Frontend: public event detail page with ticket types and remaining quantity
+- Frontend: public event detail page with ticket types, remaining quantity, and "Add to Cart"
+- **Session-based cart** (add, update, remove, clear — all via REST endpoints)
+- **Stripe Checkout integration** (test mode — creates Stripe session, redirects buyer to Stripe hosted payment page)
+- **Atomic ticket quantity decrement** (MongoDB transaction prevents overselling under concurrent requests)
+- **Booking creation** (pending on checkout start, confirmed after payment)
+- **QR code generation** (data URL embedded in booking document)
+- **Confirmation email** (Nodemailer — HTML template with ticket details and QR code)
+- **Frontend: Cart page** (quantity +/- controls, remove, subtotal, proceed to checkout)
+- **Frontend: Checkout page** (buyer info form, order summary, Stripe redirect)
+- **Frontend: Booking confirmation page** (QR code display, ticket summary, confirmation code)
 
 ### 🔜 Planned (see [Roadmap](#12-roadmap--remaining-work) for detail)
 
-- Cart + checkout (Stripe test mode)
-- Overselling-safe ticket quantity decrement
-- QR code generation + booking confirmation email
 - Tenant isolation audit + compound indexes (hardening pass)
 - Org settings page (name, slug, logo)
 - Team invites (email-based, role assignment)
@@ -449,6 +543,12 @@ directly.
 | Ticket types embedded in `Event`, not a separate collection | No standalone meaning outside parent event; avoids unnecessary joins | Implemented |
 | Uploaded images stored on Cloudinary (hosted), not local disk | **Team lead decision** — avoids filesystem storage limits and works correctly once deployed (local disk storage doesn't persist/scale on most hosting platforms) | Implemented |
 | Seat-map based seat selection deferred; flat price + quantity per ticket type used for now | **Team lead decision** — current scope stays simple; seat-map is a planned future enhancement, understood to require a new `Seat` model, per-seat status tracking, real-time seat locking, and new frontend UI — not a trivial add-on | Confirmed, deferred |
+| **Session-based cart over DB-backed cart** | Carts are ephemeral — they don't need to survive server restarts or be queried. A DB-backed cart would add complexity (orphaned carts, cleanup jobs) for no real benefit at this scope. | Implemented |
+| **`express-session` with `saveUninitialized: true`** | Ensures a session cookie is created on the buyer's first cart request (GET /cart), so subsequent add/remove calls always have a valid session to write to. | Implemented |
+| **Frontend axios with `withCredentials: true`** | Required for the browser to send the session cookie to the backend on CORS requests (frontend on :5173, backend on :5000). | Implemented |
+| **Booking confirmation via frontend API call, not Stripe webhook (for local dev)** | During local development, Stripe can't reach `localhost`. The frontend calls the confirm endpoint directly with `session_id` after Stripe redirects back. The Stripe webhook is set up for production/staging as a reliability fallback. | Implemented |
+| **QR code as data URL (not uploaded to CDN)** | Simpler — no extra upload step. The data URL is stored directly in the MongoDB document and served inline. For high-traffic production, consider uploading QR images to Cloudinary/S3. | Implemented |
+| **Email sending is non-blocking** | If the email fails (wrong SMTP config, network issue), the booking is still confirmed and the user sees the confirmation page. The error is logged to console but doesn't block the booking flow. | Implemented |
 
 ---
 
@@ -468,33 +568,92 @@ directly.
   string** instead, which lists the shard hostnames explicitly and avoids
   the SRV DNS lookup entirely.
 
-### 10.2 Backend Setup
+### 10.2 Complete `.env` Reference
+
+Full list of all environment variables used by the backend:
+
+| Variable | Required | Description |
+|---|---|---|
+| `PORT` | Yes | Server port (default: 5000) |
+| `MONGO_URI` | Yes | Standard (non-SRV) MongoDB Atlas connection string |
+| `JWT_SECRET` | Yes | Long random string for JWT signing |
+| `JWT_EXPIRES_IN` | No | JWT expiry (default: `7d`) |
+| `SESSION_SECRET` | No | Secret for express-session (default: `"stagepass-cart-secret"`) |
+| `STRIPE_SECRET_KEY` | Yes | Stripe secret key starting with `sk_test_` |
+| `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret starting with `whsec_` — **not needed for local dev** (booking confirmation works via frontend callback) |
+| `CLOUDINARY_CLOUD_NAME` | Yes | Cloudinary cloud name (from dashboard) |
+| `CLOUDINARY_API_KEY` | Yes | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | Yes | Cloudinary API secret |
+| `EMAIL_HOST` | No | SMTP host (default: `smtp.gmail.com`) |
+| `EMAIL_PORT` | No | SMTP port (default: `587`) |
+| `EMAIL_USER` | Conditional* | Gmail address for sending confirmation emails |
+| `EMAIL_PASS` | Conditional* | Gmail App Password (16 chars, no spaces) — NOT the regular Gmail password |
+| `EMAIL_FROM` | No | Sender name/address (default: `"StagePass <noreply@stagepass.com>"`) |
+| `FRONTEND_URL` | No | Frontend URL for Stripe redirect (default: `http://localhost:5173`) |
+
+> **\*Email is optional:** If `EMAIL_USER` is not set, the confirmation email
+> will be skipped (logged as a warning) but the booking will still be confirmed
+> and the QR code will still be generated. The email failure does NOT block
+> the checkout flow.
+
+### 10.3 Setting Up Email (Gmail App Password)
+
+**Step-by-step for using Gmail as the email sender:**
+
+1. Enable **2-Step Verification** on your Google Account.
+2. Go to **Google Account → Security → App passwords**.
+3. Select **"Mail"** + **"Other (Custom name)"** → name it `StagePass`.
+4. Copy the 16-character app password (e.g., `abcd efgh ijkl mnop`).
+5. Remove spaces: `abcdefghijklmnop`.
+6. Add to `.env`:
+   ```
+   EMAIL_USER=yourname@gmail.com
+   EMAIL_PASS=abcdefghijklmnop
+   ```
+
+### 10.4 Setting Up Stripe Test Mode
+
+1. Sign up at https://dashboard.stripe.com/ (free).
+2. Go to **Developers → API keys**.
+3. Copy the **Secret key** (starts with `sk_test_`).
+4. Add to `.env`: `STRIPE_SECRET_KEY=sk_test_xxxxxxxx...`
+5. **Test card number:** `4242 4242 4242 4242` with any future expiry date and any CVC.
+6. **Webhook secret (`whsec_`)** is NOT needed for local development — the booking
+   confirmation is handled by the frontend success page. The webhook endpoint
+   exists in the codebase and will work once deployed with a public URL.
+
+### 10.5 Backend Setup
 
 ```bash
 cd backend
 npm install
-cp .env.example .env   # then fill in MONGO_URI and JWT_SECRET
+cp .env.example .env   # then fill in all required values
 npm run dev
 ```
 
-Required `.env` values:
-```
-PORT=5000
-MONGO_URI=<standard (non-SRV) MongoDB Atlas connection string, includes db name>
-JWT_SECRET=<long random string>
-JWT_EXPIRES_IN=7d
-CLOUDINARY_CLOUD_NAME=<from Cloudinary dashboard>
-CLOUDINARY_API_KEY=<from Cloudinary dashboard>
-CLOUDINARY_API_SECRET=<from Cloudinary dashboard>
-```
-
-### 10.3 Frontend Setup
+### 10.6 Frontend Setup
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
+### 10.7 Frontend Axios Configuration
+
+The frontend API client (`frontend/src/api/client.js`) includes:
+
+```js
+const apiClient = axios.create({
+  baseURL: "http://localhost:5000/api",
+  withCredentials: true,  // Required for session cookie to work across CORS
+});
+```
+
+The `withCredentials: true` setting is critical for the session-based cart
+to work. Without it, the browser won't send the session cookie on API calls
+to the backend, and each request would appear to come from a different
+anonymous session.
 
 ---
 
@@ -592,7 +751,6 @@ original project plan.
 - Moved organizer event management UI to `/o/:orgSlug/manage/events` to avoid collision with the public storefront route.
 - Preserved the existing tenant-isolation rule by continuing to resolve the organization from `:orgSlug` on all event requests.
 
-
 ### Frontend — Stage 1: Foundation, Auth, Org Creation
 - Scaffolded frontend architecture: `react-router-dom` for routing,
   `axios` client (`src/api/client.js`) with an interceptor that
@@ -634,21 +792,73 @@ original project plan.
   frontend hiding the button is a UX nicety, not the actual security
   boundary).
 
+### Week 2, Day 4-5 — Cart, Booking & Checkout (Full Feature)
+- **Cart Model Decision:** Cart is session-based (not a MongoDB model) — lives
+  in `req.session.carts` keyed by `cart:<orgId>:<eventId>`. This was chosen over
+  a DB-backed cart to avoid orphaned-cart cleanup complexity.
+- Built `backend/src/services/cart.service.js` — full CRUD for session-based
+  cart items (add, update/remove-by-zero, remove-by-index, clear). Each
+  mutation validates remaining ticket capacity against the Event document
+  before allowing the change (409 Conflict if insufficient).
+- Built `backend/src/controllers/cart.controller.js` and
+  `backend/src/routes/cart.routes.js` — mounted at `/api/o/:orgSlug/cart`
+  with `resolveTenant` only (public, no login).
+- **Session Fix:** The axios client was updated with `withCredentials: true`
+  so the browser sends the session cookie on CORS requests. The session config
+  uses `saveUninitialized: true` and `maxAge: 24h`.
+- Built `backend/src/models/Booking.js` — tenant-scoped booking schema with
+  embedded items array, status/paymentStatus enums, Stripe session ID, unique
+  confirmation code, and QR code URL.
+- Enhanced `backend/src/services/booking.service.js` — added `createCheckoutSession()`
+  (atomic MongoDB transaction + Stripe Checkout session creation), `confirmBooking()`
+  (verifies payment with Stripe, generates QR code via `qrcode` npm package, updates
+  status, sends confirmation email via Nodemailer), `handleStripeWebhook()`, `getBooking()`,
+  and `getEventBookings()`. The original `createBooking()` is preserved as a fallback.
+- **Overselling Prevention:** The `createCheckoutSession` function runs inside a MongoDB
+  transaction. It reads the event, checks remaining capacity for each ticket type,
+  decrements `quantityBooked`, creates the Booking document, and creates the Stripe
+  session — all atomically. If two concurrent requests try to buy the last ticket, only
+  one succeeds; the other gets a 409 error.
+- **QR Code Generation:** Uses the `qrcode` npm package to generate a data URL (PNG as
+  base64). The QR encodes `{ bookingId, confirmationCode, eventId, buyerEmail }`. This
+  data URL is stored in `booking.qrCodeUrl` and displayed on the frontend confirmation page.
+- **Confirmation Email:** Uses Nodemailer with Gmail SMTP + App Password. Sends an HTML
+  email with booking details table, confirmation code, and embedded QR code image.
+  Email failure is non-blocking (logged to console, booking still confirmed).
+- **Stripe Webhook Endpoint:** Registered before `express.json()` in app.js to receive
+  raw body for signature verification. Handles `checkout.session.completed` as a
+  reliability fallback.
+- Built `backend/src/config/stripe.js` (Stripe SDK init), `backend/src/config/email.js`
+  (Nodemailer transporter + HTML email template).
+- Updated `backend/src/routes/booking.routes.js` and added
+  `backend/src/routes/bookingConfirm.routes.js` (alternative path without `:eventId`
+  for Stripe redirect compatibility).
+- **Frontend Cart Page** (`frontend/src/pages/CartPage.jsx`) — displays cart items with
+  quantity +/-, remove button, subtotal, and "Proceed to Checkout" button.
+- **Frontend Checkout Page** (`frontend/src/pages/CheckoutPage.jsx`) — buyer name/email
+  form, order summary table, "Pay with Card" button that redirects to Stripe.
+- **Frontend Booking Confirmation Page** (`frontend/src/pages/BookingConfirmation.jsx`) —
+  displays confirmation code, status, total paid, ticket summary table, QR code image
+  (if generated), and "Browse More Events" link.
+- **Frontend Event Detail Enhancement** — added quantity input and "Add" button for each
+  ticket type, "View Cart" link in header, and "Go to Cart" bottom button.
+- **All 3 new frontend pages** registered in `frontend/src/App.jsx`.
+- Updated `.env.example` with all new environment variables (Stripe, Email, Session, Frontend URL).
+
 ---
 
 ## 12. Roadmap — Remaining Work
 
 Mapped directly from the original 4-week project plan. Items already done
-are struck through in spirit (see [Implementation Log](#11-implementation-log)
-above for what's actually complete); this section lists what's **left**.
+are marked as complete; this section lists what's **left**.
 
-### Week 2 — Core Ticketing Features (remaining)
-- [ ] Session-based cart (add/remove ticket type + quantity)
-- [ ] Booking creation on checkout start
-- [ ] Overselling-safe quantity decrement under concurrent requests
-- [ ] Stripe test-mode checkout
-- [ ] Booking confirmation + QR code generation
-- [ ] Confirmation email
+### Week 2 — Core Ticketing Features
+- [x] Session-based cart (add/remove ticket type + quantity)
+- [x] Booking creation on checkout start
+- [x] Overselling-safe quantity decrement under concurrent requests
+- [x] Stripe test-mode checkout
+- [x] Booking confirmation + QR code generation
+- [x] Confirmation email
 
 ### Week 3 — SaaS Layer: Multi-Tenancy Hardening & Org Tooling
 - [ ] Audit all Week 1-2 queries for missing `organizationId` filters
@@ -682,5 +892,5 @@ above for what's actually complete); this section lists what's **left**.
 | 2026-07-14 | Switched image storage from local disk to Cloudinary (team lead decision); documented seat-map deferral decision | Tech Stack, Key Technical Decisions, Environment & Setup, API Endpoints (7.6), Implementation Log |
 | 2026-07-15 | Frontend Stage 1 built (auth, org creation, dashboard shell); added GET /organizations/mine + "My Organizations" card grid UI | API Endpoints (7.2), Implementation Log, Roadmap |
 | 2026-07-15 | Frontend Stage 2 built: full Venue + Event management UI (organizer dashboard), including ticket types and banner upload | Feature List, Implementation Log, Roadmap |
-
 | 2026-07-15 | Implemented public event storefront and event detail pages; split organizer event management route to `/manage/events` | Architecture, API Endpoints (7.5), Feature List, Implementation Log, Roadmap |
+| **2026-07-15** | **Week 2 Day 4-5: Cart, Booking & Checkout — full implementation** | **Tech Stack (§2), Architecture (§3.1, §3.2, §3.3), Database Schema (§5.6, §5.7), API Endpoints (§7.6–§7.11), Feature List (§8), Key Technical Decisions (§9), Environment & Setup (§10.2–§10.7), Implementation Log (§11), Roadmap (§12)** |

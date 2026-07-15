@@ -1,0 +1,236 @@
+const Event = require("../models/Event");
+
+const getSessionCartKey = (organizationId, eventId) => {
+  return `cart:${organizationId}:${eventId}`;
+};
+
+const getOrCreateCart = (req, organizationId, eventId) => {
+  if (!req.session.carts) {
+    req.session.carts = {};
+  }
+
+  const cartKey = getSessionCartKey(organizationId, eventId);
+
+  if (!req.session.carts[cartKey]) {
+    req.session.carts[cartKey] = {
+      organizationId,
+      eventId,
+      items: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  return req.session.carts[cartKey];
+};
+
+const saveCart = (req, organizationId, eventId, cart) => {
+  if (!req.session.carts) {
+    req.session.carts = {};
+  }
+
+  const cartKey = getSessionCartKey(organizationId, eventId);
+  req.session.carts[cartKey] = {
+    ...cart,
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+const getCartByEvent = async (req, organizationId, eventId) => {
+  const event = await Event.findOne({ _id: eventId, organizationId }).populate(
+    "venueId",
+    "name city",
+  );
+
+  if (!event) {
+    const error = new Error("Event not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const cart = getOrCreateCart(req, organizationId, eventId);
+
+  return {
+    event,
+    cart,
+  };
+};
+
+const addItem = async (req, organizationId, eventId, data) => {
+  const { ticketTypeIndex, quantity } = data;
+
+  const ticketTypeIdx = Number(ticketTypeIndex);
+  const qty = Number(quantity);
+
+  if (!Number.isInteger(ticketTypeIdx) || ticketTypeIdx < 0) {
+    const error = new Error("ticketTypeIndex is required and must be valid");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!Number.isInteger(qty) || qty < 1) {
+    const error = new Error("quantity must be at least 1");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const event = await Event.findOne({ _id: eventId, organizationId });
+
+  if (!event) {
+    const error = new Error("Event not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const ticketType = event.ticketTypes[ticketTypeIdx];
+
+  if (!ticketType) {
+    const error = new Error("Invalid ticket type");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const cart = getOrCreateCart(req, organizationId, eventId);
+  const existingItem = cart.items.find(
+    (item) => item.ticketTypeIndex === ticketTypeIdx,
+  );
+
+  const currentQuantity = existingItem ? existingItem.quantity : 0;
+  const requestedQuantity = currentQuantity + qty;
+  const remaining =
+    Number(ticketType.quantityTotal) - Number(ticketType.quantityBooked || 0);
+
+  if (requestedQuantity > remaining) {
+    const error = new Error(`Not enough tickets left for ${ticketType.name}`);
+    error.statusCode = 409;
+    throw error;
+  }
+
+  if (existingItem) {
+    existingItem.quantity = requestedQuantity;
+  } else {
+    cart.items.push({
+      ticketTypeIndex: ticketTypeIdx,
+      ticketTypeName: ticketType.name,
+      quantity: qty,
+      unitPrice: Number(ticketType.price),
+    });
+  }
+
+  saveCart(req, organizationId, eventId, cart);
+
+  return cart;
+};
+
+const updateItem = async (req, organizationId, eventId, data) => {
+  const { ticketTypeIndex, quantity } = data;
+
+  const ticketTypeIdx = Number(ticketTypeIndex);
+  const qty = Number(quantity);
+
+  if (!Number.isInteger(ticketTypeIdx) || ticketTypeIdx < 0) {
+    const error = new Error("ticketTypeIndex is required and must be valid");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!Number.isInteger(qty) || qty < 0) {
+    const error = new Error("quantity must be 0 or greater");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const event = await Event.findOne({ _id: eventId, organizationId });
+
+  if (!event) {
+    const error = new Error("Event not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const ticketType = event.ticketTypes[ticketTypeIdx];
+
+  if (!ticketType) {
+    const error = new Error("Invalid ticket type");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const cart = getOrCreateCart(req, organizationId, eventId);
+  const itemIndex = cart.items.findIndex(
+    (item) => item.ticketTypeIndex === ticketTypeIdx,
+  );
+
+  if (qty === 0) {
+    if (itemIndex !== -1) {
+      cart.items.splice(itemIndex, 1);
+    }
+    saveCart(req, organizationId, eventId, cart);
+    return cart;
+  }
+
+  const remaining =
+    Number(ticketType.quantityTotal) - Number(ticketType.quantityBooked || 0);
+
+  if (qty > remaining) {
+    const error = new Error(`Not enough tickets left for ${ticketType.name}`);
+    error.statusCode = 409;
+    throw error;
+  }
+
+  if (itemIndex !== -1) {
+    cart.items[itemIndex].quantity = qty;
+  } else {
+    cart.items.push({
+      ticketTypeIndex: ticketTypeIdx,
+      ticketTypeName: ticketType.name,
+      quantity: qty,
+      unitPrice: Number(ticketType.price),
+    });
+  }
+
+  saveCart(req, organizationId, eventId, cart);
+
+  return cart;
+};
+
+const removeItem = (req, organizationId, eventId, ticketTypeIndex) => {
+  const ticketTypeIdx = Number(ticketTypeIndex);
+
+  if (!Number.isInteger(ticketTypeIdx) || ticketTypeIdx < 0) {
+    const error = new Error("ticketTypeIndex is required and must be valid");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const cart = getOrCreateCart(req, organizationId, eventId);
+  cart.items = cart.items.filter(
+    (item) => item.ticketTypeIndex !== ticketTypeIdx,
+  );
+
+  saveCart(req, organizationId, eventId, cart);
+
+  return cart;
+};
+
+const clearCart = (req, organizationId, eventId) => {
+  const cartKey = getSessionCartKey(organizationId, eventId);
+
+  if (req.session.carts && req.session.carts[cartKey]) {
+    delete req.session.carts[cartKey];
+  }
+
+  return {
+    organizationId,
+    eventId,
+    items: [],
+  };
+};
+
+module.exports = {
+  getCartByEvent,
+  addItem,
+  updateItem,
+  removeItem,
+  clearCart,
+};

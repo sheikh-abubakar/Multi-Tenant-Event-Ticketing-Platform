@@ -10,6 +10,9 @@ import Venues from "./pages/Venues";
 import Events from "./pages/Events";
 import PublicEvents from "./pages/PublicEvents";
 import EventDetail from "./pages/EventDetail";
+import CartPage from "./pages/CartPage";
+import CheckoutPage from "./pages/CheckoutPage";
+import BookingConfirmation from "./pages/BookingConfirmation";
 
 function App() {
   return (
@@ -50,8 +53,14 @@ function App() {
             </ProtectedRoute>
           }
         />
+        {/* Public buyer-facing routes */}
         <Route path="/o/:orgSlug/events" element={<PublicEvents />} />
         <Route path="/o/:orgSlug/events/:eventId" element={<EventDetail />} />
+        {/* Cart & Checkout */}
+        <Route path="/o/:orgSlug/cart/:eventId" element={<CartPage />} />
+        <Route path="/o/:orgSlug/checkout/:eventId" element={<CheckoutPage />} />
+        {/* Booking confirmation */}
+        <Route path="/o/:orgSlug/bookings/:bookingId/confirmation" element={<BookingConfirmation />} />
       </Routes>
     </Layout>
   );

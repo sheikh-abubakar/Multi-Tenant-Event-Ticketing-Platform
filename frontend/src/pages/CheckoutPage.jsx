@@ -1,0 +1,261 @@
+import { useEffect, useState } from "react";
+import { Link, useParams, useNavigate } from "react-router-dom";
+import apiClient from "../api/client";
+
+const CheckoutPage = () => {
+  const { orgSlug, eventId } = useParams();
+  const navigate = useNavigate();
+  const [cart, setCart] = useState(null);
+  const [event, setEvent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    buyerName: "",
+    buyerEmail: "",
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await apiClient.get(`/o/${orgSlug}/cart/${eventId}`);
+        if (!cancelled) {
+          setCart(res.data.cart);
+          setEvent(res.data.event);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.response?.data?.message || "Could not load cart.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => { cancelled = true; };
+  }, [orgSlug, eventId]);
+
+  const handleChange = (e) => {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError("");
+
+    try {
+      const items = (cart?.items || []).map((item) => ({
+        ticketTypeIndex: item.ticketTypeIndex,
+        quantity: item.quantity,
+      }));
+
+      const res = await apiClient.post(
+        `/o/${orgSlug}/events/${eventId}/bookings/checkout`,
+        {
+          buyerName: form.buyerName,
+          buyerEmail: form.buyerEmail,
+          items,
+        },
+      );
+
+      const { stripeUrl } = res.data;
+
+      if (stripeUrl) {
+        // Redirect to Stripe Checkout
+        window.location.href = stripeUrl;
+      } else {
+        setError("Stripe checkout URL not returned. Please try again.");
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Checkout failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const cartTotal = (cart?.items || []).reduce(
+    (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0),
+    0,
+  );
+
+  if (loading) return <p style={{ color: "var(--muted)" }}>Loading checkout…</p>;
+
+  if (error && !submitting) {
+    return (
+      <div className="card" style={{ maxWidth: 640 }}>
+        <p style={{ marginTop: 0 }}>
+          <Link to={`/o/${orgSlug}/cart/${eventId}`}>&larr; Back to cart</Link>
+        </p>
+        <h3 style={{ marginTop: 0, color: "var(--danger)" }}>Checkout error</h3>
+        <p>{error}</p>
+      </div>
+    );
+  }
+
+  if (!event || !cart || cart.items.length === 0) {
+    return (
+      <div className="card" style={{ maxWidth: 640 }}>
+        <p style={{ marginTop: 0 }}>
+          <Link to={`/o/${orgSlug}/events/${eventId}`}>&larr; Back to event</Link>
+        </p>
+        <h3 style={{ marginTop: 0 }}>Your cart is empty</h3>
+        <p style={{ color: "var(--muted)" }}>Add tickets to your cart before proceeding.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 740, margin: "0 auto" }}>
+      <p style={{ marginBottom: 16 }}>
+        <Link to={`/o/${orgSlug}/cart/${eventId}`}>&larr; Back to cart</Link>
+      </p>
+
+      <div style={styles.topBar}>
+        <div>
+          <p style={styles.kicker}>Checkout</p>
+          <h1 style={{ color: "var(--paper)", margin: "4px 0 0" }}>{event.name}</h1>
+        </div>
+      </div>
+
+      {error && (
+        <div className="card" style={{ background: "rgba(220, 38, 38, 0.1)", border: "1px solid rgba(220, 38, 38, 0.3)", marginBottom: 16 }}>
+          <p style={{ margin: 0, color: "var(--danger)" }}>{error}</p>
+        </div>
+      )}
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Order Summary</h3>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.1)" }}>
+              <th style={{ textAlign: "left", padding: "8px 4px", color: "var(--muted)" }}>Item</th>
+              <th style={{ textAlign: "center", padding: "8px 4px", color: "var(--muted)" }}>Qty</th>
+              <th style={{ textAlign: "right", padding: "8px 4px", color: "var(--muted)" }}>Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cart.items.map((item) => (
+              <tr key={item.ticketTypeIndex} style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.06)" }}>
+                <td style={{ padding: "10px 4px" }}>{item.ticketTypeName}</td>
+                <td style={{ padding: "10px 4px", textAlign: "center" }}>{item.quantity}</td>
+                <td style={{ padding: "10px 4px", textAlign: "right", fontWeight: 700 }}>
+                  Rs. {Number(item.unitPrice || 0) * Number(item.quantity || 0)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={2} style={{ padding: "12px 4px", fontWeight: 700 }}>Total</td>
+              <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "var(--gold)", fontSize: 18 }}>
+                Rs. {cartTotal}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Buyer Information</h3>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={styles.label}>Full Name</label>
+            <input
+              type="text"
+              name="buyerName"
+              value={form.buyerName}
+              onChange={handleChange}
+              required
+              placeholder="e.g. John Doe"
+              style={styles.input}
+            />
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <label style={styles.label}>Email Address</label>
+            <input
+              type="email"
+              name="buyerEmail"
+              value={form.buyerEmail}
+              onChange={handleChange}
+              required
+              placeholder="e.g. john@example.com"
+              style={styles.input}
+            />
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--muted)" }}>
+              Your tickets and QR code will be sent to this address.
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            style={{
+              ...styles.checkoutBtn,
+              opacity: submitting ? 0.6 : 1,
+            }}
+            disabled={submitting}
+          >
+            {submitting
+              ? "Processing…"
+              : `Pay Rs. ${cartTotal} with Card`}
+          </button>
+
+          <p style={{ margin: "12px 0 0", fontSize: 13, color: "var(--muted)", textAlign: "center" }}>
+            You will be redirected to Stripe's secure checkout page.
+          </p>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const styles = {
+  topBar: {
+    marginBottom: 20,
+  },
+  kicker: {
+    margin: 0,
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+    fontSize: 12,
+    color: "var(--muted)",
+  },
+  label: {
+    display: "block",
+    marginBottom: 6,
+    fontSize: 14,
+    fontWeight: 600,
+    color: "var(--paper)",
+  },
+  input: {
+    width: "100%",
+    padding: "12px 14px",
+    borderRadius: 10,
+    border: "1px solid rgba(247, 242, 231, 0.15)",
+    background: "rgba(247, 242, 231, 0.06)",
+    color: "var(--paper)",
+    fontSize: 15,
+    outline: "none",
+    boxSizing: "border-box",
+  },
+  checkoutBtn: {
+    display: "block",
+    width: "100%",
+    padding: "14px 24px",
+    background: "var(--gold)",
+    color: "var(--navy)",
+    border: "none",
+    borderRadius: 12,
+    fontSize: 17,
+    fontWeight: 700,
+    cursor: "pointer",
+    transition: "opacity 0.2s",
+  },
+};
+
+export default CheckoutPage;

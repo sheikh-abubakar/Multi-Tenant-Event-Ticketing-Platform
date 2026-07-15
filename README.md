@@ -4,6 +4,12 @@ A multi-tenant SaaS event ticketing platform. Organizations create events and
 venues, sell tickets, and manage bookings — each fully isolated from every
 other organization's data.
 
+## 📚 Project Documentation
+
+For a complete technical overview of this project—including architecture, database schema, API endpoints, implementation details, roadmap, and development notes—please refer to the following document:
+
+👉 **[Technical Documentation](./Docs/Technical_documentation.md)**
+
 ## Tenancy Model
 
 Document-level tenancy: shared DB, shared collections, every tenant-owned

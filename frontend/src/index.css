@@ -118,6 +118,13 @@ button {
   color: var(--text);
 }
 
+/* Prevents inputs from overflowing flex/grid containers — browsers
+   give form elements an intrinsic content-based min-width by default,
+   which ignores the container's actual available space unless reset. */
+input, select, textarea {
+  min-width: 0;
+}
+
 .field input:focus,
 .field textarea:focus,
 .field select:focus {

@@ -392,6 +392,9 @@ from Cloudinary's CDN, not from this backend.
 - Embedded ticket types (name, price, quantity) per event
 - Event banner image upload (local disk storage)
 - Cross-resource validation (event's venue must belong to the same org)
+- Frontend: auth (signup/login), org creation, "My Organizations" listing
+- Frontend: Venue management UI (organizer dashboard)
+- Frontend: Event management UI (organizer dashboard, incl. ticket types + banner upload)
 
 ### 🔜 Planned (see [Roadmap](#12-roadmap--remaining-work) for detail)
 
@@ -589,6 +592,21 @@ original project plan.
   it looks distinct but stays visually consistent across visits. Manual
   slug entry kept as a collapsed fallback option underneath.
 
+### Frontend — Stage 2: Venue & Event Management UI
+- Replaced the Venues placeholder with full CRUD: create/edit form + list,
+  calling the existing `/o/:orgSlug/venues` endpoints directly.
+- Replaced the Events placeholder with full CRUD: create/edit form
+  (including a venue `<select>`, dynamic add/remove ticket-type rows, and a
+  file input for the banner image), submitted as `multipart/form-data` via
+  `FormData` — the browser sets the correct headers automatically, so no
+  manual header wiring was needed on the frontend.
+- Both pages additionally call `/whoami` to read the current user's role in
+  this org, and conditionally hide the "Delete" button unless the role is
+  `owner` or `admin` — mirroring the backend's `checkRole` restriction on
+  those same endpoints (the backend still enforces this regardless; the
+  frontend hiding the button is a UX nicety, not the actual security
+  boundary).
+
 ---
 
 ## 12. Roadmap — Remaining Work
@@ -598,8 +616,6 @@ are struck through in spirit (see [Implementation Log](#11-implementation-log)
 above for what's actually complete); this section lists what's **left**.
 
 ### Week 2 — Core Ticketing Features (remaining)
-- [ ] Venue management UI (organizer dashboard)
-- [ ] Event management UI (organizer dashboard) — create/edit with ticket types + banner upload
 - [ ] Public, org-scoped event listing page (`/o/:orgSlug/events` — frontend, buyer-facing)
 - [ ] Event detail page (ticket types + remaining quantity)
 - [ ] Session-based cart (add/remove ticket type + quantity)
@@ -640,4 +656,5 @@ above for what's actually complete); this section lists what's **left**.
 | 2026-07-14 | Initial document created, covering Week 1 (complete) and Week 2 Day 1 Venue + Event CRUD | All |
 | 2026-07-14 | Switched image storage from local disk to Cloudinary (team lead decision); documented seat-map deferral decision | Tech Stack, Key Technical Decisions, Environment & Setup, API Endpoints (7.6), Implementation Log |
 | 2026-07-15 | Frontend Stage 1 built (auth, org creation, dashboard shell); added GET /organizations/mine + "My Organizations" card grid UI | API Endpoints (7.2), Implementation Log, Roadmap |
+| 2026-07-15 | Frontend Stage 2 built: full Venue + Event management UI (organizer dashboard), including ticket types and banner upload | Feature List, Implementation Log, Roadmap |
 

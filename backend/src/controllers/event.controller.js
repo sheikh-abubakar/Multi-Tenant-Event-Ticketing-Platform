@@ -1,15 +1,19 @@
 const eventService = require("../services/event.service");
+const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
 
-// Builds a URL the frontend can use to load the uploaded image.
-// req.file.filename is set by multer (see middlewares/upload.js).
-const buildBannerUrl = (req) => {
+// If a file was uploaded (req.file.buffer, set by multer's
+// memoryStorage), streams it to Cloudinary and returns the hosted
+// image URL. Returns undefined if no file was attached to this
+// request (e.g. an update that doesn't change the banner).
+const buildBannerUrl = async (req) => {
   if (!req.file) return undefined;
-  return `/uploads/event-banners/${req.file.filename}`;
+  const result = await uploadBufferToCloudinary(req.file.buffer, "event-banners");
+  return result.secure_url;
 };
 
 const create = async (req, res) => {
   try {
-    const bannerImageUrl = buildBannerUrl(req);
+    const bannerImageUrl = await buildBannerUrl(req);
     const event = await eventService.createEvent(req.body, req.organizationId, bannerImageUrl);
     return res.status(201).json({ event });
   } catch (error) {
@@ -37,7 +41,7 @@ const getOne = async (req, res) => {
 
 const update = async (req, res) => {
   try {
-    const bannerImageUrl = buildBannerUrl(req);
+    const bannerImageUrl = await buildBannerUrl(req);
     const event = await eventService.updateEvent(
       req.params.eventId,
       req.organizationId,

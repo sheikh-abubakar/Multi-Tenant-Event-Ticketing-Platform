@@ -18,4 +18,13 @@ const create = async (req, res) => {
   }
 };
 
-module.exports = { create };
+const listMine = async (req, res) => {
+  try {
+    const organizations = await organizationService.listMyOrganizations(req.user._id);
+    return res.json({ organizations });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+module.exports = { create, listMine };

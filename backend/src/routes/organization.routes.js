@@ -9,4 +9,8 @@ const router = express.Router();
 // very request creates one.
 router.post("/", authenticate, organizationController.create);
 
+// Lists every organization the logged-in user belongs to (any role).
+// Powers the "pick your organization" screen on the frontend.
+router.get("/mine", authenticate, organizationController.listMine);
+
 module.exports = router;

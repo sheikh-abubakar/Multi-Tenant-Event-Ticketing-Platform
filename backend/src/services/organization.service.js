@@ -2,7 +2,6 @@ const mongoose = require("mongoose");
 const Organization = require("../models/Organization");
 const OrganizationMember = require("../models/OrganizationMember");
 const { slugify, generateUniqueSlug } = require("../utils/slugify");
-
 /**
  * Creates an Organization AND makes the creating user its "owner"
  * in the SAME atomic operation (using a transaction).
@@ -61,4 +60,26 @@ const createOrganization = async ({ name, slug: requestedSlug }, userId) => {
   }
 };
 
-module.exports = { createOrganization };
+/**
+ * Lists every organization the given user is a member of, along with
+ * their role in each one. This is what powers the "pick your
+ * organization" screen on the frontend — a user might belong to
+ * several orgs with different roles in each.
+ */
+const listMyOrganizations = async (userId) => {
+  const memberships = await OrganizationMember.find({ userId }).populate("organizationId");
+
+  return memberships
+    .filter((m) => m.organizationId) // guard against a dangling reference
+    .map((m) => ({
+      role: m.role,
+      organization: {
+        id: m.organizationId._id,
+        name: m.organizationId.name,
+        slug: m.organizationId.slug,
+        logoUrl: m.organizationId.logoUrl,
+      },
+    }));
+};
+
+module.exports = { createOrganization, listMyOrganizations };

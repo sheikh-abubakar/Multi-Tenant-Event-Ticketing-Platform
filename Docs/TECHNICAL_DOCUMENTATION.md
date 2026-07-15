@@ -321,6 +321,7 @@ Base URL (local dev): `http://localhost:5000`
 | Method | Endpoint | Auth required | Body | Notes |
 |---|---|---|---|---|
 | POST | `/api/organizations` | Yes | `{ name, slug? }` | Creates an `Organization` + an `OrganizationMember` (role: `owner`) atomically via a transaction. `slug` auto-generated from `name` if omitted. |
+| GET | `/api/organizations/mine` | Yes | — | Lists every organization the logged-in user belongs to, with their role in each. Powers the "pick your organization" screen on the frontend. |
 
 ### 7.3 Tenant Demo/Utility Routes — `/api/o/:orgSlug`
 
@@ -562,6 +563,32 @@ original project plan.
   status tracking, real-time locking, and new frontend UI (see [Key
   Technical Decisions](#9-key-technical-decisions)).
 
+### Frontend — Stage 1: Foundation, Auth, Org Creation
+- Scaffolded frontend architecture: `react-router-dom` for routing,
+  `axios` client (`src/api/client.js`) with an interceptor that
+  auto-attaches the JWT from `localStorage` to every request.
+- Built `AuthContext` — holds global identity (token + user), mirroring the
+  backend's "User is global" model. Which org/role is active is resolved
+  per-page (via `:orgSlug` in the URL + a `/whoami` call), not stored here.
+- Built pages: Signup, Login, Create Organization, Dashboard (shell — calls
+  `/whoami` for the current `:orgSlug`, shows an "Access denied" state if
+  the backend returns 403).
+- Added placeholder Venues/Events pages (full CRUD UI is the next stage).
+- Established the visual design system (`index.css`): a "ticket stub"
+  themed palette (deep navy + gold accent + warm paper-tone cards) with a
+  dashed "tear line" divider as the recurring signature motif.
+
+### Frontend + Backend — "My Organizations" Listing
+- Added `GET /api/organizations/mine` (backend) — lists every organization
+  the logged-in user belongs to, with their role in each, by querying
+  `OrganizationMember` for the user and populating the linked
+  `Organization`.
+- Updated the Home page to fetch and display this list as a grid of
+  poster-style cards (`OrgCard` component) — each organization gets a
+  deterministic gradient (hashed from its slug via `utils/orgTheme.js`), so
+  it looks distinct but stays visually consistent across visits. Manual
+  slug entry kept as a collapsed fallback option underneath.
+
 ---
 
 ## 12. Roadmap — Remaining Work
@@ -571,6 +598,8 @@ are struck through in spirit (see [Implementation Log](#11-implementation-log)
 above for what's actually complete); this section lists what's **left**.
 
 ### Week 2 — Core Ticketing Features (remaining)
+- [ ] Venue management UI (organizer dashboard)
+- [ ] Event management UI (organizer dashboard) — create/edit with ticket types + banner upload
 - [ ] Public, org-scoped event listing page (`/o/:orgSlug/events` — frontend, buyer-facing)
 - [ ] Event detail page (ticket types + remaining quantity)
 - [ ] Session-based cart (add/remove ticket type + quantity)
@@ -610,4 +639,5 @@ above for what's actually complete); this section lists what's **left**.
 |---|---|---|
 | 2026-07-14 | Initial document created, covering Week 1 (complete) and Week 2 Day 1 Venue + Event CRUD | All |
 | 2026-07-14 | Switched image storage from local disk to Cloudinary (team lead decision); documented seat-map deferral decision | Tech Stack, Key Technical Decisions, Environment & Setup, API Endpoints (7.6), Implementation Log |
+| 2026-07-15 | Frontend Stage 1 built (auth, org creation, dashboard shell); added GET /organizations/mine + "My Organizations" card grid UI | API Endpoints (7.2), Implementation Log, Roadmap |
 

@@ -1,64 +1,16 @@
-# Multi-Tenant Event Ticketing Platform
+# React + Vite
 
-A multi-tenant SaaS event ticketing platform. Organizations create events and
-venues, sell tickets, and manage bookings — each fully isolated from every
-other organization's data.
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-## 📚 Project Documentation
+Currently, two official plugins are available:
 
-For a complete technical overview of this project—including architecture, database schema, API endpoints, implementation details, roadmap, and development notes—please refer to the following document:
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-👉 **[Technical Documentation](./Docs/Technical_documentation.md)**
+## React Compiler
 
-## Tenancy Model
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-Document-level tenancy: shared DB, shared collections, every tenant-owned
-document carries an `organizationId`.
+## Expanding the Oxlint configuration
 
-- **User** — global identity (login), not tied to any single org
-- **Organization** — the tenant
-- **OrganizationMember** — links a User to an Organization with a role
-  (owner / admin / staff)
-
-## Stack
-
-- Backend: Node.js, Express, MongoDB/Mongoose (MVC: controllers / services /
-  models / routes / middlewares)
-- Frontend: React + Vite
-
-## Project Structure
-
-```
-ticketing-platform/
-├── backend/
-│   ├── src/
-│   │   ├── config/       # DB connection, env setup
-│   │   ├── models/       # Mongoose schemas
-│   │   ├── controllers/  # Route handlers
-│   │   ├── services/     # Business logic
-│   │   ├── routes/       # Express routers
-│   │   ├── middlewares/  # Auth, tenant resolution, role checks
-│   │   ├── utils/
-│   │   ├── app.js
-│   │   └── server.js
-│   ├── .env.example
-│   └── package.json
-└── frontend/              # Vite + React app
-```
-
-## Setup
-
-### Backend
-```bash
-cd backend
-npm install
-cp .env.example .env   # then fill in your own MONGO_URI and JWT_SECRET
-npm run dev
-```
-
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.

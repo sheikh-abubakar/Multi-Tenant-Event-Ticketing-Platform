@@ -13,13 +13,15 @@ const router = express.Router({ mergeParams: true });
 router.get("/", resolveTenant, eventController.list);
 router.get("/:eventId", resolveTenant, eventController.getOne);
 
-// Organizer writes stay protected.
-router.use(authenticate, resolveTenant, loadMembership);
-
-router.post("/", upload.single("banner"), eventController.create);
-router.put("/:eventId", upload.single("banner"), eventController.update);
+// Organizer writes stay protected — authenticate applied per-route, not via router.use
+// to avoid accidentally catching sub-routes (like /events/:eventId/bookings/*).
+router.post("/", authenticate, resolveTenant, loadMembership, upload.single("banner"), eventController.create);
+router.put("/:eventId", authenticate, resolveTenant, loadMembership, upload.single("banner"), eventController.update);
 router.delete(
   "/:eventId",
+  authenticate,
+  resolveTenant,
+  loadMembership,
   checkRole(["owner", "admin"]),
   eventController.remove,
 );

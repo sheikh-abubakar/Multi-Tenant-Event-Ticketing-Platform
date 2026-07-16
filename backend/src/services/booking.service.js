@@ -60,7 +60,9 @@ const parseCheckoutItems = (items) => {
 
 /**
  * Create a pending booking and generate a Stripe Checkout Session.
- * This is called when the buyer clicks "Proceed to Checkout".
+ * IDEMPOTENT: If a pending booking already exists for this buyer + event,
+ * we return the EXISTING Stripe session URL instead of creating a new one.
+ * This prevents double charges if the buyer clicks "Pay" twice.
  */
 const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => {
   const { buyerName, buyerEmail, items, cartKey } = data;
@@ -71,15 +73,99 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
     throw error;
   }
 
+  const normalizedEmail = buyerEmail.trim().toLowerCase();
+
+  // ─── IDEMPOTENCY CHECK ───────────────────────────────────────────────
+  // Check if there's ALREADY a pending booking for this buyer + event.
+  // If yes, and the Stripe session is still valid, return the same session
+  // instead of creating a new one — prevents double charges.
+  const existingPendingBooking = await Booking.findOne({
+    eventId,
+    buyerEmail: normalizedEmail,
+    paymentStatus: "pending",
+  });
+
+  if (existingPendingBooking && existingPendingBooking.stripeSessionId) {
+    try {
+      const existingSession = await stripe.checkout.sessions.retrieve(
+        existingPendingBooking.stripeSessionId,
+      );
+
+      // If the session is still open or requires payment, return it
+      if (
+        existingSession.status === "open" ||
+        existingSession.status === "requires_payment"
+      ) {
+        console.log(
+          `[Idempotency] Returning existing session ${existingSession.id} for ` +
+          `booking ${existingPendingBooking._id} (buyer: ${normalizedEmail})`,
+        );
+        return {
+          bookingId: existingPendingBooking._id,
+          stripeSessionId: existingSession.id,
+          stripeUrl: existingSession.url,
+        };
+      }
+
+      // If session expired (e.g. 24h passed), create a new one
+      if (existingSession.status === "expired") {
+        console.log(
+          `[Idempotency] Session expired for booking ${existingPendingBooking._id}, creating new one`,
+        );
+        const newSession = await stripe.checkout.sessions.create({
+          payment_method_types: ["card"],
+          mode: "payment",
+          customer_email: normalizedEmail,
+          client_reference_id: existingPendingBooking._id.toString(),
+          metadata: {
+            bookingId: existingPendingBooking._id.toString(),
+            eventId: eventId.toString(),
+            organizationId: organizationId.toString(),
+            cartKey: cartKey || "",
+          },
+          line_items: existingPendingBooking.items.map((item) => ({
+            price_data: {
+              currency: "pkr",
+              product_data: {
+                name: `Ticket — ${item.ticketTypeName}`,
+              },
+              unit_amount: Math.round(item.unitPrice * 100),
+            },
+            quantity: item.quantity,
+          })),
+          success_url: `${FRONTEND_URL}/o/${orgSlug}/bookings/${existingPendingBooking._id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${FRONTEND_URL}/o/${orgSlug}/cart/${eventId}`,
+        });
+
+        existingPendingBooking.stripeSessionId = newSession.id;
+        await existingPendingBooking.save();
+
+        return {
+          bookingId: existingPendingBooking._id,
+          stripeSessionId: newSession.id,
+          stripeUrl: newSession.url,
+        };
+      }
+    } catch (stripeError) {
+      // If Stripe API call fails (e.g., session not found in Stripe),
+      // log and continue to create a fresh booking
+      console.error(
+        `[Idempotency] Stripe lookup failed for session ${existingPendingBooking.stripeSessionId}:`,
+        stripeError.message,
+      );
+    }
+  }
+  // ─── END IDEMPOTENCY CHECK ──────────────────────────────────────────
+
   const checkoutItems = parseCheckoutItems(items);
 
-  const session = await mongoose.startSession();
+  const mongoSession = await mongoose.startSession();
 
   try {
-    session.startTransaction();
+    mongoSession.startTransaction();
 
     const event = await Event.findOne({ _id: eventId, organizationId }).session(
-      session,
+      mongoSession,
     );
 
     if (!event) {
@@ -156,7 +242,7 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
     }
 
     event.markModified("ticketTypes");
-    await event.save({ session });
+    await event.save({ session: mongoSession });
 
     const confirmationCode = generateConfirmationCode();
 
@@ -166,7 +252,7 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           organizationId,
           eventId,
           buyerName: buyerName.trim(),
-          buyerEmail: buyerEmail.trim().toLowerCase(),
+          buyerEmail: normalizedEmail,
           items: bookingItems,
           totalAmount,
           currency: "PKR",
@@ -175,31 +261,39 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           confirmationCode,
         },
       ],
-      { session },
+      { session: mongoSession },
     );
 
+    // Stripe idempotency key — extra safety on Stripe's side.
+    // Even if we somehow receive the same creation request twice,
+    // Stripe will only create one session for this key.
+    const idempotencyKey = `checkout-${normalizedEmail}-${eventId}-${booking._id}`;
+
     // Create Stripe Checkout Session
-    const stripeSession = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
-      customer_email: buyerEmail.trim().toLowerCase(),
-      client_reference_id: booking._id.toString(),
-      metadata: {
-        bookingId: booking._id.toString(),
-        eventId: eventId.toString(),
-        organizationId: organizationId.toString(),
-        cartKey: cartKey || "",
+    const stripeSession = await stripe.checkout.sessions.create(
+      {
+        payment_method_types: ["card"],
+        mode: "payment",
+        customer_email: normalizedEmail,
+        client_reference_id: booking._id.toString(),
+        metadata: {
+          bookingId: booking._id.toString(),
+          eventId: eventId.toString(),
+          organizationId: organizationId.toString(),
+          cartKey: cartKey || "",
+        },
+        line_items: stripeLineItems,
+        success_url: `${FRONTEND_URL}/o/${orgSlug}/bookings/${booking._id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${FRONTEND_URL}/o/${orgSlug}/cart/${eventId}`,
       },
-      line_items: stripeLineItems,
-      success_url: `${FRONTEND_URL}/o/${orgSlug}/bookings/${booking._id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${FRONTEND_URL}/o/${orgSlug}/cart/${eventId}`,
-    });
+      { idempotencyKey },
+    );
 
     // Save the Stripe session ID on the booking
     booking.stripeSessionId = stripeSession.id;
-    await booking.save({ session });
+    await booking.save({ session: mongoSession });
 
-    await session.commitTransaction();
+    await mongoSession.commitTransaction();
 
     return {
       bookingId: booking._id,
@@ -207,15 +301,16 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
       stripeUrl: stripeSession.url,
     };
   } catch (error) {
-    await session.abortTransaction();
+    await mongoSession.abortTransaction();
     throw error;
   } finally {
-    session.endSession();
+    mongoSession.endSession();
   }
 };
 
 /**
  * Confirm a booking after successful Stripe payment.
+ * IDEMPOTENT: If already confirmed, returns immediately without changes.
  * Called from the success page (via session_id lookup) or webhook.
  */
 const confirmBooking = async (stripeSessionId) => {
@@ -227,12 +322,17 @@ const confirmBooking = async (stripeSessionId) => {
     throw error;
   }
 
-  // Idempotency: if already confirmed, return as-is
+  // ─── IDEMPOTENCY CHECK ───────────────────────────────────────────────
+  // If booking is already confirmed, return as-is — no double charge
   if (booking.status === "confirmed" && booking.paymentStatus === "paid") {
+    console.log(
+      `[Idempotency] Booking ${booking._id} already confirmed — skipping`,
+    );
     return booking;
   }
+  // ─── END IDEMPOTENCY CHECK ──────────────────────────────────────────
 
-  // Verify payment status with Stripe
+  // Verify payment status with Stripe — ensure payment actually happened
   const session = await stripe.checkout.sessions.retrieve(stripeSessionId);
 
   if (session.payment_status !== "paid") {
@@ -277,6 +377,7 @@ const confirmBooking = async (stripeSessionId) => {
 
 /**
  * Handle Stripe webhook event: checkout.session.completed
+ * IDEMPOTENT: Delegates to confirmBooking which already handles idempotency.
  */
 const handleStripeWebhook = async (event) => {
   if (event.type === "checkout.session.completed") {

@@ -85,6 +85,9 @@ const CartPage = () => {
     <div style={{ maxWidth: 740, margin: "0 auto" }}>
       <p style={{ marginBottom: 16 }}>
         <Link to={`/o/${orgSlug}/events/${eventId}`}>&larr; Back to event</Link>
+        <span style={{ marginLeft: 16 }}>
+          <Link to={`/o/${orgSlug}/events/${eventId}`}>+ Add more tickets</Link>
+        </span>
       </p>
 
       <div style={styles.topBar}>
@@ -116,7 +119,7 @@ const CartPage = () => {
               return (
                 <div key={item.ticketTypeIndex} className="card" style={styles.itemCard}>
                   <div style={styles.itemInfo}>
-                    <h4 style={{ margin: "0 0 4px", color: "var(--paper)" }}>
+                    <h4 style={{ margin: "0 0 4px", color: "var(--text)" }}>
                       {item.ticketTypeName}
                     </h4>
                     <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
@@ -214,12 +217,13 @@ const styles = {
     gap: 0,
     borderRadius: 8,
     overflow: "hidden",
-    border: "1px solid rgba(247, 242, 231, 0.15)",
+    border: "1px solid #d8d0bd",
+    background: "#fffdf8",
   },
   qtyBtn: {
-    background: "rgba(247, 242, 231, 0.08)",
+    background: "#efe9da",
     border: "none",
-    color: "var(--paper)",
+    color: "#1e2030",
     padding: "6px 12px",
     cursor: "pointer",
     fontSize: 16,
@@ -229,12 +233,13 @@ const styles = {
     padding: "6px 12px",
     minWidth: 32,
     textAlign: "center",
-    color: "var(--paper)",
+    color: "#1e2030",
     fontSize: 15,
+    fontWeight: 600,
   },
   itemTotal: {
     margin: 0,
-    color: "var(--gold)",
+    color: "#c99a3c",
     fontWeight: 700,
     minWidth: 80,
     textAlign: "right",
@@ -242,13 +247,13 @@ const styles = {
   removeBtn: {
     background: "none",
     border: "none",
-    color: "var(--danger)",
+    color: "#c0503e",
     cursor: "pointer",
     fontSize: 16,
     padding: 4,
   },
   summaryCard: {
-    borderTop: "2px dashed rgba(247, 242, 231, 0.2)",
+    borderTop: "2px dashed rgba(20, 22, 43, 0.15)",
   },
   summaryRow: {
     display: "flex",
@@ -256,14 +261,14 @@ const styles = {
     alignItems: "center",
     marginBottom: 16,
     fontSize: 18,
-    color: "var(--paper)",
+    color: "var(--text)",
   },
   checkoutBtn: {
     display: "block",
     width: "100%",
     padding: "14px 24px",
-    background: "var(--gold)",
-    color: "var(--navy)",
+    background: "#c99a3c",
+    color: "#1e2030",
     border: "none",
     borderRadius: 12,
     fontSize: 17,

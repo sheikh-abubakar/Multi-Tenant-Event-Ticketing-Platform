@@ -133,7 +133,7 @@ const CheckoutPage = () => {
         <h3 style={{ marginTop: 0 }}>Order Summary</h3>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.1)" }}>
+            <tr style={{ borderBottom: "1px solid #d8d0bd" }}>
               <th style={{ textAlign: "left", padding: "8px 4px", color: "var(--muted)" }}>Item</th>
               <th style={{ textAlign: "center", padding: "8px 4px", color: "var(--muted)" }}>Qty</th>
               <th style={{ textAlign: "right", padding: "8px 4px", color: "var(--muted)" }}>Price</th>
@@ -141,7 +141,7 @@ const CheckoutPage = () => {
           </thead>
           <tbody>
             {cart.items.map((item) => (
-              <tr key={item.ticketTypeIndex} style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.06)" }}>
+              <tr key={item.ticketTypeIndex} style={{ borderBottom: "1px solid #e8e2d3" }}>
                 <td style={{ padding: "10px 4px" }}>{item.ticketTypeName}</td>
                 <td style={{ padding: "10px 4px", textAlign: "center" }}>{item.quantity}</td>
                 <td style={{ padding: "10px 4px", textAlign: "right", fontWeight: 700 }}>
@@ -153,7 +153,7 @@ const CheckoutPage = () => {
           <tfoot>
             <tr>
               <td colSpan={2} style={{ padding: "12px 4px", fontWeight: 700 }}>Total</td>
-              <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "var(--gold)", fontSize: 18 }}>
+              <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "#c99a3c", fontSize: 18 }}>
                 Rs. {cartTotal}
               </td>
             </tr>
@@ -236,9 +236,9 @@ const styles = {
     width: "100%",
     padding: "12px 14px",
     borderRadius: 10,
-    border: "1px solid rgba(247, 242, 231, 0.15)",
-    background: "rgba(247, 242, 231, 0.06)",
-    color: "var(--paper)",
+    border: "1px solid #d8d0bd",
+    background: "#fffdf8",
+    color: "#1e2030",
     fontSize: 15,
     outline: "none",
     boxSizing: "border-box",

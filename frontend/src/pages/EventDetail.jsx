@@ -178,9 +178,9 @@ const EventDetail = () => {
                         width: 56,
                         padding: "8px 6px",
                         borderRadius: 8,
-                        border: "1px solid rgba(247, 242, 231, 0.15)",
-                        background: "rgba(247, 242, 231, 0.06)",
-                        color: "var(--paper)",
+                        border: "1px solid #d8d0bd",
+                        background: "#fffdf8",
+                        color: "#1e2030",
                         textAlign: "center",
                         fontSize: 14,
                       }}

@@ -71,8 +71,10 @@ const bookingSchema = new mongoose.Schema(
       trim: true,
     },
     status: {
+      // "expired" = added for the auto-release feature: a pending
+      // booking that timed out before payment was completed.
       type: String,
-      enum: ["pending", "confirmed", "cancelled"],
+      enum: ["pending", "confirmed", "cancelled", "expired"],
       default: "pending",
       index: true,
     },
@@ -95,6 +97,22 @@ const bookingSchema = new mongoose.Schema(
     },
     qrCodeUrl: {
       type: String,
+      default: null,
+    },
+    // ─── Auto-release / reminder fields ──────────────────────────────
+    // Set once, at booking creation: createdAt + HOLD_DURATION_MS.
+    // The background scheduler compares "now" against this field to
+    // decide when to release the held tickets — never relies on an
+    // in-memory timer, so it survives server restarts.
+    expiresAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    // Set once the 30-second reminder email has actually been sent,
+    // so the scheduler never sends it twice for the same booking.
+    reminderSentAt: {
+      type: Date,
       default: null,
     },
   },

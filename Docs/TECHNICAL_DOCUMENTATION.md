@@ -296,7 +296,11 @@ Tenant-owned. Records a completed ticket purchase after Stripe payment.
 | `stripeSessionId` | String | nullable, indexed — stores Stripe Checkout Session ID for lookup |
 | `confirmationCode` | String | unique, sparse — auto-generated (`BK-<timestamp>-<random hex>`) |
 | `qrCodeUrl` | String | nullable — data URL of generated QR code, set on confirmation |
+| `expiresAt` | Date | nullable — set at creation to `createdAt + 90s`; the booking-hold scheduler releases tickets once this passes with no payment |
+| `reminderSentAt` | Date | nullable — set once the 30s payment-reminder email has been sent, so it's never sent twice |
 | `createdAt` / `updatedAt` | Date | auto (timestamps) |
+
+`status` enum: `pending` \| `confirmed` \| `cancelled` \| `expired` (the last value added for the auto-release feature — see §7.7.2).
 
 **Compound indexes:** `{ organizationId: 1, eventId: 1 }`, `{ buyerEmail: 1, createdAt: -1 }`
 
@@ -445,10 +449,89 @@ All booking routes are **public** (no login) and use `resolveTenant` only — ti
 
 | Method | Endpoint | Middleware | Body | Notes |
 |---|---|---|---|---|
-| POST | `/api/o/:orgSlug/events/:eventId/bookings/checkout` | resolveTenant | `{ buyerName, buyerEmail, items: [{ ticketTypeIndex, quantity }], cartKey? }` | **Creates a pending booking** inside a MongoDB transaction + **decrements quantityBooked atomically**. Creates a Stripe Checkout Session. Returns `{ bookingId, stripeSessionId, stripeUrl }`. The frontend redirects the browser to `stripeUrl` for card payment. |
+| POST | `/api/o/:orgSlug/events/:eventId/bookings/checkout` | resolveTenant | `{ buyerName, buyerEmail, items: [{ ticketTypeIndex, quantity }], cartKey? }` | **Creates a pending booking** inside a MongoDB transaction + **decrements quantityBooked atomically**. Creates a Stripe Checkout Session. Returns `{ bookingId, stripeSessionId, stripeUrl }`. The frontend redirects the browser to `stripeUrl` for card payment. **Idempotent** — see §7.7.1. |
 | GET | `/api/o/:orgSlug/events/:eventId/bookings/confirm?session_id=xxx` | resolveTenant | — | Verifies Stripe payment status, generates QR code (data URL), updates booking status to `confirmed`, sends confirmation email. Idempotent — safe to call multiple times. |
 | GET | `/api/o/:orgSlug/events/:eventId/bookings/:bookingId` | resolveTenant | — | Returns a single booking by ID (tenant-scoped). Populates event name/date/venue. |
 | GET | `/api/o/:orgSlug/events/:eventId/bookings` | authenticate + resolveTenant + loadMembership | — | **Organizer only.** Lists all bookings for an event, sorted newest first. |
+
+#### 7.7.1 Checkout & Confirmation Idempotency
+
+Three layers of duplicate-prevention protect the checkout flow, from the
+most application-level to the most infrastructure-level:
+
+**Level 1 — `createCheckoutSession()`: duplicate checkout prevention.**
+Before creating a new booking, the service checks for an existing
+`pending` booking for the same `(eventId, buyerEmail)` pair. If one exists
+and its Stripe session is still `open`/`requires_payment`, the **same**
+`stripeUrl` is returned instead of creating a second booking (which would
+double-decrement ticket inventory). If that old session has actually
+expired on Stripe's side (24h), a fresh session is created and attached to
+the *same* booking document, rather than creating a brand-new booking. This
+is what stops a buyer double-clicking "Pay" (or resubmitting the checkout
+form) from being charged twice or holding two sets of tickets.
+
+**Level 2 — `confirmBooking()`: duplicate confirmation prevention.**
+If a booking is already `status: "confirmed"` and `paymentStatus: "paid"`,
+the function returns immediately without regenerating a QR code or
+resending the confirmation email. This matters because `confirmBooking()`
+can legitimately be called twice for the same successful payment — once
+when the buyer's browser redirects back to the frontend success page, and
+again from the Stripe webhook (§7.9) as a reliability fallback. Without
+this check, the buyer would get two confirmation emails and two QR codes
+for one purchase.
+
+**Level 3 — Stripe server-side idempotency key.**
+When creating the Stripe Checkout Session itself, an `idempotencyKey`
+(`checkout-<email>-<eventId>-<bookingId>`) is passed to Stripe's API. This
+is a safety net *underneath* Level 1 — even if our own application-level
+check somehow ran twice concurrently (e.g. two near-simultaneous requests
+racing past the Level 1 check before either had saved its booking), Stripe
+itself guarantees only one Checkout Session is ever created for that exact
+key, and returns the same session object for any repeat call with the same
+key.
+
+### 7.7.2 Auto-Release & Payment Reminder (Booking Hold Expiry)
+
+A pending booking holds its tickets (via the `quantityBooked` decrement
+already made at checkout) for a fixed **90-second window**
+(`HOLD_DURATION_MS` in `booking.service.js`). A background scheduler
+(`services/bookingScheduler.js`), started once from `server.js` after the
+DB connects, sweeps the `Booking` collection every 5 seconds and does two
+things:
+
+| Elapsed since checkout | Action |
+|---|---|
+| **30 seconds**, still `pending`/`pending` | Sends a **payment reminder email** (`sendPaymentReminder` in `config/email.js`) containing a direct link to the *existing* Stripe Checkout Session URL (retrieved fresh via `stripe.checkout.sessions.retrieve`) — no new session is created for this. Marks `reminderSentAt` so it's never sent twice. |
+| **90 seconds**, still `pending`/`pending` | **Releases the held tickets**: inside a MongoDB transaction, decrements each `Event.ticketTypes[i].quantityBooked` back down by the amount this booking had reserved, and sets the booking's `status` to `"expired"`. This makes the tickets purchasable by someone else again. |
+
+**Why a periodic DB sweep instead of `setTimeout` per booking:** timers
+scheduled in-process are lost if the server restarts. Storing `expiresAt`
+as a real timestamp on the `Booking` document means the next sweep tick —
+running in a fresh process if needed — still correctly identifies bookings
+that are overdue, with no special recovery logic required.
+
+**New `Booking` fields added for this feature** (see §5.6): `expiresAt`
+(Date, set at creation to `createdAt + 90s`), `reminderSentAt` (Date,
+`null` until the reminder fires). `status` enum gained a new value:
+`"expired"`.
+
+**Interaction with `confirmBooking()`:** if Stripe payment succeeds in the
+narrow window after the scheduler has already expired a booking,
+`confirmBooking()` now explicitly checks for `status: "expired"` and
+returns a `410 Gone` rather than silently "confirming" a booking whose
+tickets have already been given back to inventory.
+
+**Bug found during manual testing (fixed same day):** the Level 1
+duplicate-checkout check (§7.7.1) originally filtered only by
+`paymentStatus: "pending"`, not `status`. Since the scheduler sets
+`status: "expired"` on a released booking but leaves `paymentStatus:
+"pending"` (payment genuinely never happened), an already-expired
+booking's stale Stripe session was being matched as "still active" and
+handed back to a buyer starting a fresh checkout — even though its
+tickets had already been returned to inventory. Fixed by requiring
+`status: "pending"` in that lookup as well, so expired bookings are never
+mistaken for active ones.
+
 
 ### 7.8 Bookings (Alternative Simplified Path) — `/api/o/:orgSlug/bookings`
 
@@ -513,6 +596,9 @@ from Cloudinary's CDN, not from this backend.
 - **Frontend: Cart page** (quantity +/- controls, remove, subtotal, proceed to checkout)
 - **Frontend: Checkout page** (buyer info form, order summary, Stripe redirect)
 - **Frontend: Booking confirmation page** (QR code display, ticket summary, confirmation code)
+- **Checkout/confirmation idempotency** (3 layers — see §7.7.1): duplicate checkout prevention, duplicate confirmation prevention, Stripe-side idempotency key
+- **Automatic booking-hold release**: unpaid pending bookings release their held tickets back to inventory after 90 seconds
+- **Payment reminder email**: sent 30 seconds into an unpaid pending booking, with a direct Stripe payment link
 
 ### 🔜 Planned (see [Roadmap](#12-roadmap--remaining-work) for detail)
 
@@ -549,6 +635,9 @@ directly.
 | **Booking confirmation via frontend API call, not Stripe webhook (for local dev)** | During local development, Stripe can't reach `localhost`. The frontend calls the confirm endpoint directly with `session_id` after Stripe redirects back. The Stripe webhook is set up for production/staging as a reliability fallback. | Implemented |
 | **QR code as data URL (not uploaded to CDN)** | Simpler — no extra upload step. The data URL is stored directly in the MongoDB document and served inline. For high-traffic production, consider uploading QR images to Cloudinary/S3. | Implemented |
 | **Email sending is non-blocking** | If the email fails (wrong SMTP config, network issue), the booking is still confirmed and the user sees the confirmation page. The error is logged to console but doesn't block the booking flow. | Implemented |
+| **Idempotency handled at 3 layers (app-level checkout, app-level confirmation, Stripe idempotency key)** rather than just one | Each layer guards a different failure mode: double-checkout-submission, double-confirmation-call (browser redirect race with webhook), and true concurrent-request races. Belt-and-suspenders is warranted here because a failure means real double charges. | Implemented |
+| **Booking hold expiry via periodic DB sweep (`setInterval`, 5s), not per-booking `setTimeout`** | A stored `expiresAt` timestamp survives server restarts; an in-memory timer does not. For a single-instance dev/staging deployment this is sufficient; a multi-instance production deployment would need a distributed lock or a dedicated job queue (e.g. BullMQ) so the sweep doesn't run redundantly on every instance — noted as a future hardening item. | Implemented (single-instance) |
+| **90s hold / 30s reminder are fixed constants (`HOLD_DURATION_MS`, `REMINDER_AFTER_MS`), not env-configurable** | Kept simple for now; trivial to promote to `.env` values later if the organizer needs this tunable per event. | Implemented |
 
 ---
 
@@ -845,6 +934,51 @@ original project plan.
 - **All 3 new frontend pages** registered in `frontend/src/App.jsx`.
 - Updated `.env.example` with all new environment variables (Stripe, Email, Session, Frontend URL).
 
+### Week 2, Day 4-5 (continued) — Checkout & Confirmation Idempotency
+- Added duplicate-checkout prevention to `createCheckoutSession()`: looks
+  up any existing `pending` booking for the same `(eventId, buyerEmail)`
+  before creating a new one; reuses the existing Stripe session URL if
+  still valid, or reattaches a freshly-created session to the *same*
+  booking if the old one expired on Stripe's side.
+- Added duplicate-confirmation prevention to `confirmBooking()`: returns
+  immediately, without regenerating a QR code or resending the
+  confirmation email, if the booking is already `confirmed` + `paid`. This
+  matters because the frontend success-page redirect and the Stripe
+  webhook can both call this function for the same successful payment.
+- Added a Stripe-side `idempotencyKey` (`checkout-<email>-<eventId>-<bookingId>`)
+  to the Checkout Session creation call — a safety net beneath the
+  application-level check, guaranteeing Stripe itself never creates two
+  sessions for the same key even under a genuine race.
+- See §7.7.1 for the full breakdown of all three layers.
+
+### Week 2, Day 4-5 (continued) — Auto-Release & Payment Reminder
+- **Team lead task:** if a buyer starts checkout (Stripe page opens) but
+  doesn't complete payment, their held tickets should be released for
+  other buyers, with a reminder email sent first.
+- Added `expiresAt` and `reminderSentAt` fields to the `Booking` model,
+  and a new `"expired"` value to its `status` enum.
+- `createCheckoutSession()` now sets `expiresAt = createdAt + 90s`
+  (`HOLD_DURATION_MS`) on every new booking (and refreshes it if an
+  expired Stripe session is replaced with a fresh one for the same
+  booking).
+- Built `services/bookingScheduler.js` — a periodic sweep (`setInterval`,
+  every 5s), started once from `server.js` after the DB connects:
+  - `sendPendingReminders()`: finds `pending` bookings older than 30s
+    with no reminder sent yet, retrieves the live Stripe Checkout Session
+    URL, and emails it via the new `sendPaymentReminder()` template
+    (`config/email.js`).
+  - `releaseExpiredBookings()`: finds `pending` bookings past their
+    `expiresAt`, and inside a MongoDB transaction decrements each held
+    `Event.ticketTypes[i].quantityBooked` back down and marks the
+    booking `"expired"`.
+- Chose a DB-timestamp-based sweep over per-booking `setTimeout` calls
+  specifically because timestamps survive server restarts (see [Key
+  Technical Decisions](#9-key-technical-decisions)).
+- `confirmBooking()` now explicitly rejects (`410 Gone`) confirming a
+  booking whose status is already `"expired"`, to correctly handle the
+  edge case of a late Stripe payment succeeding just after the scheduler
+  already released the tickets.
+
 ---
 
 ## 12. Roadmap — Remaining Work
@@ -894,3 +1028,6 @@ are marked as complete; this section lists what's **left**.
 | 2026-07-15 | Frontend Stage 2 built: full Venue + Event management UI (organizer dashboard), including ticket types and banner upload | Feature List, Implementation Log, Roadmap |
 | 2026-07-15 | Implemented public event storefront and event detail pages; split organizer event management route to `/manage/events` | Architecture, API Endpoints (7.5), Feature List, Implementation Log, Roadmap |
 | **2026-07-15** | **Week 2 Day 4-5: Cart, Booking & Checkout — full implementation** | **Tech Stack (§2), Architecture (§3.1, §3.2, §3.3), Database Schema (§5.6, §5.7), API Endpoints (§7.6–§7.11), Feature List (§8), Key Technical Decisions (§9), Environment & Setup (§10.2–§10.7), Implementation Log (§11), Roadmap (§12)** |
+| 2026-07-16 | Documented the checkout/confirmation idempotency (3 layers) that had been implemented but not yet written up | API Endpoints (§7.7.1), Feature List, Implementation Log |
+| 2026-07-16 | Added booking auto-release (90s) + payment reminder email (30s) via a background scheduler; new `Booking.expiresAt`/`reminderSentAt` fields and `"expired"` status | Database Schema (§5.6), API Endpoints (§7.7.2), Feature List, Key Technical Decisions, Implementation Log |
+| 2026-07-16 | Bug fix: idempotency lookup in `createCheckoutSession` now also filters `status: "pending"` (not just `paymentStatus`), so an already-expired booking's stale Stripe session can no longer be mistaken for an active one | API Endpoints (§7.7.2), Implementation Log |

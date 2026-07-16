@@ -8,6 +8,10 @@ const { sendBookingConfirmation } = require("../config/email");
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
+// How long a pending booking holds its tickets before the scheduler
+// releases them back to inventory. See services/bookingScheduler.js.
+const HOLD_DURATION_MS = 90 * 1000; // 90 seconds (1:30)
+
 const generateConfirmationCode = () => {
   const randomPart = crypto.randomBytes(3).toString("hex").toUpperCase();
   return `BK-${Date.now().toString(36).toUpperCase()}-${randomPart}`;
@@ -79,9 +83,18 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
   // Check if there's ALREADY a pending booking for this buyer + event.
   // If yes, and the Stripe session is still valid, return the same session
   // instead of creating a new one — prevents double charges.
+  //
+  // IMPORTANT: must filter by BOTH status AND paymentStatus. A booking
+  // that the scheduler already released (status: "expired") still has
+  // paymentStatus: "pending" (payment never happened) — without the
+  // status filter here too, an expired booking's stale Stripe session
+  // would incorrectly be treated as "still active" and handed back to
+  // the buyer, even though its tickets were already returned to
+  // inventory.
   const existingPendingBooking = await Booking.findOne({
     eventId,
     buyerEmail: normalizedEmail,
+    status: "pending",
     paymentStatus: "pending",
   });
 
@@ -138,6 +151,11 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
         });
 
         existingPendingBooking.stripeSessionId = newSession.id;
+        // Fresh Stripe session = fresh hold window. Also reset the
+        // reminder flag so the buyer gets a new reminder if they stall
+        // again on this new session.
+        existingPendingBooking.expiresAt = new Date(Date.now() + HOLD_DURATION_MS);
+        existingPendingBooking.reminderSentAt = null;
         await existingPendingBooking.save();
 
         return {
@@ -259,6 +277,9 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           status: "pending",
           paymentStatus: "pending",
           confirmationCode,
+          // This is the hold window the new scheduler enforces:
+          // 30s -> reminder email, 90s -> release tickets.
+          expiresAt: new Date(Date.now() + HOLD_DURATION_MS),
         },
       ],
       { session: mongoSession },
@@ -331,6 +352,18 @@ const confirmBooking = async (stripeSessionId) => {
     return booking;
   }
   // ─── END IDEMPOTENCY CHECK ──────────────────────────────────────────
+
+  // If the scheduler already released this booking's tickets (expired),
+  // it can no longer be confirmed — the buyer needs to start a fresh
+  // checkout. This can happen if Stripe payment succeeds a moment after
+  // our 90s window already fired.
+  if (booking.status === "expired") {
+    const error = new Error(
+      "This booking has expired and its tickets were released. Please start a new checkout.",
+    );
+    error.statusCode = 410; // Gone
+    throw error;
+  }
 
   // Verify payment status with Stripe — ensure payment actually happened
   const session = await stripe.checkout.sessions.retrieve(stripeSessionId);
@@ -539,4 +572,5 @@ module.exports = {
   handleStripeWebhook,
   getBooking,
   getEventBookings,
+  HOLD_DURATION_MS,
 };

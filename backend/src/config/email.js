@@ -75,4 +75,53 @@ const sendBookingConfirmation = async (booking, event, qrCodeUrl) => {
   return transporter.sendMail(mailOptions);
 };
 
-module.exports = { sendBookingConfirmation };
+/**
+ * Sent by the booking scheduler (see services/bookingScheduler.js) when a
+ * pending booking's payment hasn't been completed 30 seconds after
+ * checkout started. Links directly to the Stripe-hosted payment page
+ * (paymentUrl = the Stripe Checkout Session's `.url`) so the buyer can
+ * finish paying in one click, without needing to re-add items to a cart.
+ */
+const sendPaymentReminder = async (booking, event, paymentUrl) => {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || '"StagePass" <noreply@stagepass.com>',
+    to: booking.buyerEmail,
+    subject: `Complete your payment — ${event.name}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #192436;">Your tickets are waiting!</h1>
+        <p>Hi <strong>${booking.buyerName}</strong>,</p>
+        <p>
+          You started booking tickets for <strong>${event.name}</strong>, but
+          the payment hasn't been completed yet. We're holding your tickets
+          for a short while longer — click below to finish paying before
+          they're released back to other buyers.
+        </p>
+
+        <div style="background: #f7f2e7; padding: 20px; border-radius: 12px; margin: 20px 0;">
+          <h3 style="margin-top: 0; color: #192436;">Order Summary</h3>
+          <p><strong>Event:</strong> ${event.name}</p>
+          <p><strong>Total:</strong> Rs. ${booking.totalAmount}</p>
+        </div>
+
+        <div style="text-align: center; margin: 28px 0;">
+          <a
+            href="${paymentUrl}"
+            style="background: #c99a3c; color: #1e1a0c; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;"
+          >
+            Complete Payment
+          </a>
+        </div>
+
+        <p style="color: #8a8070; font-size: 13px; margin-top: 30px;">
+          If you've already paid, please disregard this email. This is an
+          automated reminder from StagePass — please do not reply.
+        </p>
+      </div>
+    `,
+  };
+
+  return transporter.sendMail(mailOptions);
+};
+
+module.exports = { sendBookingConfirmation, sendPaymentReminder };

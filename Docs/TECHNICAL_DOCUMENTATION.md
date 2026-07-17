@@ -647,11 +647,39 @@ local disk storage). The `bannerImageUrl` field on an `Event` stores the
 Cloudinary-hosted `secure_url` directly — the frontend loads images straight
 from Cloudinary's CDN, not from this backend.
 
-### 7.11 Planned / Not Yet Built
+### 7.11 Calendar — `/api/o/:orgSlug/bookings/:bookingId/calendar.ics`
+
+| Method | Endpoint | Auth required | Notes |
+|---|---|---|---|
+| GET | `/api/o/:orgSlug/bookings/:bookingId/calendar.ics` | **No** (public) | Generates an iCalendar `.ics` file for the booking's event. Buyers can download and open it in Google Calendar, Outlook, or Apple Calendar to automatically add the event. Includes event name, date/time, venue address, and 1-hour reminder alarm. |
+
+**Implementation:** `backend/src/controllers/calendar.controller.js` generates
+the `.ics` file on-the-fly with proper iCalendar format. No external API or
+database storage needed — it's a simple text file download.
+
+**Security note:** This endpoint is public (no authentication) because ticket
+buyers don't have accounts. The `bookingId` alone doesn't expose sensitive
+data — the endpoint only returns a calendar file for confirmed bookings.
+The `resolveTenant` middleware ensures the booking belongs to the correct
+organization.
+
+### 7.12 Public Endpoints — `/api/events`
+
+Public endpoints for the buyer dashboard (Home page). No authentication required.
+
+| Method | Endpoint | Auth required | Notes |
+|---|---|---|---|
+| GET | `/api/events` | No | Lists all upcoming events across all organizations, sorted by date. Populates venue and org info. |
+| GET | `/api/organizations/public` | No | Lists all organizations for filter dropdowns. |
+
+**Implementation:** `backend/src/controllers/public.controller.js` with routes in `backend/src/routes/public.routes.js`. These endpoints power the public buyer dashboard at `/`.
+
+### 7.13 Planned / Not Yet Built
 
 - Team invite endpoints (invite member by email, assign role)
 - Org settings update endpoint (name, slug, logo)
-- Analytics/dashboard endpoints (per-org bookings, revenue, tickets sold)
+- Buyer profile page (view past bookings)
+- Socket.io live sales ticker (stretch goal)
 
 ---
 
@@ -1248,3 +1276,4 @@ are marked as complete; this section lists what's **left**.
 | 2026-07-16 | Bug fix: idempotency lookup in `createCheckoutSession` now also filters `status: "pending"` (not just `paymentStatus`), so an already-expired booking's stale Stripe session can no longer be mistaken for an active one | API Endpoints (§7.7.2), Implementation Log |
 | **2026-07-17** | **Bug fix: Stripe Checkout Session now manually expired in sync with the 90s DB hold window (previously only the DB side expired, letting buyers still pay on the old Stripe page after release); added `checkout.session.expired` webhook handling as a result** | **API Endpoints (§7.7.2, §7.9), Key Technical Decisions (§9), Implementation Log** |
 | **2026-07-17** | **Week 3 Day 3-5: Dynamic permissions system, team invites with dual flow (admin password + staff email magic link), email invitation system, AcceptInvite page, permission-based authorization replacing role checks, organizer analytics dashboard with Recharts** | **Database Schema (§5.3), Authentication & Authorization (§6.3, §6.4), API Endpoints (§7.4–§7.6, §7.11), Feature List (§8), Implementation Log (§11), Roadmap (§12)** |
+| **2026-07-17** | **Email polish: upgraded confirmation email with StagePass branding, Add to Calendar button (.ics download), Google Maps venue link, itemized order summary, support contact, cancellation policy. Created calendar controller + routes for .ics file generation. Created public buyer dashboard (Home page) with search/filters. Enhanced cart page with event banner and better layout.** | **API Endpoints (§7.11), Feature List (§8), Implementation Log (§11)** |

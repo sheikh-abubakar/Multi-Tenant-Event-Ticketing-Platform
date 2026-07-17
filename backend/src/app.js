@@ -13,6 +13,8 @@ const bookingController = require("./controllers/booking.controller");
 const orgSettingsRoutes = require("./routes/orgSettings.routes");
 const teamRoutes = require("./routes/team.routes");
 const analyticsRoutes = require("./routes/analytics.routes");
+const calendarRoutes = require("./routes/calendar.routes");
+const publicRoutes = require("./routes/public.routes");
 
 const app = express();
 
@@ -63,4 +65,6 @@ app.use("/api/o/:orgSlug/cart", cartRoutes);
 app.use("/api/o/:orgSlug/settings", orgSettingsRoutes);
 app.use("/api/o/:orgSlug/team", teamRoutes);
 app.use("/api/o/:orgSlug/analytics", analyticsRoutes);
+app.use("/api/o/:orgSlug", calendarRoutes);
+app.use("/api", publicRoutes);
 module.exports = app;

@@ -22,6 +22,7 @@ function App() {
   return (
     <Layout>
       <Routes>
+        {/* Public buyer dashboard — shows all events across all orgs */}
         <Route path="/" element={<Home />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />

@@ -80,9 +80,10 @@ const CartPage = () => {
   if (!event) return null;
 
   const items = cart?.items || [];
+  const eventDate = new Date(event.dateTime);
 
   return (
-    <div style={{ maxWidth: 740, margin: "0 auto" }}>
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
       <p style={{ marginBottom: 16 }}>
         <Link to={`/o/${orgSlug}/events/${eventId}`}>&larr; Back to event</Link>
         <span style={{ marginLeft: 16 }}>
@@ -90,13 +91,33 @@ const CartPage = () => {
         </span>
       </p>
 
-      <div style={styles.topBar}>
-        <div>
+      {/* Event Info Card */}
+      <div className="card" style={{ marginBottom: 20, padding: 0, overflow: "hidden" }}>
+        {event.bannerImageUrl && (
+          <div
+            style={{
+              width: "100%",
+              height: 200,
+              backgroundImage: `url(${event.bannerImageUrl})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          />
+        )}
+        <div style={{ padding: "20px 24px" }}>
           <p style={styles.kicker}>Your Cart</p>
-          <h1 style={{ color: "var(--paper)", margin: "4px 0 0" }}>{event.name}</h1>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <span className="badge">{items.length} item{items.length !== 1 ? "s" : ""}</span>
+          <h1 style={{ color: "var(--paper)", margin: "4px 0 12px", fontSize: 28 }}>{event.name}</h1>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14, color: "var(--muted)" }}>
+            <span>📅 {eventDate.toLocaleDateString("en-US", {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}</span>
+            <span>📍 {event.venueId?.name || "TBA"}{event.venueId?.city ? `, ${event.venueId.city}` : ""}</span>
+          </div>
         </div>
       </div>
 
@@ -119,14 +140,14 @@ const CartPage = () => {
               return (
                 <div key={item.ticketTypeIndex} className="card" style={styles.itemCard}>
                   <div style={styles.itemInfo}>
-                    <h4 style={{ margin: "0 0 4px", color: "var(--text)" }}>
+                    <h4 style={{ margin: "0 0 4px", color: "var(--text)", fontSize: 16 }}>
                       {item.ticketTypeName}
                     </h4>
                     <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
-                      Rs. {Number(item.unitPrice || 0)} each
+                      Rs. {Number(item.unitPrice || 0)} per ticket
                     </p>
                     <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
-                      {remaining} remaining
+                      {remaining > 0 ? `${remaining} tickets available` : "Sold out"}
                     </p>
                   </div>
 
@@ -148,7 +169,12 @@ const CartPage = () => {
                         +
                       </button>
                     </div>
-                    <p style={styles.itemTotal}>Rs. {Number(item.unitPrice || 0) * Number(item.quantity || 0)}</p>
+                    <div style={{ textAlign: "right", minWidth: 90 }}>
+                      <p style={styles.itemTotal}>Rs. {Number(item.unitPrice || 0) * Number(item.quantity || 0)}</p>
+                      <p style={{ fontSize: 11, color: "var(--muted)", margin: 0 }}>
+                        {item.quantity} x Rs. {Number(item.unitPrice || 0)}
+                      </p>
+                    </div>
                     <button
                       style={styles.removeBtn}
                       onClick={() => handleRemoveItem(item.ticketTypeIndex)}
@@ -164,8 +190,12 @@ const CartPage = () => {
 
           <div className="card" style={{ marginTop: 16, ...styles.summaryCard }}>
             <div style={styles.summaryRow}>
-              <span>Subtotal ({items.reduce((s, i) => s + Number(i.quantity || 0), 0)} tickets)</span>
-              <span style={{ fontWeight: 700 }}>Rs. {cartTotal}</span>
+              <div>
+                <span style={{ fontSize: 16, color: "var(--text)" }}>
+                  Subtotal ({items.reduce((s, i) => s + Number(i.quantity || 0), 0)} tickets)
+                </span>
+              </div>
+              <span style={{ fontWeight: 700, fontSize: 20, color: "var(--paper)" }}>Rs. {cartTotal}</span>
             </div>
             <button
               style={styles.checkoutBtn}

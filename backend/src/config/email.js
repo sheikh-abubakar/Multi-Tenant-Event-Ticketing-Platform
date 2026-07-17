@@ -10,64 +10,175 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const sendBookingConfirmation = async (booking, event, qrCodeUrl) => {
+// Helper: format date for Google Calendar (YYYYMMDDTHHMMSSZ)
+const formatDateForGoogle = (date) => {
+  const d = new Date(date);
+  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+};
+
+const sendBookingConfirmation = async (booking, event, qrCodeUrl, organizationId) => {
+  const venue = event.venueId || {};
+  const venueName = venue.name || "TBA";
+  const venueAddress = [venue.address, venue.city].filter(Boolean).join(", ") || "Address TBA";
+  const eventDate = new Date(event.dateTime);
+  const formattedDate = eventDate.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  // Google Maps link
+  const mapsQuery = encodeURIComponent(`${venueName} ${venueAddress}`);
+  const mapsLink = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
+
+  // Google Calendar "Quick Add" link — opens Google Calendar with pre-filled event
+  const eventStart = formatDateForGoogle(event.dateTime);
+  const eventEnd = formatDateForGoogle(new Date(new Date(event.dateTime).getTime() + 3 * 60 * 60 * 1000));
+  const location = encodeURIComponent(`${venueName}, ${venueAddress}`);
+  const details = encodeURIComponent(
+    [
+      `Confirmation Code: ${booking.confirmationCode}`,
+      `Buyer: ${booking.buyerName}`,
+      `Total Paid: Rs. ${booking.totalAmount}`,
+      ``,
+      `Tickets:`,
+      ...booking.items.map((item) => `  - ${item.ticketTypeName} x${item.quantity} (Rs. ${item.lineTotal})`),
+      ``,
+      `View your booking: ${process.env.FRONTEND_URL || "http://localhost:5173"}/o/${organizationId}/bookings/${booking._id}/confirmation`,
+    ].join("\n")
+  );
+
+  const googleCalendarLink = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.name)}&dates=${eventStart}/${eventEnd}&location=${location}&details=${details}`;
+
+  // Order summary rows
+  const ticketsRows = booking.items
+    .map(
+      (item) => `
+      <tr style="border-bottom: 1px solid #e0d6c5;">
+        <td style="padding: 10px; font-size: 14px; color: #1e2030;">${item.ticketTypeName}</td>
+        <td style="padding: 10px; text-align: center; font-size: 14px; color: #1e2030;">${item.quantity}</td>
+        <td style="padding: 10px; text-align: right; font-size: 14px; color: #1e2030;">Rs. ${item.lineTotal}</td>
+      </tr>
+    `,
+    )
+    .join("");
+
   const mailOptions = {
     from: process.env.EMAIL_FROM || '"StagePass" <noreply@stagepass.com>',
     to: booking.buyerEmail,
     subject: `Booking Confirmed — ${event.name}`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #192436;">Booking Confirmed!</h1>
-        <p>Hi <strong>${booking.buyerName}</strong>,</p>
-        <p>Your booking for <strong>${event.name}</strong> has been confirmed.</p>
-
-        <div style="background: #f7f2e7; padding: 20px; border-radius: 12px; margin: 20px 0;">
-          <h3 style="margin-top: 0; color: #192436;">Booking Details</h3>
-          <p><strong>Confirmation Code:</strong> ${booking.confirmationCode}</p>
-          <p><strong>Event:</strong> ${event.name}</p>
-          <p><strong>Date:</strong> ${new Date(event.dateTime).toLocaleString()}</p>
-          <p><strong>Total Paid:</strong> Rs. ${booking.totalAmount}</p>
-          <p><strong>Status:</strong> ${booking.status}</p>
+      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #1e2030;">
+        <!-- Header -->
+        <div style="background: #192436; padding: 28px 32px; border-radius: 12px 12px 0 0; text-align: center;">
+          <h1 style="color: #c99a3c; margin: 0; font-size: 28px; letter-spacing: 0.04em;">StagePass</h1>
+          <p style="color: #f7f2e7; margin: 6px 0 0; font-size: 14px;">Booking Confirmation</p>
         </div>
 
-        <h3>Your Tickets</h3>
-        <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
-          <thead>
-            <tr style="background: #192436; color: #f7f2e7;">
-              <th style="padding: 10px; text-align: left;">Ticket Type</th>
-              <th style="padding: 10px; text-align: center;">Qty</th>
-              <th style="padding: 10px; text-align: right;">Price</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${booking.items
-              .map(
-                (item) => `
-              <tr style="border-bottom: 1px solid #e0d6c5;">
-                <td style="padding: 10px;">${item.ticketTypeName}</td>
-                <td style="padding: 10px; text-align: center;">${item.quantity}</td>
-                <td style="padding: 10px; text-align: right;">Rs. ${item.lineTotal}</td>
-              </tr>
-            `,
-              )
-              .join("")}
-          </tbody>
-        </table>
+        <!-- Body -->
+        <div style="background: #fffdf8; padding: 28px 32px; border: 1px solid #e8e0d0; border-top: none; border-radius: 0 0 12px 12px;">
+          <p style="font-size: 16px; margin: 0 0 12px;">Hi <strong>${booking.buyerName}</strong>,</p>
+          <p style="font-size: 15px; margin: 0 0 20px; color: #3d3848;">
+            Your booking for <strong>${event.name}</strong> has been confirmed. Here are your ticket details.
+          </p>
 
-        ${
-          qrCodeUrl
-            ? `
-          <div style="text-align: center; margin: 25px 0;">
-            <p><strong>Your QR Code — Show this at the event entrance:</strong></p>
-            <img src="${qrCodeUrl}" alt="QR Code" style="max-width: 200px; border: 2px solid #192436; border-radius: 8px;" />
+          <!-- Confirmation code banner -->
+          <div style="background: #f7f2e7; border-left: 4px solid #c99a3c; padding: 14px 18px; border-radius: 6px; margin-bottom: 20px;">
+            <p style="margin: 0; font-size: 13px; color: #6b6054; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;">Confirmation Code</p>
+            <p style="margin: 4px 0 0; font-size: 22px; font-weight: 700; color: #192436; letter-spacing: 0.04em;">${booking.confirmationCode}</p>
           </div>
-        `
-            : ""
-        }
 
-        <p style="color: #8a8070; font-size: 13px; margin-top: 30px;">
-          This is an automated confirmation from StagePass. Please do not reply to this email.
-        </p>
+          <!-- Event details card -->
+          <div style="background: #ffffff; border: 1px solid #e8e0d0; border-radius: 10px; padding: 18px 20px; margin-bottom: 20px;">
+            <h3 style="margin: 0 0 12px; font-size: 18px; color: #192436;">Event Details</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <tr>
+                <td style="padding: 6px 0; color: #6b6054; width: 110px; vertical-align: top;"><strong>Event</strong></td>
+                <td style="padding: 6px 0; color: #1e2030;">${event.name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #6b6054; vertical-align: top;"><strong>Date & Time</strong></td>
+                <td style="padding: 6px 0; color: #1e2030;">${formattedDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #6b6054; vertical-align: top;"><strong>Venue</strong></td>
+                <td style="padding: 6px 0; color: #1e2030;">
+                  ${venueName}<br/>
+                  <span style="color: #6b6054; font-size: 13px;">${venueAddress}</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #6b6054; vertical-align: top;"><strong>Total Paid</strong></td>
+                <td style="padding: 6px 0; color: #1e2030; font-weight: 600;">Rs. ${booking.totalAmount}</td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Tickets table -->
+          <h3 style="font-size: 16px; color: #192436; margin: 0 0 10px;">Your Tickets</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+              <tr style="background: #192436; color: #f7f2e7;">
+                <th style="padding: 10px; text-align: left; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;">Ticket Type</th>
+                <th style="padding: 10px; text-align: center; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;">Qty</th>
+                <th style="padding: 10px; text-align: right; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;">Line Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ticketsRows}
+            </tbody>
+          </table>
+
+          <!-- QR Code -->
+          ${
+            qrCodeUrl
+              ? `
+            <div style="text-align: center; margin: 24px 0;">
+              <p style="font-size: 14px; color: #3d3848; margin: 0 0 10px;"><strong>Show this QR code at the event entrance:</strong></p>
+              <img src="${qrCodeUrl}" alt="QR Code" style="max-width: 180px; border: 2px solid #192436; border-radius: 8px; padding: 6px; background: #fff;" />
+            </div>
+          `
+              : ""
+          }
+
+          <!-- Action buttons -->
+          <div style="text-align: center; margin: 24px 0;">
+            <a
+              href="${googleCalendarLink}"
+              target="_blank"
+              rel="noopener noreferrer"
+              style="display: inline-block; background: #c99a3c; color: #1e1a0c; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 0 6px; font-size: 14px;"
+            >
+              📅 Add to Calendar
+            </a>
+            <a
+              href="${mapsLink}"
+              target="_blank"
+              rel="noopener noreferrer"
+              style="display: inline-block; background: #192436; color: #f7f2e7; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 0 6px; font-size: 14px;"
+            >
+              📍 View on Map
+            </a>
+          </div>
+
+          <!-- Support -->
+          <div style="background: #f7f2e7; padding: 14px 18px; border-radius: 8px; margin-top: 20px; font-size: 13px; color: #6b6054;">
+            <strong>Need help?</strong> Contact us at <a href="mailto:support@stagepass.com" style="color: #c99a3c; text-decoration: none;">support@stagepass.com</a>
+            or reply to this email. Please have your confirmation code <strong>${booking.confirmationCode}</strong> ready.
+          </div>
+
+          <!-- Cancellation policy -->
+          <p style="font-size: 12px; color: #8a8070; margin-top: 18px; line-height: 1.5;">
+            <strong>Cancellation & Refund Policy:</strong> Tickets can be refunded up to 7 days before the event. After that, no refunds will be issued. To request a refund, contact support with your confirmation code.
+          </p>
+
+          <p style="font-size: 12px; color: #8a8070; margin-top: 14px;">
+            This is an automated confirmation from StagePass. Please do not reply to this email.
+          </p>
+        </div>
       </div>
     `,
   };

@@ -397,9 +397,9 @@ const confirmBooking = async (stripeSessionId) => {
 
   // Send confirmation email in background (don't block if email fails)
   try {
-    const event = await Event.findById(booking.eventId);
+    const event = await Event.findById(booking.eventId).populate("venueId", "name address city");
     if (event) {
-      await sendBookingConfirmation(booking, event, qrCodeUrl);
+      await sendBookingConfirmation(booking, event, qrCodeUrl, booking.organizationId);
     }
   } catch (emailError) {
     console.error("Confirmation email failed:", emailError.message);

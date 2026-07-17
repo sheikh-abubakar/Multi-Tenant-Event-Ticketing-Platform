@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import apiClient from "../api/client";
+import { hasPermission } from "../utils/permissionsClient";
 
 /**
  * This page mirrors the backend pipeline on the frontend: it calls
@@ -77,11 +78,17 @@ const Dashboard = () => {
             Preview what buyers see — no login needed
           </p>
         </Link>
-        {(context.membership.role === "owner" || context.membership.role === "admin") && (
+        <Link to={`/o/${orgSlug}/manage/team`} className="card" style={cardLinkStyle}>
+          <h3 style={{ margin: 0 }}>Team</h3>
+          <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
+            Invite members, manage roles & access
+          </p>
+        </Link>
+        {hasPermission("settings:read", context.membership.permissions) && (
           <Link to={`/o/${orgSlug}/manage/settings`} className="card" style={cardLinkStyle}>
             <h3 style={{ margin: 0 }}>Settings</h3>
             <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
-              Organization name, slug, logo &amp; delete
+              Organization name, slug, logo & delete
             </p>
           </Link>
         )}

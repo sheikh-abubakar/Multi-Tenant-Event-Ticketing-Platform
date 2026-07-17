@@ -14,6 +14,8 @@ import CartPage from "./pages/CartPage";
 import CheckoutPage from "./pages/CheckoutPage";
 import BookingConfirmation from "./pages/BookingConfirmation";
 import OrgSettings from "./pages/OrgSettings";
+import TeamManagement from "./pages/TeamManagement";
+import AcceptInvite from "./pages/AcceptInvite";
 
 function App() {
   return (
@@ -62,9 +64,19 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/o/:orgSlug/manage/team"
+          element={
+            <ProtectedRoute>
+              <TeamManagement />
+            </ProtectedRoute>
+          }
+        />
         {/* Public buyer-facing routes */}
         <Route path="/o/:orgSlug/events" element={<PublicEvents />} />
         <Route path="/o/:orgSlug/events/:eventId" element={<EventDetail />} />
+        {/* Public invite acceptance (no auth) */}
+        <Route path="/o/:orgSlug/accept-invite" element={<AcceptInvite />} />
         {/* Cart & Checkout */}
         <Route path="/o/:orgSlug/cart/:eventId" element={<CartPage />} />
         <Route path="/o/:orgSlug/checkout/:eventId" element={<CheckoutPage />} />

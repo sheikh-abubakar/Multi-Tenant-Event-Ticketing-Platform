@@ -124,4 +124,53 @@ const sendPaymentReminder = async (booking, event, paymentUrl) => {
   return transporter.sendMail(mailOptions);
 };
 
-module.exports = { sendBookingConfirmation, sendPaymentReminder };
+/**
+ * Sent when a staff member is invited to an organization.
+ * Contains a magic link they click to accept and set their password.
+ */
+const sendTeamInvitation = async ({ email, orgName, orgSlug, inviterName, invitationToken }) => {
+  const acceptUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/o/${orgSlug}/accept-invite?token=${invitationToken}`;
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || '"StagePass" <noreply@stagepass.com>',
+    to: email,
+    subject: `You've been invited to join ${orgName} on StagePass`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 540px; margin: 0 auto;">
+        <h1 style="color: #192436;">You're invited! 🎫</h1>
+        <p>
+          <strong>${inviterName}</strong> has invited you to join
+          <strong>${orgName}</strong> on StagePass as a team member.
+        </p>
+
+        <div style="background: #f7f2e7; padding: 20px; border-radius: 12px; margin: 20px 0;">
+          <p style="margin: 0; color: #1e2030;">
+            Click the button below to accept the invitation and set up your
+            login credentials.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin: 28px 0;">
+          <a
+            href="${acceptUrl}"
+            style="background: #c99a3c; color: #1e1a0c; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block; font-size: 16px;"
+          >
+            Accept Invitation
+          </a>
+        </div>
+
+        <p style="color: #8a8070; font-size: 13px;">
+          This invitation link will expire after 7 days. If you weren't
+          expecting this invitation, you can safely ignore this email.
+        </p>
+        <p style="color: #8a8070; font-size: 13px; margin-top: 20px;">
+          — StagePass Team
+        </p>
+      </div>
+    `,
+  };
+
+  return transporter.sendMail(mailOptions);
+};
+
+module.exports = { sendBookingConfirmation, sendPaymentReminder, sendTeamInvitation };

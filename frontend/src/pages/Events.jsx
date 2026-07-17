@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import apiClient from "../api/client";
+import { hasPermission } from "../utils/permissionsClient";
 
 const emptyForm = { name: "", description: "", dateTime: "", venueId: "" };
 const emptyTicketType = { name: "", price: "", quantityTotal: "" };
@@ -9,7 +10,7 @@ const Events = () => {
   const { orgSlug } = useParams();
   const [events, setEvents] = useState([]);
   const [venues, setVenues] = useState([]);
-  const [role, setRole] = useState(null);
+  const [permissions, setPermissions] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [ticketTypes, setTicketTypes] = useState([{ ...emptyTicketType }]);
   const [bannerFile, setBannerFile] = useState(null);
@@ -28,7 +29,7 @@ const Events = () => {
       ]);
       setEvents(eventsRes.data.events);
       setVenues(venuesRes.data.venues);
-      setRole(whoamiRes.data.membership.role);
+      setPermissions(whoamiRes.data.membership.permissions || []);
     } catch (err) {
       setError(err.response?.data?.message || "Could not load events.");
     } finally {
@@ -41,7 +42,7 @@ const Events = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgSlug]);
 
-  const canDelete = role === "owner" || role === "admin";
+  const canDelete = hasPermission("events:delete", permissions);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });

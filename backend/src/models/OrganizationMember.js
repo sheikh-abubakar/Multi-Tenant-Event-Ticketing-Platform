@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { getDefaultPermissions } = require("../utils/permissions");
 
 /**
  * OrganizationMember = the link between a User and an Organization,
@@ -10,6 +11,10 @@ const mongoose = require("mongoose");
  * - When we check "is this user allowed to do X in this org?", we
  *   look up the OrganizationMember for (userId, organizationId),
  *   never a role field on the User model itself.
+ *
+ * Permissions are now DYNAMIC — each member has their own permission
+ * array. By default, the permissions are set based on the role, but
+ * an Owner can customize them at any time.
  */
 const organizationMemberSchema = new mongoose.Schema(
   {
@@ -27,6 +32,27 @@ const organizationMemberSchema = new mongoose.Schema(
       type: String,
       enum: ["owner", "admin", "staff"],
       required: true,
+    },
+    permissions: {
+      type: [String],
+      default: function () {
+        return getDefaultPermissions(this.role);
+      },
+    },
+    invitationToken: {
+      type: String,
+      default: null,
+    },
+    invitationSentAt: {
+      type: Date,
+      default: null,
+    },
+    passwordSet: {
+      type: Boolean,
+      default: function () {
+        // Owners and admins set their password at invite time
+        return this.role === "owner" || this.role === "admin";
+      },
     },
   },
   { timestamps: true }

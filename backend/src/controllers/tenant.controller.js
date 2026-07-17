@@ -36,6 +36,7 @@ const whoAmI = (req, res) => {
     },
     membership: {
       role: req.membership.role,
+      permissions: req.membership.permissions || [],
     },
   });
 };

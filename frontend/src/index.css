@@ -220,6 +220,40 @@ input, select, textarea {
   letter-spacing: 0.05em;
 }
 
+/* ── Role badges (team management) ─────────────────────────────── */
+.role-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.role-owner {
+  background: rgba(201, 154, 60, 0.18);
+  color: #a07d28;
+}
+.role-admin {
+  background: rgba(124, 111, 196, 0.18);
+  color: var(--violet);
+}
+.role-staff {
+  background: rgba(63, 125, 92, 0.15);
+  color: var(--success);
+}
+
+/* ── Success banner ────────────────────────────────────────────── */
+.success-banner {
+  background: #e6f4ed;
+  color: var(--success);
+  border: 1px solid #a8d4bc;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;

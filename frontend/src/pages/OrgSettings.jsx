@@ -210,7 +210,7 @@ const OrgSettings = () => {
         <input
           value={confirmText}
           onChange={(e) => setConfirmText(e.target.value)}
-          className="w-full max-w-xs rounded-md border border-black/10 bg-white px-3 py-2 text-sm mb-3"
+          className="w-full max-w-xs rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-ink-text mb-3"
           placeholder={org?.slug}
         />
 

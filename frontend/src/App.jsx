@@ -16,6 +16,7 @@ import BookingConfirmation from "./pages/BookingConfirmation";
 import OrgSettings from "./pages/OrgSettings";
 import TeamManagement from "./pages/TeamManagement";
 import AcceptInvite from "./pages/AcceptInvite";
+import Analytics from "./pages/Analytics";
 
 function App() {
   return (
@@ -69,6 +70,14 @@ function App() {
           element={
             <ProtectedRoute>
               <TeamManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/o/:orgSlug/manage/analytics"
+          element={
+            <ProtectedRoute>
+              <Analytics />
             </ProtectedRoute>
           }
         />

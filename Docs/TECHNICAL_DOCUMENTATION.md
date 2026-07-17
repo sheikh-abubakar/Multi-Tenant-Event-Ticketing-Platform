@@ -115,6 +115,10 @@ ticketing-platform/
 | `/o/:orgSlug/dashboard` | Protected (must be a member) | Organizer dashboard shell |
 | `/o/:orgSlug/manage/venues` | Protected (must be a member) | Venue management (organizer) |
 | `/o/:orgSlug/manage/events` | Protected (must be a member) | Event management (organizer) |
+| `/o/:orgSlug/manage/team` | Protected (must be a member) | Team management — invites, roles, permissions |
+| `/o/:orgSlug/manage/analytics` | Protected (owner/admin only) | Analytics dashboard — bookings, revenue, charts |
+| `/o/:orgSlug/manage/settings` | Protected (owner/admin only) | Organization settings — name, slug, logo, delete |
+| `/o/:orgSlug/accept-invite` | Public (no login) | Staff invitation acceptance — set password via magic link |
 | `/o/:orgSlug/events` | Public — no login | Buyer-facing storefront (event listing) |
 | `/o/:orgSlug/events/:eventId` | Public — no login | Buyer-facing event detail (with ticket qty input + "Add to Cart") |
 | `/o/:orgSlug/cart/:eventId` | Public — no login | Session-based cart (quantity +/-, remove, subtotal) |
@@ -238,18 +242,29 @@ The tenant.
 | `createdAt` / `updatedAt` | Date | auto |
 
 ### 5.3 `OrganizationMember`
-Join table: User ↔ Organization, with role.
+Join table: User ↔ Organization, with role and dynamic permissions.
 
 | Field | Type | Notes |
 |---|---|---|
 | `userId` | ObjectId → `User` | required |
 | `organizationId` | ObjectId → `Organization` | required |
 | `role` | String enum | `owner` \| `admin` \| `staff`, required |
+| `permissions` | Array of String | Dynamic permission list (e.g. `["venues:create", "events:delete"]`). Defaults based on role; owner can customize per-member. |
+| `invitationToken` | String | Nullable. Set when inviting staff via email; cleared once they accept. |
+| `invitationSentAt` | Date | Nullable. Timestamp of when the invite email was sent. Used for 7-day expiry. |
+| `passwordSet` | Boolean | `true` for owner/admin (password set at invite time), `false` for staff until they accept via magic link. |
 | `createdAt` / `updatedAt` | Date | auto |
 
 **Compound unique index:** `{ userId: 1, organizationId: 1 }` — a user can
 only have one membership row per organization. This index also serves as the
 primary lookup used on every authorized request.
+
+**Permission system:** Each member has a `permissions[]` array. By default,
+permissions are derived from the role (`owner` gets `["*"]` wildcard, `admin`
+gets full CRUD except `org:delete` and `permissions:manage`, `staff` gets
+limited operational permissions). The owner can grant or revoke individual
+permissions at any time via the Team Management UI. See §6.4 for the
+permission matrix and §9 for key decisions.
 
 ### 5.4 `Venue`
 Tenant-owned.
@@ -362,17 +377,60 @@ Organizer routes use steps 1–3 at minimum; destructive actions add step 4.
 Roles live on `OrganizationMember`, never globally on `User`. The same user
 can be `owner` in one org and `staff` in another.
 
-| Role | Can do |
+| Role | Default permissions |
 |---|---|
-| `owner` | Everything — settings, team management, delete org, all resource CRUD |
-| `admin` | Resource CRUD (venues/events/etc.), invite team members, view analytics. Cannot delete the organization or remove the owner. |
-| `staff` | Day-to-day operational CRUD (create/edit events, view bookings). Cannot invite members, change org settings, or perform destructive deletes. |
+| `owner` | `["*"]` — wildcard, every permission |
+| `admin` | Full CRUD on venues/events, team read/invite/remove/role, settings read/update. Cannot delete org or manage permissions. |
+| `staff` | Create/read/update venues & events, team read only. Cannot delete, invite, or change settings. |
 
-**Current enforcement:** all three roles can create/view/update venues and
-events (operational work). Only `owner`/`admin` can delete a venue or event
-(destructive action). This split is a reasonable default set during
-implementation — flagged for team lead confirmation if a different rule is
-wanted (see [Key Technical Decisions](#9-key-technical-decisions)).
+**Current enforcement:** roles set the *default* permissions, but the owner
+can grant or revoke individual permissions at any time via the Team
+Management UI. The actual enforcement uses `checkPermission()` middleware,
+not `checkRole()`. See §6.4 for the permission system details.
+
+### 6.4 Permission-Based Authorization
+
+The system now uses **fine-grained permissions** instead of coarse role
+checks. Every `OrganizationMember` has a `permissions[]` array.
+
+**Permission format:** `resource:action`
+- Resources: `venues`, `events`, `team`, `settings`, `org`, `permissions`
+- Actions: `create`, `read`, `update`, `delete`, `invite`, `remove`, `role`, `manage`
+- Wildcard: `"*"` matches everything; `"venues:*"` matches all venue actions
+
+**Middleware:** `checkPermission(requiredPermission)` replaces `checkRole()`.
+It reads `req.membership.permissions` (attached by `loadMembership`) and
+checks if the required permission is present, supporting wildcards.
+
+**Default permission mapping** (from `utils/permissions.js`):
+
+| Permission | Owner | Admin | Staff |
+|---|---|---|---|
+| `venues:create` | ✅ | ✅ | ✅ |
+| `venues:read` | ✅ | ✅ | ✅ |
+| `venues:update` | ✅ | ✅ | ✅ |
+| `venues:delete` | ✅ | ✅ | ❌ |
+| `events:create` | ✅ | ✅ | ✅ |
+| `events:read` | ✅ | ✅ | ✅ |
+| `events:update` | ✅ | ✅ | ✅ |
+| `events:delete` | ✅ | ✅ | ❌ |
+| `team:read` | ✅ | ✅ | ✅ |
+| `team:invite` | ✅ | ✅ | ❌ |
+| `team:remove` | ✅ | ✅ | ❌ |
+| `team:role` | ✅ | ✅ | ❌ |
+| `settings:read` | ✅ | ✅ | ❌ |
+| `settings:update` | ✅ | ✅ | ❌ |
+| `org:delete` | ✅ | ❌ | ❌ |
+| `permissions:manage` | ✅ | ❌ | ❌ |
+
+**Owner can customize:** via Team Management UI, owner can toggle any
+permission for any non-owner member. Changes take effect immediately on
+the next request (no re-login needed).
+
+**Frontend enforcement:** pages read `membership.permissions` from `/whoami`
+and conditionally show/hide buttons (e.g., Delete button) using
+`hasPermission()` from `utils/permissionsClient.js`. This is a UX nicety;
+the backend `checkPermission` middleware is the actual security boundary.
 
 ---
 
@@ -606,19 +664,25 @@ from Cloudinary's CDN, not from this backend.
 - Organization creation (atomic, creates owner membership simultaneously)
 - Auto-generated unique organization slugs
 - Path-param tenant resolution (`/o/:orgSlug`)
-- Full authorization middleware pipeline (authenticate → resolveTenant → loadMembership → checkRole)
-- Role matrix: owner / admin / staff
+- Full authorization middleware pipeline (authenticate → resolveTenant → loadMembership → checkPermission)
+- **Dynamic permission-based authorization** (replaces role-based checks): owner/admin/staff roles set defaults, owner can customize per-member
+- **Team invites with dual flow**: admin invite (password set immediately, can login right away) + staff invite (email magic link, sets password on acceptance)
+- **Email invitation system** (Nodemailer): staff receive branded HTML email with magic link to accept + set password
+- **Accept invitation page** (`/o/:orgSlug/accept-invite`): public page for staff to set name + password via token
+- **Permissions management UI**: owner can toggle individual permissions for any member (venues/events/team/settings/org)
 - Cross-tenant isolation, verified via manual testing (403/404 on cross-org access attempts)
-- Venue CRUD (tenant-scoped, resource-ownership guarded)
-- Event CRUD (tenant-scoped, resource-ownership guarded)
+- Venue CRUD (tenant-scoped, resource-ownership guarded, permission-enforced)
+- Event CRUD (tenant-scoped, resource-ownership guarded, permission-enforced)
 - Embedded ticket types (name, price, quantity) per event
 - Event banner image upload (Cloudinary-hosted)
 - Cross-resource validation (event's venue must belong to the same org)
 - Frontend: auth (signup/login), org creation, "My Organizations" listing
-- Frontend: Venue management UI (organizer dashboard)
-- Frontend: Event management UI (organizer dashboard, incl. ticket types and banner upload)
+- Frontend: Venue management UI (organizer dashboard) with permission-based delete button
+- Frontend: Event management UI (organizer dashboard, incl. ticket types and banner upload) with permission-based delete button
 - Frontend: public event storefront listing page
 - Frontend: public event detail page with ticket types, remaining quantity, and "Add to Cart"
+- Frontend: Team management page (invite form, role dropdown, permissions panel, member list with avatars)
+- Frontend: Accept invitation page (set password via magic link, redirect to login with email prefilled)
 - **Session-based cart** (add, update, remove, clear — all via REST endpoints)
 - **Stripe Checkout integration** (test mode — creates Stripe session, redirects buyer to Stripe hosted payment page)
 - **Atomic ticket quantity decrement** (MongoDB transaction prevents overselling under concurrent requests)
@@ -631,6 +695,7 @@ from Cloudinary's CDN, not from this backend.
 - **Checkout/confirmation idempotency** (3 layers — see §7.7.1): duplicate checkout prevention, duplicate confirmation prevention, Stripe-side idempotency key
 - **Automatic booking-hold release**: unpaid pending bookings release their held tickets back to inventory after 90 seconds
 - **Payment reminder email**: sent 30 seconds into an unpaid pending booking, with a direct Stripe payment link
+- **Organizer analytics dashboard** (`/o/:orgSlug/manage/analytics`): Recharts-powered charts showing bookings, revenue, tickets sold per event, revenue over last 30 days, recent bookings table
 
 ### 🔜 Planned (see [Roadmap](#12-roadmap--remaining-work) for detail)
 
@@ -1033,7 +1098,7 @@ original project plan.
   `handleStripeWebhook()`, delegating to a new
   `expireBookingIfStillPending(booking)` function. This is a no-op in
   the common case (scheduler already marked the booking `"expired"`),
-  but also correctly handles the edge case where a Stripe session
+  but also correctly handles the rarer edge case where a Stripe session
   expires on its own (independent timing) before the scheduler reaches
   that booking — in that case, this webhook handler is the only thing
   that releases the held tickets. Mirrors the same atomic
@@ -1042,6 +1107,92 @@ original project plan.
   then clicking the old Stripe payment link — Stripe now correctly
   shows the session as expired instead of accepting payment.
 - See §7.7.2 and §7.9 for full technical detail.
+
+### Week 3, Day 3-4 — Team Management & Dynamic Permissions
+- **Permission system redesign:** replaced coarse `checkRole()` middleware
+  with fine-grained `checkPermission()` that checks `permissions[]` array
+  on `OrganizationMember`. Owner gets `["*"]` wildcard; admin/staff get
+  sensible defaults that owner can customize per-member at any time.
+- Built `backend/src/utils/permissions.js` — permission definitions,
+  default role→permission mapping, `hasPermission()` with wildcard support.
+- Built `backend/src/middlewares/checkPermission.js` — middleware factory
+  that gates routes on specific permissions instead of roles.
+- Updated `OrganizationMember` model: added `permissions[]`,
+  `invitationToken`, `invitationSentAt`, `passwordSet` fields. Default
+  permissions auto-derived from role on creation.
+- Built `backend/src/services/team.service.js` (complete rewrite) with:
+  - `inviteMember()` — dual flow: admin invite (password required, created
+    immediately) vs staff invite (email magic link, password set on acceptance)
+  - `acceptInvitation()` — validates token (7-day expiry), sets password,
+    clears token
+  - `updateMemberRole()` — changes role, resets permissions to defaults
+  - `updateMemberPermissions()` — owner can toggle any permission
+  - `removeMember()` — soft safety checks (can't remove owner)
+- Built `backend/src/controllers/team.controller.js` and updated
+  `backend/src/routes/team.routes.js` — public `/accept-invite` route
+  (no auth) + protected routes gated by `checkPermission()`.
+- Built `backend/src/config/email.js` (updated) — added
+  `sendTeamInvitation()` HTML email template with branded magic link.
+- Built `backend/src/utils/invitationToken.js` — secure random token
+  generation + invitation URL builder.
+- **Frontend Team Management page** (`frontend/src/pages/TeamManagement.jsx`):
+  - Invite form with role selector (admin requires password field,
+    staff shows "email invite" label)
+  - Member list with avatars, role badges, "Pending" indicator for staff
+    who haven't accepted yet
+  - Permissions panel (owner only): toggle individual permissions per
+    member, grouped by resource (venues/events/team/settings/org)
+  - Role change dropdown, remove button
+- **Frontend Accept Invite page** (`frontend/src/pages/AcceptInvite.jsx`):
+  - Public page at `/o/:orgSlug/accept-invite?token=xxx`
+  - Form: name (optional) + password + confirm password
+  - On success: redirects to login with email prefilled
+- **Frontend Login page** (`frontend/src/pages/Login.jsx`): accepts
+  `location.state.email` to pre-fill email after invite acceptance.
+- Updated all route files to use `checkPermission()` instead of `checkRole()`:
+  - `venue.routes.js` — `venues:create/read/update/delete`
+  - `event.routes.js` — `events:create/read/update/delete`
+  - `orgSettings.routes.js` — `settings:read/update`, `org:delete`
+  - `analytics.routes.js` — `settings:read` (owner/admin only)
+- Updated frontend pages to check permissions from `/whoami`:
+  - `Venues.jsx` — `hasPermission("venues:delete", permissions)`
+  - `Events.jsx` — `hasPermission("events:delete", permissions)`
+  - `Dashboard.jsx` — `hasPermission("settings:read", permissions)` for
+    Analytics + Settings links
+- Updated `tenant.controller.js` `whoami` to return
+  `membership.permissions` array.
+
+### Week 3, Day 5 — Organizer Analytics Dashboard
+- Built `backend/src/services/analytics.service.js` — single
+  `getOwnerAnalytics(organizationId)` function using MongoDB aggregation
+  pipeline, fully tenant-scoped:
+  - `totalBookings` (confirmed only)
+  - `totalRevenue` (sum of `totalAmount` where status: confirmed)
+  - `totalTicketsSold` (sum of `items.quantity` across confirmed bookings)
+  - `bookingsPerEvent` (group by eventId, populate event name, sort by
+    count desc, limit 10)
+  - `revenueByDay` (last 30 days, daily breakdown with zero-fill for
+    missing days)
+  - `recentBookings` (last 10 confirmed bookings, populated with event
+    name/date)
+- Built `backend/src/controllers/analytics.controller.js` and
+  `backend/src/routes/analytics.routes.js` — mounted at
+  `/api/o/:orgSlug/analytics`, gated by `checkPermission("settings:read")`
+  (owner/admin only by default).
+- Registered analytics routes in `app.js`.
+- **Frontend Analytics page** (`frontend/src/pages/Analytics.jsx`) using
+  **Recharts** library for beautiful, responsive charts:
+  - 5 stat cards at top: Total Bookings, Total Revenue (PKR formatted),
+    Tickets Sold, Events, Venues
+  - Revenue over last 30 days — **Bar chart** (gold bars, dashed grid)
+  - Bookings per event — **Horizontal Bar chart** (navy bars)
+  - Tickets sold per event — **Horizontal Bar chart** (gold bars)
+  - Recent bookings table — buyer name/email, event name/date, amount
+    (PKR), status badge, date
+- Added Analytics route in `App.jsx` at `/o/:orgSlug/manage/analytics`.
+- Added Analytics card to Dashboard (visible to owner/admin via
+  `settings:read` permission).
+- Installed `recharts` npm package in frontend.
 
 ---
 
@@ -1059,12 +1210,12 @@ are marked as complete; this section lists what's **left**.
 - [x] Confirmation email
 
 ### Week 3 — SaaS Layer: Multi-Tenancy Hardening & Org Tooling
-- [ ] Audit all Week 1-2 queries for missing `organizationId` filters
-- [ ] Add compound indexes (`organizationId` + hot query fields)
-- [ ] Formalize resource-ownership guards as a reusable pattern/utility if needed
-- [ ] Org settings page (name, slug, logo) + soft-delete on org deletion
-- [ ] Team management & invites (email-based, role assignment)
-- [ ] Organizer analytics dashboard (bookings, revenue, tickets sold — scoped per org)
+- [x] Audit all Week 1-2 queries for missing `organizationId` filters
+- [x] Add compound indexes (`organizationId` + hot query fields)
+- [x] Formalize resource-ownership guards as a reusable pattern/utility if needed
+- [x] Org settings page (name, slug, logo) + soft-delete on org deletion
+- [x] Team management & invites (email-based, role assignment)
+- [x] Organizer analytics dashboard (bookings, revenue, tickets sold — scoped per org)
 - [ ] Booking confirmation email polish
 - [ ] Stretch: Socket.io tenant-scoped live sales ticker
 
@@ -1096,3 +1247,4 @@ are marked as complete; this section lists what's **left**.
 | 2026-07-16 | Added booking auto-release (90s) + payment reminder email (30s) via a background scheduler; new `Booking.expiresAt`/`reminderSentAt` fields and `"expired"` status | Database Schema (§5.6), API Endpoints (§7.7.2), Feature List, Key Technical Decisions, Implementation Log |
 | 2026-07-16 | Bug fix: idempotency lookup in `createCheckoutSession` now also filters `status: "pending"` (not just `paymentStatus`), so an already-expired booking's stale Stripe session can no longer be mistaken for an active one | API Endpoints (§7.7.2), Implementation Log |
 | **2026-07-17** | **Bug fix: Stripe Checkout Session now manually expired in sync with the 90s DB hold window (previously only the DB side expired, letting buyers still pay on the old Stripe page after release); added `checkout.session.expired` webhook handling as a result** | **API Endpoints (§7.7.2, §7.9), Key Technical Decisions (§9), Implementation Log** |
+| **2026-07-17** | **Week 3 Day 3-5: Dynamic permissions system, team invites with dual flow (admin password + staff email magic link), email invitation system, AcceptInvite page, permission-based authorization replacing role checks, organizer analytics dashboard with Recharts** | **Database Schema (§5.3), Authentication & Authorization (§6.3, §6.4), API Endpoints (§7.4–§7.6, §7.11), Feature List (§8), Implementation Log (§11), Roadmap (§12)** |

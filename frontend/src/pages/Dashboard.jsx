@@ -85,6 +85,14 @@ const Dashboard = () => {
           </p>
         </Link>
         {hasPermission("settings:read", context.membership.permissions) && (
+          <Link to={`/o/${orgSlug}/manage/analytics`} className="card" style={cardLinkStyle}>
+            <h3 style={{ margin: 0 }}>Analytics</h3>
+            <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
+              Bookings, revenue & performance
+            </p>
+          </Link>
+        )}
+        {hasPermission("settings:read", context.membership.permissions) && (
           <Link to={`/o/${orgSlug}/manage/settings`} className="card" style={cardLinkStyle}>
             <h3 style={{ margin: 0 }}>Settings</h3>
             <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>

@@ -409,8 +409,94 @@ const confirmBooking = async (stripeSessionId) => {
 };
 
 /**
- * Handle Stripe webhook event: checkout.session.completed
- * IDEMPOTENT: Delegates to confirmBooking which already handles idempotency.
+ * Atomically releases a booking's held tickets and marks it "expired".
+ *
+ * This mirrors the exact same transaction pattern used by
+ * `services/bookingScheduler.js#releaseExpiredBookings` — it exists here
+ * as a second entry point into the *same* release logic, triggered by an
+ * incoming `checkout.session.expired` Stripe webhook event instead of the
+ * periodic 5s sweep.
+ *
+ * WHY THIS IS NEEDED: since our scheduler now calls
+ * `stripe.checkout.sessions.expire()` the moment it releases a booking
+ * (see bookingScheduler.js), Stripe fires a `checkout.session.expired`
+ * event back at us. This handler makes sure that event is never silently
+ * dropped — even though in the common case the scheduler has *already*
+ * marked the booking "expired" by the time this webhook arrives (so this
+ * is a no-op safety net), it also correctly handles the rarer case where
+ * Stripe's own 30-minute-minimum session naturally expires on its own
+ * (independent of our 90s hold) before our scheduler ever touches that
+ * booking — in that scenario, this is the ONLY thing that releases the
+ * held tickets.
+ *
+ * Safe to call for a booking that's already "expired" or "confirmed" —
+ * it simply does nothing in those cases.
+ */
+const expireBookingIfStillPending = async (booking) => {
+  if (booking.status !== "pending") {
+    // Already handled — either the scheduler beat this webhook to it
+    // ("expired"), or the payment actually succeeded just before Stripe
+    // considered the session expired ("confirmed"). Nothing to do.
+    console.log(
+      `[Webhook] Booking ${booking._id} is already "${booking.status}" — ` +
+      `checkout.session.expired is a no-op here`,
+    );
+    return;
+  }
+
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+
+    const event = await Event.findOne({
+      _id: booking.eventId,
+      organizationId: booking.organizationId,
+    }).session(session);
+
+    if (event) {
+      for (const item of booking.items) {
+        const ticketType = event.ticketTypes[item.ticketTypeIndex];
+        if (!ticketType) continue;
+
+        ticketType.quantityBooked = Math.max(
+          0,
+          Number(ticketType.quantityBooked || 0) - item.quantity,
+        );
+      }
+      event.markModified("ticketTypes");
+      await event.save({ session });
+    }
+
+    booking.status = "expired";
+    await booking.save({ session });
+
+    await session.commitTransaction();
+    console.log(
+      `[Webhook] Released booking ${booking._id} via checkout.session.expired`,
+    );
+  } catch (err) {
+    await session.abortTransaction();
+    console.error(
+      `[Webhook] Failed to release booking ${booking._id} from webhook:`,
+      err.message,
+    );
+  } finally {
+    session.endSession();
+  }
+};
+
+/**
+ * Handle Stripe webhook events.
+ *
+ * `checkout.session.completed` — IDEMPOTENT: delegates to confirmBooking,
+ * which already handles idempotency.
+ *
+ * `checkout.session.expired` — fired by Stripe whenever a session's
+ * lifetime ends, including when we manually call
+ * `stripe.checkout.sessions.expire()` from the booking scheduler. Handled
+ * here as a safety net so ticket release is never dependent on a single
+ * code path (see `expireBookingIfStillPending` above for the full
+ * reasoning).
  */
 const handleStripeWebhook = async (event) => {
   if (event.type === "checkout.session.completed") {
@@ -420,6 +506,21 @@ const handleStripeWebhook = async (event) => {
     if (bookingId) {
       await confirmBooking(session.id);
     }
+  }
+
+  if (event.type === "checkout.session.expired") {
+    const session = event.data.object;
+
+    const booking = await Booking.findOne({ stripeSessionId: session.id });
+
+    if (!booking) {
+      console.warn(
+        `[Webhook] checkout.session.expired received for unknown session ${session.id}`,
+      );
+      return { received: true };
+    }
+
+    await expireBookingIfStillPending(booking);
   }
 
   return { received: true };

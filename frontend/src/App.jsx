@@ -13,6 +13,7 @@ import EventDetail from "./pages/EventDetail";
 import CartPage from "./pages/CartPage";
 import CheckoutPage from "./pages/CheckoutPage";
 import BookingConfirmation from "./pages/BookingConfirmation";
+import OrgSettings from "./pages/OrgSettings";
 
 function App() {
   return (
@@ -50,6 +51,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Events />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/o/:orgSlug/manage/settings"
+          element={
+            <ProtectedRoute>
+              <OrgSettings />
             </ProtectedRoute>
           }
         />

@@ -1,7 +1,7 @@
 /**
  * These endpoints exist only to DEMONSTRATE the middleware pipeline
  * working correctly. Real event/venue/booking controllers (Week 2)
- * will follow the exact same pattern: read req.organizationId (and
+ * follow the exact same pattern: read req.organizationId (and
  * req.membership.role where relevant), scope every query by it.
  */
 
@@ -14,6 +14,7 @@ const getPublicInfo = (req, res) => {
       id: req.organization._id,
       name: req.organization.name,
       slug: req.organization.slug,
+      logoUrl: req.organization.logoUrl,
     },
   });
 };
@@ -39,14 +40,4 @@ const whoAmI = (req, res) => {
   });
 };
 
-// Role-restricted demo — only owner/admin can reach this.
-// A "staff" member (or a non-member entirely) gets blocked by
-// checkRole before this handler ever runs.
-const settingsPreview = (req, res) => {
-  res.json({
-    message: `Welcome ${req.membership.role} — you can view/edit org settings.`,
-    organization: req.organization.name,
-  });
-};
-
-module.exports = { getPublicInfo, whoAmI, settingsPreview };
+module.exports = { getPublicInfo, whoAmI };

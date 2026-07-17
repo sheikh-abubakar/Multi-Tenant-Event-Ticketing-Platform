@@ -27,6 +27,21 @@ const organizationSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // ─── Soft delete (team lead decision, Week 1) ────────────────────
+    // Organizations are never actually removed from MongoDB. Deleting
+    // just sets these two fields; resolveTenant (middleware) then
+    // treats any org with isDeleted: true as if it doesn't exist for
+    // every route in the app, while the document — and everything
+    // linked to it (events, bookings, etc.) — stays in the database.
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

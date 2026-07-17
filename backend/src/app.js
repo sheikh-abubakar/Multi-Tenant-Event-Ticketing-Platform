@@ -10,6 +10,7 @@ const bookingRoutes = require("./routes/booking.routes");
 const bookingConfirmRoutes = require("./routes/bookingConfirm.routes");
 const cartRoutes = require("./routes/cart.routes");
 const bookingController = require("./controllers/booking.controller");
+const orgSettingsRoutes = require("./routes/orgSettings.routes");
 
 const app = express();
 
@@ -57,5 +58,5 @@ app.use("/api/o/:orgSlug/events/:eventId/bookings", bookingRoutes);
 // Simpler path for confirmation — Stripe redirects here without eventId
 app.use("/api/o/:orgSlug/bookings", bookingConfirmRoutes);
 app.use("/api/o/:orgSlug/cart", cartRoutes);
-
+app.use("/api/o/:orgSlug/settings", orgSettingsRoutes);
 module.exports = app;

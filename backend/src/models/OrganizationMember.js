@@ -38,4 +38,9 @@ const organizationMemberSchema = new mongoose.Schema(
 // pipeline will query on every tenant-scoped request.
 organizationMemberSchema.index({ userId: 1, organizationId: 1 }, { unique: true });
 
+// Separate index on organizationId alone: needed for "list every
+// member of this org" (Week 3 — team management screen), which
+// queries by organizationId without necessarily knowing a userId.
+organizationMemberSchema.index({ organizationId: 1 });
+
 module.exports = mongoose.model("OrganizationMember", organizationMemberSchema);

@@ -33,8 +33,12 @@ const venueSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Every venue query in the app will filter by organizationId first —
-// this index makes those queries fast as data grows.
-venueSchema.index({ organizationId: 1 });
+// COMPOUND index, not just organizationId alone. Every venue list
+// query filters by organizationId AND sorts by createdAt (newest
+// first) — see venue.service.js listVenues(). A compound index lets
+// MongoDB satisfy both the filter and the sort from the same index,
+// instead of filtering with the index then sorting the results
+// separately in memory.
+venueSchema.index({ organizationId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Venue", venueSchema);

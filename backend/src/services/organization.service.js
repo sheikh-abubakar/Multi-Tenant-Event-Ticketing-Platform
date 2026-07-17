@@ -70,7 +70,7 @@ const listMyOrganizations = async (userId) => {
   const memberships = await OrganizationMember.find({ userId }).populate("organizationId");
 
   return memberships
-    .filter((m) => m.organizationId) // guard against a dangling reference
+    .filter((m) => m.organizationId && !m.organizationId.isDeleted) // skip dangling refs + soft-deleted orgs
     .map((m) => ({
       role: m.role,
       organization: {
@@ -82,4 +82,91 @@ const listMyOrganizations = async (userId) => {
     }));
 };
 
-module.exports = { createOrganization, listMyOrganizations };
+/**
+ * Returns the full org record for the settings page.
+ */
+const getOrganizationSettings = async (organizationId) => {
+  return Organization.findById(organizationId);
+};
+
+/**
+ * Updates name/slug/logoUrl. If slug is being changed, re-validates
+ * uniqueness (excluding this org's own current document) — same rule
+ * as at creation time, since the slug is what the public storefront
+ * URL is built from.
+ */
+const updateOrganizationSettings = async (organizationId, updates, logoUrl) => {
+  const safeUpdates = {};
+
+  if (updates.name !== undefined) {
+    if (!updates.name.trim()) {
+      const error = new Error("Organization name cannot be empty");
+      error.statusCode = 400;
+      throw error;
+    }
+    safeUpdates.name = updates.name.trim();
+  }
+
+  if (updates.slug !== undefined && updates.slug.trim()) {
+    const newSlug = slugify(updates.slug);
+    const clash = await Organization.findOne({
+      slug: newSlug,
+      _id: { $ne: organizationId },
+    });
+    if (clash) {
+      const error = new Error(`Slug "${newSlug}" is already taken`);
+      error.statusCode = 409;
+      throw error;
+    }
+    safeUpdates.slug = newSlug;
+  }
+
+  if (logoUrl) {
+    safeUpdates.logoUrl = logoUrl;
+  }
+
+  const organization = await Organization.findByIdAndUpdate(organizationId, safeUpdates, {
+    new: true,
+    runValidators: true,
+  });
+
+  if (!organization) {
+    const error = new Error("Organization not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return organization;
+};
+
+/**
+ * Soft delete — team lead decision (Week 1): never actually remove the
+ * MongoDB document. Just flip isDeleted + record deletedAt. From this
+ * point on, resolveTenant (middleware) will 404 on this org's slug for
+ * every route in the app, but the document — and everything still
+ * linked to it via organizationId (events, bookings, venues...) —
+ * stays in the database untouched.
+ */
+const softDeleteOrganization = async (organizationId) => {
+  const organization = await Organization.findByIdAndUpdate(
+    organizationId,
+    { isDeleted: true, deletedAt: new Date() },
+    { new: true },
+  );
+
+  if (!organization) {
+    const error = new Error("Organization not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return organization;
+};
+
+module.exports = {
+  createOrganization,
+  listMyOrganizations,
+  getOrganizationSettings,
+  updateOrganizationSettings,
+  softDeleteOrganization,
+};

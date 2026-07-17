@@ -8,7 +8,7 @@ const mongoose = require("mongoose");
  * (flat price + quantity only, per the requirements). Embedding
  * keeps this simple and avoids an unnecessary extra collection.
  */
-const   ticketTypeSchema = new mongoose.Schema({
+const ticketTypeSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
@@ -72,6 +72,10 @@ const eventSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-eventSchema.index({ organizationId: 1 });
+// COMPOUND index: every event list query filters by organizationId
+// AND sorts by dateTime ascending (soonest event first) — see
+// event.service.js listEvents(). Same reasoning as Venue's index:
+// one compound index serves both the filter and the sort together.
+eventSchema.index({ organizationId: 1, dateTime: 1 });
 
 module.exports = mongoose.model("Event", eventSchema);

@@ -18,6 +18,15 @@ const Organization = require("../models/Organization");
  * runs AFTER this one, only on routes that actually need it.
  * Public storefront routes (ticket buyers browsing events) will use
  * ONLY this middleware, with no membership check at all.
+ *
+ * SOFT DELETE ENFORCEMENT: this is the single place in the whole app
+ * that decides whether a "deleted" organization is visible. Deleting
+ * an org (see organization.service.js softDeleteOrganization) never
+ * removes its MongoDB document — it just sets isDeleted: true. By
+ * excluding isDeleted orgs right here, every single tenant-scoped
+ * route in the app (venues, events, bookings, settings, everything)
+ * automatically treats a deleted org as 404 Not Found, with zero
+ * changes needed in any other file.
  */
 const resolveTenant = async (req, res, next) => {
   try {
@@ -27,7 +36,7 @@ const resolveTenant = async (req, res, next) => {
       return res.status(400).json({ message: "Organization slug is missing from the URL" });
     }
 
-    const organization = await Organization.findOne({ slug: orgSlug });
+    const organization = await Organization.findOne({ slug: orgSlug, isDeleted: false });
 
     if (!organization) {
       return res.status(404).json({ message: `No organization found for slug "${orgSlug}"` });

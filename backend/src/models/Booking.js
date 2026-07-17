@@ -122,4 +122,12 @@ const bookingSchema = new mongoose.Schema(
 bookingSchema.index({ organizationId: 1, eventId: 1 });
 bookingSchema.index({ buyerEmail: 1, createdAt: -1 });
 
+// COMPOUND indexes for the booking scheduler's two periodic sweeps
+// (services/bookingScheduler.js), which run every 5 seconds against
+// this collection — worth indexing precisely since they run so often:
+//   releaseExpiredBookings(): { status, paymentStatus, expiresAt <= now }
+//   sendPendingReminders():   { status, paymentStatus, reminderSentAt: null, createdAt <= cutoff }
+bookingSchema.index({ status: 1, paymentStatus: 1, expiresAt: 1 });
+bookingSchema.index({ status: 1, paymentStatus: 1, reminderSentAt: 1, createdAt: 1 });
+
 module.exports = mongoose.model("Booking", bookingSchema);

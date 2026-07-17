@@ -1,4 +1,31 @@
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap');
+@import "tailwindcss";
+
+/*
+  Tailwind v4 theme mapping — this makes our existing "ticket stub"
+  design tokens available as Tailwind utility classes, e.g.:
+    bg-ink, bg-paper, text-gold, border-gold, font-display, font-mono ...
+  New components (Week 3 onward) should reach for these utilities
+  first. Existing hand-written classes below (.card, .btn, .field,
+  etc.) are UNCHANGED and keep working exactly as before — nothing
+  that already uses them breaks.
+*/
+@theme {
+  --color-ink: #14162b;
+  --color-ink-soft: #1c1f3d;
+  --color-paper: #f7f2e7;
+  --color-gold: #c99a3c;
+  --color-gold-soft: #e3c377;
+  --color-violet: #7c6fc4;
+  --color-ink-text: #1e2030;
+  --color-muted: #6b6f8a;
+  --color-danger: #c0503e;
+  --color-success: #3f7d5c;
+
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
 
 /*
   Design language: "ticket stub" — this is an event ticketing platform,

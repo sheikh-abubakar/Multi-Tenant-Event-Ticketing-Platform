@@ -521,6 +521,31 @@ narrow window after the scheduler has already expired a booking,
 returns a `410 Gone` rather than silently "confirming" a booking whose
 tickets have already been given back to inventory.
 
+**Bug found (2026-07-17): DB and Stripe expiry were out of sync.** Marking
+a booking `"expired"` in MongoDB after 90 seconds did nothing to the Stripe
+Checkout Session itself — Stripe's own session lifetime is independent, and
+critically, **Stripe does not allow setting a custom `expires_at` below 30
+minutes**, so there was no way to give a Stripe session a native 90-second
+expiry to match our hold window. The practical effect: a buyer who kept the
+old Stripe-hosted payment page open (or revisited the link) past 90 seconds
+could still complete payment and be charged, even though the tickets had
+already been released back to inventory for someone else to buy.
+
+**Fix:** `releaseExpiredBookings()` in `bookingScheduler.js` now calls
+`stripe.checkout.sessions.expire(stripeSessionId)` immediately after the DB
+transaction that marks a booking `"expired"` commits (deliberately *outside*
+the transaction — it's an external API call and should never hold a DB
+transaction open). This makes the Stripe-hosted payment page itself start
+showing "This session has expired" at the same 90-second mark, blocking
+payment entirely instead of just becoming inconsistent with our DB. The call
+is wrapped in try/catch since Stripe rejects expiring a session that's
+already `paid` or already `expired` (both harmless, expected races) — the
+sweep must never crash because of this.
+
+This introduces a second consequence, handled as its own fix below: Stripe
+now fires a `checkout.session.expired` webhook event every time this
+happens, which needed a handler (see §7.9).
+
 **Bug found during manual testing (fixed same day):** the Level 1
 duplicate-checkout check (§7.7.1) originally filtered only by
 `paymentStatus: "pending"`, not `status`. Since the scheduler sets
@@ -548,7 +573,14 @@ frontend then calls these API endpoints:
 
 | Method | Endpoint | Middleware | Body | Notes |
 |---|---|---|---|---|
-| POST | `/api/webhooks/stripe` | `express.raw({ type: "application/json" })` | Stripe event payload | **Must be registered BEFORE `express.json()` in app.js.** Constructs the event using Stripe's signature verification (`STRIPE_WEBHOOK_SECRET`). On `checkout.session.completed`, it calls `confirmBooking()` as a fallback in case the browser redirect fails. |
+| POST | `/api/webhooks/stripe` | `express.raw({ type: "application/json" })` | Stripe event payload | **Must be registered BEFORE `express.json()` in app.js.** Constructs the event using Stripe's signature verification (`STRIPE_WEBHOOK_SECRET`). Handles two event types (see below). |
+
+`handleStripeWebhook()` in `booking.service.js` now handles:
+
+| Event type | Handler | Notes |
+|---|---|---|
+| `checkout.session.completed` | Calls `confirmBooking(session.id)` | Fallback in case the browser redirect fails. Idempotent (§7.7.1 Level 2). |
+| `checkout.session.expired` | Calls `expireBookingIfStillPending(booking)` | **New (2026-07-17).** Fires because the booking scheduler now manually expires the Stripe session at the 90s mark (§7.7.2). In the common case the booking is already `"expired"` by the time this arrives, so it's a no-op. It also correctly handles the rarer edge case where Stripe's own session naturally times out on its own before the scheduler gets to it — in that case this webhook is the only thing that releases the held tickets. The release logic mirrors `bookingScheduler.js#releaseExpiredBookings` (same atomic transaction pattern), just triggered by the webhook instead of the periodic sweep. |
 
 ### 7.10 Image Hosting
 
@@ -638,6 +670,8 @@ directly.
 | **Idempotency handled at 3 layers (app-level checkout, app-level confirmation, Stripe idempotency key)** rather than just one | Each layer guards a different failure mode: double-checkout-submission, double-confirmation-call (browser redirect race with webhook), and true concurrent-request races. Belt-and-suspenders is warranted here because a failure means real double charges. | Implemented |
 | **Booking hold expiry via periodic DB sweep (`setInterval`, 5s), not per-booking `setTimeout`** | A stored `expiresAt` timestamp survives server restarts; an in-memory timer does not. For a single-instance dev/staging deployment this is sufficient; a multi-instance production deployment would need a distributed lock or a dedicated job queue (e.g. BullMQ) so the sweep doesn't run redundantly on every instance — noted as a future hardening item. | Implemented (single-instance) |
 | **90s hold / 30s reminder are fixed constants (`HOLD_DURATION_MS`, `REMINDER_AFTER_MS`), not env-configurable** | Kept simple for now; trivial to promote to `.env` values later if the organizer needs this tunable per event. | Implemented |
+| **Scheduler manually calls `stripe.checkout.sessions.expire()` instead of relying on Stripe's native `expires_at`** | Stripe enforces a 30-minute minimum on `expires_at` — a 90s custom expiry can't be set at session-creation time. Manually expiring the session when our own hold window passes is the only way to keep Stripe's payment page in sync with our DB's `"expired"` status. | Implemented |
+| **`checkout.session.expired` webhook handler duplicates (rather than reuses) the release logic already in `bookingScheduler.js`** | The two entry points (periodic sweep vs. webhook event) have different triggers and different data available (a `Booking` document vs. a Stripe session payload), so a thin duplicate was simpler and safer than forcing a shared abstraction across two different callers. Both are individually idempotent (no-op if the booking isn't `"pending"`), so having both active is safe. | Implemented |
 
 ---
 
@@ -979,6 +1013,36 @@ original project plan.
   edge case of a late Stripe payment succeeding just after the scheduler
   already released the tickets.
 
+### Week 2, Day 4-5 (continued) — Stripe/DB Expiry Sync Fix
+- **Bug reported by team lead (manual testing):** after a booking's 90s
+  hold expired in the DB, the buyer's Stripe-hosted payment page stayed
+  live and payable — Stripe's own session lifetime is independent of our
+  DB and can't be set below 30 minutes via `expires_at`. This meant a
+  buyer could still pay (and be charged) for tickets already released
+  back to inventory.
+- **Fix, part 1 (`services/bookingScheduler.js`):** added
+  `expireStripeSession(booking)`, called right after the DB transaction
+  in `releaseExpiredBookings()` commits. Calls
+  `stripe.checkout.sessions.expire(stripeSessionId)` so the Stripe
+  payment page itself shows "session expired" at the same 90s mark.
+  Wrapped in try/catch — Stripe rejects expiring an already-paid or
+  already-expired session, which is expected and harmless.
+- **Fix, part 2 (`services/booking.service.js`):** manually expiring a
+  Stripe session causes Stripe to fire a `checkout.session.expired`
+  webhook event. Added a handler for this event type in
+  `handleStripeWebhook()`, delegating to a new
+  `expireBookingIfStillPending(booking)` function. This is a no-op in
+  the common case (scheduler already marked the booking `"expired"`),
+  but also correctly handles the edge case where a Stripe session
+  expires on its own (independent timing) before the scheduler reaches
+  that booking — in that case, this webhook handler is the only thing
+  that releases the held tickets. Mirrors the same atomic
+  transaction/release pattern as `releaseExpiredBookings()`.
+- Verified by manual testing: starting a checkout, waiting past 90s,
+  then clicking the old Stripe payment link — Stripe now correctly
+  shows the session as expired instead of accepting payment.
+- See §7.7.2 and §7.9 for full technical detail.
+
 ---
 
 ## 12. Roadmap — Remaining Work
@@ -1031,3 +1095,4 @@ are marked as complete; this section lists what's **left**.
 | 2026-07-16 | Documented the checkout/confirmation idempotency (3 layers) that had been implemented but not yet written up | API Endpoints (§7.7.1), Feature List, Implementation Log |
 | 2026-07-16 | Added booking auto-release (90s) + payment reminder email (30s) via a background scheduler; new `Booking.expiresAt`/`reminderSentAt` fields and `"expired"` status | Database Schema (§5.6), API Endpoints (§7.7.2), Feature List, Key Technical Decisions, Implementation Log |
 | 2026-07-16 | Bug fix: idempotency lookup in `createCheckoutSession` now also filters `status: "pending"` (not just `paymentStatus`), so an already-expired booking's stale Stripe session can no longer be mistaken for an active one | API Endpoints (§7.7.2), Implementation Log |
+| **2026-07-17** | **Bug fix: Stripe Checkout Session now manually expired in sync with the 90s DB hold window (previously only the DB side expired, letting buyers still pay on the old Stripe page after release); added `checkout.session.expired` webhook handling as a result** | **API Endpoints (§7.7.2, §7.9), Key Technical Decisions (§9), Implementation Log** |

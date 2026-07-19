@@ -52,6 +52,11 @@
   --danger: #c0503e;
   --success: #3f7d5c;
   --radius: 10px;
+  /* Added: some newer components reference these — defining them here
+     keeps every var() reference in the app actually resolving to a
+     real value instead of silently falling back to nothing. */
+  --card: #1c1f3d;
+  --border: rgba(247, 242, 231, 0.15);
   --shadow: 0 8px 24px rgba(20, 22, 43, 0.12);
 
   --font-display: 'Bebas Neue', sans-serif;

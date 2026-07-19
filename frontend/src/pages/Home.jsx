@@ -1,39 +1,65 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import apiClient from "../api/client";
+import OrgCard from "../components/OrgCard";
 
 const Home = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // ─── "Your organizations" state (only relevant when logged in) ──────
+  const [myOrgs, setMyOrgs] = useState([]);
+  const [myOrgsLoading, setMyOrgsLoading] = useState(true);
+  const [slugInput, setSlugInput] = useState("");
+
+  // ─── "Browse events" state (relevant for everyone, no login needed) ─
   const [events, setEvents] = useState([]);
   const [orgs, setOrgs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [eventsLoading, setEventsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterOrg, setFilterOrg] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
 
   useEffect(() => {
+    if (!user) {
+      setMyOrgsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    apiClient
+      .get("/organizations/mine")
+      .then(({ data }) => {
+        if (!cancelled) setMyOrgs(data.organizations);
+      })
+      .finally(() => {
+        if (!cancelled) setMyOrgsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
     let cancelled = false;
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      // Fetch all public events (across all orgs) — no auth required
-      const eventsRes = await apiClient.get("/events");
-      const eventsData = eventsRes.data;
-
-      // Fetch all orgs for filter dropdown
-      const orgsRes = await apiClient.get("/organizations/public");
-      const orgsData = orgsRes.data;
-
-      if (!cancelled) {
-        setEvents(eventsData.events || []);
-        setOrgs(orgsData.organizations || []);
+    const load = async () => {
+      setEventsLoading(true);
+      try {
+        const [eventsRes, orgsRes] = await Promise.all([
+          apiClient.get("/events"),
+          apiClient.get("/organizations/public"),
+        ]);
+        if (!cancelled) {
+          setEvents(eventsRes.data.events || []);
+          setOrgs(orgsRes.data.organizations || []);
+        }
+      } catch (err) {
+        console.error("Failed to load events:", err);
+      } finally {
+        if (!cancelled) setEventsLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to load events:", err);
-    } finally {
-      if (!cancelled) setLoading(false);
-    }
-  };
+    };
 
     load();
     return () => {
@@ -41,9 +67,12 @@ const Home = () => {
     };
   }, []);
 
-  // Filter events
+  const goToOrgBySlug = (e) => {
+    e.preventDefault();
+    if (slugInput.trim()) navigate(`/o/${slugInput.trim()}/dashboard`);
+  };
+
   const filteredEvents = events.filter((event) => {
-    // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const matchesSearch =
@@ -54,12 +83,10 @@ const Home = () => {
       if (!matchesSearch) return false;
     }
 
-    // Organization filter
     if (filterOrg !== "all" && event.organizationId !== filterOrg) {
       return false;
     }
 
-    // Date filter
     if (filterDate !== "all") {
       const eventDate = new Date(event.dateTime);
       const now = new Date();
@@ -76,7 +103,7 @@ const Home = () => {
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 20px" }}>
-      {/* Hero Section */}
+      {/* ── Hero ─────────────────────────────────────────────────── */}
       <div style={{ textAlign: "center", marginBottom: 48 }}>
         <h1
           style={{
@@ -87,15 +114,103 @@ const Home = () => {
             fontFamily: "var(--font-display)",
           }}
         >
-          Discover Amazing Events
+          {user ? `Welcome back, ${user.name.split(" ")[0]}` : "Discover Amazing Events"}
         </h1>
         <p style={{ fontSize: 18, color: "var(--muted)", maxWidth: 600, margin: "0 auto" }}>
-          Browse and book tickets to the best events happening around you.
-          No account required — just pick an event and go!
+          {user
+            ? "Manage your organizations, or browse and book tickets below."
+            : "Browse and book tickets to the best events happening around you. No account required — just pick an event and go!"}
         </p>
+        {!user && (
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 24 }}>
+            <Link to="/signup" className="btn btn-primary">
+              Sign up
+            </Link>
+            <Link
+              to="/login"
+              className="btn btn-ghost"
+              style={{ color: "var(--paper)", borderColor: "rgba(247,242,231,0.35)" }}
+            >
+              Log in
+            </Link>
+          </div>
+        )}
       </div>
 
-      {/* Search & Filters */}
+      {/* ── "Your organizations" — only when logged in ─────────────── */}
+      {user && (
+        <div style={{ marginBottom: 48 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <h2 style={{ color: "var(--paper)", fontFamily: "var(--font-display)", fontSize: 28, margin: 0 }}>
+              Your organizations
+            </h2>
+            <Link to="/create-organization" className="btn btn-primary">
+              + New organization
+            </Link>
+          </div>
+
+          {myOrgsLoading && <p style={{ color: "var(--muted)" }}>Loading…</p>}
+
+          {!myOrgsLoading && myOrgs.length === 0 && (
+            <div className="card" style={{ marginBottom: 8 }}>
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                You're not part of any organization yet. Create one to start selling tickets, or
+                just browse events below as a buyer.
+              </p>
+            </div>
+          )}
+
+          {!myOrgsLoading && myOrgs.length > 0 && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                gap: 18,
+              }}
+            >
+              {myOrgs.map(({ organization, role }) => (
+                <OrgCard key={organization.id} organization={organization} role={role} />
+              ))}
+            </div>
+          )}
+
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ color: "var(--muted)", cursor: "pointer", fontSize: 13 }}>
+              Have a slug for an organization not showing above?
+            </summary>
+            <form onSubmit={goToOrgBySlug} style={{ marginTop: 10, display: "flex", gap: 8, maxWidth: 400 }}>
+              <input
+                placeholder="e.g. coke-studio-events"
+                value={slugInput}
+                onChange={(e) => setSlugInput(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: "9px 12px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--ink-soft)",
+                  color: "var(--paper)",
+                }}
+              />
+              <button
+                className="btn btn-ghost"
+                type="submit"
+                style={{ color: "var(--paper)", borderColor: "rgba(247,242,231,0.35)" }}
+              >
+                Go
+              </button>
+            </form>
+          </details>
+
+          <hr className="tear-line" style={{ marginTop: 40 }} />
+        </div>
+      )}
+
+      {/* ── Browse events — everyone sees this, no login required ──── */}
+      <h2 style={{ color: "var(--paper)", fontFamily: "var(--font-display)", fontSize: 28, marginBottom: 16 }}>
+        Browse events
+      </h2>
+
       <div
         style={{
           background: "var(--card)",
@@ -108,7 +223,7 @@ const Home = () => {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
           <input
             type="text"
-            placeholder="🔍 Search events, venues, cities..."
+            placeholder="Search events, venues, cities..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -159,11 +274,8 @@ const Home = () => {
         </div>
       </div>
 
-      {/* Events Grid */}
-      {loading ? (
-        <p style={{ textAlign: "center", color: "var(--muted)", padding: 40 }}>
-          Loading events...
-        </p>
+      {eventsLoading ? (
+        <p style={{ textAlign: "center", color: "var(--muted)", padding: 40 }}>Loading events...</p>
       ) : filteredEvents.length === 0 ? (
         <div style={{ textAlign: "center", padding: 60, color: "var(--muted)" }}>
           <p style={{ fontSize: 18, marginBottom: 8 }}>No events found</p>
@@ -208,7 +320,6 @@ const Home = () => {
                   e.currentTarget.style.boxShadow = "none";
                 }}
               >
-                {/* Event Banner */}
                 {event.bannerImageUrl && (
                   <div
                     style={{
@@ -221,7 +332,6 @@ const Home = () => {
                   />
                 )}
 
-                {/* Event Info */}
                 <div style={{ padding: 20 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 8 }}>
                     <h3
@@ -236,41 +346,19 @@ const Home = () => {
                       {event.name}
                     </h3>
                     {isPast && (
-                      <span
-                        className="badge"
-                        style={{
-                          background: "#fce8e6",
-                          color: "#c01e1e",
-                          marginLeft: 8,
-                        }}
-                      >
+                      <span className="badge" style={{ background: "#fce8e6", color: "#c01e1e", marginLeft: 8 }}>
                         Past
                       </span>
                     )}
                   </div>
 
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "var(--muted)",
-                      margin: "0 0 12px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    📍 {event.venueId?.name || "TBA"}
+                  <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 12px" }}>
+                    {event.venueId?.name || "TBA"}
                     {event.venueId?.city && `, ${event.venueId.city}`}
                   </p>
 
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "var(--muted)",
-                      margin: "0 0 16px",
-                    }}
-                  >
-                    📅 {eventDate.toLocaleDateString("en-US", {
+                  <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 16px" }}>
+                    {eventDate.toLocaleDateString("en-US", {
                       weekday: "short",
                       month: "short",
                       day: "numeric",
@@ -280,7 +368,6 @@ const Home = () => {
                     })}
                   </p>
 
-                  {/* Ticket Info */}
                   <div
                     style={{
                       display: "flex",
@@ -297,9 +384,7 @@ const Home = () => {
                         </p>
                       )}
                       <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>
-                        {remainingTickets > 0
-                          ? `${remainingTickets} tickets left`
-                          : "Sold out"}
+                        {remainingTickets > 0 ? `${remainingTickets} tickets left` : "Sold out"}
                       </p>
                     </div>
                     <span
@@ -312,7 +397,7 @@ const Home = () => {
                         fontWeight: 600,
                       }}
                     >
-                      View Details →
+                      View Details &rarr;
                     </span>
                   </div>
                 </div>

@@ -60,7 +60,7 @@ const Dashboard = () => {
       <p style={{ color: "var(--muted)", marginBottom: 32 }}>/o/{context.organization.slug}</p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-        <Link to={`/o/${orgSlug}/venues`} className="card" style={cardLinkStyle}>
+        <Link to={`/o/${orgSlug}/manage/venues`} className="card" style={cardLinkStyle}>
           <h3 style={{ margin: 0 }}>Venues</h3>
           <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
             Manage the places your events happen

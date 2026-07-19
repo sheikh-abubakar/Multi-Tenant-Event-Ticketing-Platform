@@ -43,7 +43,7 @@ function App() {
           }
         />
         <Route
-          path="/o/:orgSlug/venues"
+          path="/o/:orgSlug/manage/venues"
           element={
             <ProtectedRoute>
               <Venues />

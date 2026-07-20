@@ -17,6 +17,7 @@ import OrgSettings from "./pages/OrgSettings";
 import TeamManagement from "./pages/TeamManagement";
 import AcceptInvite from "./pages/AcceptInvite";
 import Analytics from "./pages/Analytics";
+import BuyerDashboard from "./pages/BuyerDashboard";
 
 function App() {
   return (
@@ -92,6 +93,15 @@ function App() {
         <Route path="/o/:orgSlug/checkout/:eventId" element={<CheckoutPage />} />
         {/* Booking confirmation */}
         <Route path="/o/:orgSlug/bookings/:bookingId/confirmation" element={<BookingConfirmation />} />
+        {/* Buyer Dashboard — wallet + my bookings + refund */}
+        <Route
+          path="/my/dashboard"
+          element={
+            <ProtectedRoute>
+              <BuyerDashboard />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </Layout>
   );

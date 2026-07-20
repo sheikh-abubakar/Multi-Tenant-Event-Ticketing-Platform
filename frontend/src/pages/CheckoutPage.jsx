@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 import apiClient from "../api/client";
 
 const CheckoutPage = () => {
   const { orgSlug, eventId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [cart, setCart] = useState(null);
   const [event, setEvent] = useState(null);
+  const [walletBalance, setWalletBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -14,6 +16,9 @@ const CheckoutPage = () => {
     buyerName: "",
     buyerEmail: "",
   });
+  const locationState = location.state || {};
+  const useWallet = locationState.useWallet || false;
+  const walletDeductionFromState = locationState.walletDeduction || 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -22,10 +27,14 @@ const CheckoutPage = () => {
       setLoading(true);
       setError("");
       try {
-        const res = await apiClient.get(`/o/${orgSlug}/cart/${eventId}`);
+        const [cartRes, walletRes] = await Promise.all([
+          apiClient.get(`/o/${orgSlug}/cart/${eventId}`),
+          apiClient.get("/wallet").catch(() => ({ data: { wallet: { balance: 0 } } })),
+        ]);
         if (!cancelled) {
-          setCart(res.data.cart);
-          setEvent(res.data.event);
+          setCart(cartRes.data.cart);
+          setEvent(cartRes.data.event);
+          setWalletBalance(walletRes.data.wallet?.balance || 0);
         }
       } catch (err) {
         if (!cancelled) {
@@ -61,6 +70,11 @@ const CheckoutPage = () => {
           buyerName: form.buyerName,
           buyerEmail: form.buyerEmail,
           items,
+          // Without these two, the backend has no idea the buyer opted
+          // to pay part of the total with wallet balance — it would
+          // silently create a Stripe session for the FULL cart total.
+          useWallet,
+          walletDeduction,
         },
       );
 
@@ -83,6 +97,12 @@ const CheckoutPage = () => {
     (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0),
     0,
   );
+
+  // Calculate wallet deduction
+  const walletDeduction = useWallet 
+    ? (walletDeductionFromState > 0 ? walletDeductionFromState : Math.min(walletBalance, cartTotal))
+    : 0;
+  const remainingAfterWallet = Math.max(0, cartTotal - walletDeduction);
 
   if (loading) return <p style={{ color: "var(--muted)" }}>Loading checkout…</p>;
 
@@ -151,12 +171,39 @@ const CheckoutPage = () => {
             ))}
           </tbody>
           <tfoot>
-            <tr>
-              <td colSpan={2} style={{ padding: "12px 4px", fontWeight: 700 }}>Total</td>
-              <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "#c99a3c", fontSize: 18 }}>
-                Rs. {cartTotal}
-              </td>
-            </tr>
+            {useWallet && walletDeduction > 0 ? (
+              <>
+                <tr style={{ background: "rgba(201, 154, 60, 0.06)" }}>
+                  <td colSpan={2} style={{ padding: "10px 4px", fontSize: 14, color: "var(--muted)" }}>
+                    Subtotal ({cart.items.reduce((s, i) => s + Number(i.quantity || 0), 0)} tickets)
+                  </td>
+                  <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "var(--muted)" }}>
+                    Rs. {cartTotal}
+                  </td>
+                </tr>
+                <tr>
+                  <td colSpan={2} style={{ padding: "10px 4px", fontSize: 14, color: "#4ade80" }}>
+                    💰 Wallet Payment
+                  </td>
+                  <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "#4ade80", fontWeight: 600 }}>
+                    -Rs. {walletDeduction}
+                  </td>
+                </tr>
+                <tr style={{ borderTop: "2px solid #c99a3c" }}>
+                  <td colSpan={2} style={{ padding: "12px 4px", fontWeight: 700, fontSize: 16 }}>Amount to Pay</td>
+                  <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "#c99a3c", fontSize: 20 }}>
+                    Rs. {remainingAfterWallet}
+                  </td>
+                </tr>
+              </>
+            ) : (
+              <tr style={{ borderTop: "2px solid #c99a3c" }}>
+                <td colSpan={2} style={{ padding: "12px 4px", fontWeight: 700, fontSize: 16 }}>Total</td>
+                <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "#c99a3c", fontSize: 20 }}>
+                  Rs. {cartTotal}
+                </td>
+              </tr>
+            )}
           </tfoot>
         </table>
       </div>
@@ -202,7 +249,7 @@ const CheckoutPage = () => {
           >
             {submitting
               ? "Processing…"
-              : `Pay Rs. ${cartTotal} with Card`}
+              : `Pay Rs. ${useWallet && walletDeduction > 0 ? remainingAfterWallet : cartTotal} with Card`}
           </button>
 
           <p style={{ margin: "12px 0 0", fontSize: 13, color: "var(--muted)", textAlign: "center" }}>

@@ -73,8 +73,9 @@ const bookingSchema = new mongoose.Schema(
     status: {
       // "expired" = added for the auto-release feature: a pending
       // booking that timed out before payment was completed.
+      // "refunded" = added for the refund/wallet system.
       type: String,
-      enum: ["pending", "confirmed", "cancelled", "expired"],
+      enum: ["pending", "confirmed", "cancelled", "expired", "refunded"],
       default: "pending",
       index: true,
     },
@@ -99,6 +100,36 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // ─── Wallet-at-checkout fields ────────────────────────────────────
+    // Added for the "pay partly with wallet" feature. These MUST be
+    // declared here — Mongoose's default `strict: true` mode silently
+    // drops any field set on a document that isn't in the schema, so
+    // without these, booking.service.js's wallet writes (originalAmount,
+    // walletDeduction, walletDeductionPending) were being set in memory
+    // but never actually persisted, which meant the wallet debit in
+    // confirmBooking() never ran after payment.
+    //
+    // `totalAmount` above always holds the amount actually charged to
+    // the card (i.e. after any wallet deduction). `originalAmount` keeps
+    // the pre-deduction cart total for reference/receipts/analytics.
+    originalAmount: {
+      type: Number,
+      default: null,
+    },
+    // How much of this booking's total was covered by wallet balance.
+    walletDeduction: {
+      type: Number,
+      default: 0,
+    },
+    // Non-zero between checkout-start and payment-confirmation: the
+    // wallet amount still waiting to be actually debited once Stripe
+    // confirms payment succeeded (we don't debit at checkout time,
+    // since the buyer might still abandon/fail the Stripe payment).
+    // Reset to 0 once confirmBooking() successfully debits the wallet.
+    walletDeductionPending: {
+      type: Number,
+      default: 0,
+    },
     // ─── Auto-release / reminder fields ──────────────────────────────
     // Set once, at booking creation: createdAt + HOLD_DURATION_MS.
     // The background scheduler compares "now" against this field to
@@ -114,6 +145,31 @@ const bookingSchema = new mongoose.Schema(
     reminderSentAt: {
       type: Date,
       default: null,
+    },
+    // ─── Refund / Wallet fields ───────────────────────────────────────
+    refundInfo: {
+      method: {
+        type: String,
+        enum: ["wallet", "stripe"],
+        default: null,
+      },
+      amount: {
+        type: Number,
+        default: null,
+      },
+      deduction: {
+        type: Number,
+        default: null,
+      },
+      // 10% goes to the organization whose event this booking was for
+      organizationRevenue: {
+        type: Number,
+        default: null,
+      },
+      processedAt: {
+        type: Date,
+        default: null,
+      },
     },
   },
   { timestamps: true },

@@ -5,6 +5,7 @@ const Event = require("../models/Event");
 const Booking = require("../models/Booking");
 const stripe = require("../config/stripe");
 const { sendBookingConfirmation } = require("../config/email");
+const walletService = require("./wallet.service");
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
@@ -69,7 +70,7 @@ const parseCheckoutItems = (items) => {
  * This prevents double charges if the buyer clicks "Pay" twice.
  */
 const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => {
-  const { buyerName, buyerEmail, items, cartKey } = data;
+  const { buyerName, buyerEmail, items, cartKey, useWallet, walletDeduction } = data;
 
   if (!buyerName || !buyerEmail) {
     const error = new Error("buyerName and buyerEmail are required");
@@ -264,6 +265,10 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
 
     const confirmationCode = generateConfirmationCode();
 
+    // Calculate final amount after wallet deduction
+    const walletAmount = useWallet && walletDeduction > 0 ? Math.min(walletDeduction, totalAmount) : 0;
+    const finalAmount = totalAmount - walletAmount;
+
     const [booking] = await Booking.create(
       [
         {
@@ -272,7 +277,9 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           buyerName: buyerName.trim(),
           buyerEmail: normalizedEmail,
           items: bookingItems,
-          totalAmount,
+          totalAmount: finalAmount, // Store the amount actually charged
+          originalAmount: totalAmount, // Store original amount for reference
+          walletDeduction: walletAmount, // Store wallet deduction
           currency: "PKR",
           status: "pending",
           paymentStatus: "pending",
@@ -284,6 +291,46 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
       ],
       { session: mongoSession },
     );
+
+    // If wallet was used, deduct from wallet immediately
+    if (walletAmount > 0) {
+      // Note: We need the user ID for wallet deduction, but we only have email at this point
+      // The wallet deduction will be handled after booking confirmation
+      // For now, we'll store it and deduct later
+      booking.walletDeductionPending = walletAmount;
+      await booking.save({ session: mongoSession });
+    }
+
+    // Adjust line items for Stripe if wallet was used
+    // If wallet covered part of the amount, reduce the Stripe charge
+    let adjustedStripeLineItems = stripeLineItems;
+    if (walletAmount > 0 && walletAmount < totalAmount) {
+      // Proportionally reduce line items
+      const ratio = (totalAmount - walletAmount) / totalAmount;
+      adjustedStripeLineItems = stripeLineItems.map((item) => ({
+        ...item,
+        quantity: item.quantity, // Keep quantity same
+        price_data: {
+          ...item.price_data,
+          unit_amount: Math.round(item.price_data.unit_amount * ratio),
+        },
+      }));
+    } else if (walletAmount >= totalAmount) {
+      // Wallet covered everything - no Stripe charge needed
+      // But Stripe requires at least one line item, so we'll create a minimal session
+      adjustedStripeLineItems = [
+        {
+          price_data: {
+            currency: "pkr",
+            product_data: {
+              name: `Wallet Payment - ${event.name}`,
+            },
+            unit_amount: 100, // Minimum 1 PKR
+          },
+          quantity: 1,
+        },
+      ];
+    }
 
     // Stripe idempotency key — extra safety on Stripe's side.
     // Even if we somehow receive the same creation request twice,
@@ -302,8 +349,10 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           eventId: eventId.toString(),
           organizationId: organizationId.toString(),
           cartKey: cartKey || "",
+          useWallet: useWallet ? "true" : "false",
+          walletDeduction: walletAmount.toString(),
         },
-        line_items: stripeLineItems,
+        line_items: adjustedStripeLineItems,
         success_url: `${FRONTEND_URL}/o/${orgSlug}/bookings/${booking._id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${FRONTEND_URL}/o/${orgSlug}/cart/${eventId}`,
       },
@@ -394,6 +443,28 @@ const confirmBooking = async (stripeSessionId) => {
   booking.paymentStatus = "paid";
   booking.qrCodeUrl = qrCodeUrl;
   await booking.save();
+
+  // If wallet was used, deduct from wallet now
+  if (booking.walletDeductionPending > 0) {
+    try {
+      // Find user by email to get userId
+      const User = require("../models/User");
+      const user = await User.findOne({ email: booking.buyerEmail });
+      if (user) {
+        await walletService.debit(
+          user._id,
+          booking.walletDeductionPending,
+          `Wallet payment for ${booking.confirmationCode}`,
+          { type: "purchase", bookingId: booking._id }
+        );
+        booking.walletDeductionPending = 0;
+        await booking.save();
+      }
+    } catch (walletError) {
+      console.error("Wallet deduction failed:", walletError.message);
+      // Don't fail the booking if wallet deduction fails
+    }
+  }
 
   // Send confirmation email in background (don't block if email fails)
   try {

@@ -26,6 +26,8 @@ const getOwnerAnalytics = async (organizationId) => {
     bookingsPerEvent,
     recentBookings,
     revenueByDay,
+    refundStats,
+    refundsByEvent,
   ] = await Promise.all([
     // Total confirmed bookings
     Booking.countDocuments({ organizationId: orgId, status: "confirmed" }),
@@ -109,12 +111,66 @@ const getOwnerAnalytics = async (organizationId) => {
         },
       },
     ]),
+
+    // Refund stats
+    Booking.aggregate([
+      { $match: { organizationId: orgId, status: "refunded" } },
+      {
+        $group: {
+          _id: null,
+          totalRefunds: { $sum: 1 },
+          totalRefundedAmount: { $sum: "$totalAmount" },
+          totalDeduction: { $sum: "$refundInfo.deduction" },
+          totalOrgRevenue: { $sum: "$refundInfo.organizationRevenue" },
+        },
+      },
+    ]),
+
+    // Refunds by event
+    Booking.aggregate([
+      { $match: { organizationId: orgId, status: "refunded" } },
+      {
+        $group: {
+          _id: "$eventId",
+          refundCount: { $sum: 1 },
+          refundedAmount: { $sum: "$totalAmount" },
+          orgRevenue: { $sum: "$refundInfo.organizationRevenue" },
+        },
+      },
+      {
+        $lookup: {
+          from: "events",
+          localField: "_id",
+          foreignField: "_id",
+          as: "event",
+        },
+      },
+      { $unwind: { path: "$event", preserveNullAndEmptyArrays: true } },
+      { $sort: { refundCount: -1 } },
+      { $limit: 10 },
+      {
+        $project: {
+          _id: 0,
+          eventId: "$event._id",
+          eventName: "$event.name",
+          refundCount: 1,
+          refundedAmount: 1,
+          orgRevenue: 1,
+        },
+      },
+    ]),
   ]);
 
   // ── 2. Shape the response ─────────────────────────────────────
 
   const totalRevenue = totalRevenueResult[0]?.total || 0;
   const totalTicketsSold = totalTicketsResult[0]?.total || 0;
+
+  const refundStatsResult = refundStats[0] || {};
+  const totalRefunds = refundStatsResult.totalRefunds || 0;
+  const totalRefundedAmount = refundStatsResult.totalRefundedAmount || 0;
+  const totalDeduction = refundStatsResult.totalDeduction || 0;
+  const totalOrgRevenue = refundStatsResult.totalOrgRevenue || 0;
 
   // Fill in missing days in revenueByDay with zeroes
   const revenueMap = {};
@@ -154,10 +210,15 @@ const getOwnerAnalytics = async (organizationId) => {
       totalTicketsSold,
       totalEvents: eventsCountResult,
       totalVenues: venuesCountResult,
+      totalRefunds,
+      totalRefundedAmount,
+      totalDeduction,
+      totalOrgRevenue,
     },
     bookingsPerEvent,
     recentBookings: shapedRecentBookings,
     revenueByDay: filledRevenueByDay,
+    refundsByEvent,
   };
 };
 

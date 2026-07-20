@@ -7,8 +7,10 @@ const CartPage = () => {
   const navigate = useNavigate();
   const [event, setEvent] = useState(null);
   const [cart, setCart] = useState(null);
+  const [walletBalance, setWalletBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [useWallet, setUseWallet] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -17,10 +19,14 @@ const CartPage = () => {
       setLoading(true);
       setError("");
       try {
-        const res = await apiClient.get(`/o/${orgSlug}/cart/${eventId}`);
+        const [cartRes, walletRes] = await Promise.all([
+          apiClient.get(`/o/${orgSlug}/cart/${eventId}`),
+          apiClient.get("/wallet").catch(() => ({ data: { wallet: { balance: 0 } } })),
+        ]);
         if (!cancelled) {
-          setEvent(res.data.event);
-          setCart(res.data.cart);
+          setEvent(cartRes.data.event);
+          setCart(cartRes.data.cart);
+          setWalletBalance(walletRes.data.wallet?.balance || 0);
         }
       } catch (err) {
         if (!cancelled) {
@@ -62,6 +68,9 @@ const CartPage = () => {
     (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0),
     0,
   );
+
+  const walletDeduction = useWallet ? Math.min(walletBalance, cartTotal) : 0;
+  const remainingAfterWallet = cartTotal - walletDeduction;
 
   if (loading) return <p style={{ color: "var(--muted)" }}>Loading cart…</p>;
 
@@ -197,14 +206,70 @@ const CartPage = () => {
               </div>
               <span style={{ fontWeight: 700, fontSize: 20, color: "var(--paper)" }}>Rs. {cartTotal}</span>
             </div>
+
+            {/* Wallet Payment Option */}
+            {walletBalance > 0 && (
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 16px",
+                background: "rgba(201, 154, 60, 0.08)",
+                borderRadius: 10,
+                marginBottom: 12,
+                border: "1px solid rgba(201, 154, 60, 0.25)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input
+                    type="checkbox"
+                    id="useWallet"
+                    checked={useWallet}
+                    onChange={(e) => setUseWallet(e.target.checked)}
+                    style={{ width: 18, height: 18, accentColor: "#c99a3c", cursor: "pointer" }}
+                  />
+                  <label htmlFor="useWallet" style={{ margin: 0, cursor: "pointer", fontSize: 14, color: "var(--text)" }}>
+                    <strong>Pay with Wallet</strong>
+                    <br />
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                      Balance: Rs. {walletBalance}
+                    </span>
+                  </label>
+                </div>
+                {useWallet && (
+                  <div style={{ textAlign: "right" }}>
+                    <p style={{ margin: 0, fontSize: 13, color: "#4ade80", fontWeight: 600 }}>
+                      -Rs. {walletDeduction}
+                    </p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--muted)" }}>
+                      Remaining: Rs. {remainingAfterWallet}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               style={styles.checkoutBtn}
               onClick={() =>
-                navigate(`/o/${orgSlug}/checkout/${eventId}`)
+                navigate(`/o/${orgSlug}/checkout/${eventId}`, {
+                  state: { 
+                    useWallet, 
+                    walletDeduction,
+                    cartTotal,
+                    remainingAfterWallet 
+                  },
+                })
               }
             >
-              Proceed to Checkout
+              {useWallet && walletDeduction > 0
+                ? `Pay Rs. ${remainingAfterWallet} with Card`
+                : "Proceed to Checkout"}
             </button>
+            {useWallet && walletDeduction > 0 && (
+              <p style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+                Rs. {walletDeduction} will be deducted from your wallet
+              </p>
+            )}
           </div>
         </>
       )}

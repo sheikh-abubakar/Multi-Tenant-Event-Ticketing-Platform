@@ -20,7 +20,10 @@ const Layout = ({ children }) => {
           <nav style={styles.nav}>
             {user ? (
               <>
-                <span style={{ color: "var(--muted)", fontSize: 14 }}>
+                <Link to="/my/dashboard" style={{ color: "var(--gold)", fontSize: 13, fontWeight: 600 }}>
+                  My Dashboard
+                </Link>
+                <span style={{ color: "var(--muted)", fontSize: 13 }}>
                   {user.name}
                 </span>
                 <button className="btn btn-ghost" onClick={handleLogout} style={styles.navBtn}>

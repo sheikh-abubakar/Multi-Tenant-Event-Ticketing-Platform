@@ -1189,7 +1189,25 @@ original project plan.
     Analytics + Settings links
 - Updated `tenant.controller.js` `whoami` to return
   `membership.permissions` array.
-
+### Week 3, Day 3-4 (continued) — Fixed Home Page Regression
+- **Bug found:** a prior AI session had replaced `Home.jsx` entirely with
+  a public "browse all events" page, silently dropping the "Your
+  organizations" picker (org cards + create-org button) that the
+  logged-in organizer flow depends on. Post-login, users saw only the
+  public event browser with no way back into their own org dashboard
+  from Home.
+- **Fix:** merged both flows into a single `Home.jsx` — "Your
+  organizations" section (visible only when logged in, using
+  `GET /organizations/mine` + the existing `OrgCard` component) stacked
+  above "Browse events" (visible to everyone, using `GET /events` +
+  `GET /organizations/public`, built in Week 3 Day 3-4 for the buyer
+  dashboard).
+- Added missing `--card` / `--border` CSS custom properties to
+  `index.css` — referenced by the events-browsing UI but never defined,
+  silently falling back to no styling.
+- Standardized the Venues route to `/o/:orgSlug/manage/venues` (was
+  inconsistently `/o/:orgSlug/venues`, breaking the Dashboard's Venues
+  card link) to match the `/manage/` prefix used by Events/Settings/Team/Analytics.
 ### Week 3, Day 5 — Organizer Analytics Dashboard
 - Built `backend/src/services/analytics.service.js` — single
   `getOwnerAnalytics(organizationId)` function using MongoDB aggregation
@@ -1277,3 +1295,4 @@ are marked as complete; this section lists what's **left**.
 | **2026-07-17** | **Bug fix: Stripe Checkout Session now manually expired in sync with the 90s DB hold window (previously only the DB side expired, letting buyers still pay on the old Stripe page after release); added `checkout.session.expired` webhook handling as a result** | **API Endpoints (§7.7.2, §7.9), Key Technical Decisions (§9), Implementation Log** |
 | **2026-07-17** | **Week 3 Day 3-5: Dynamic permissions system, team invites with dual flow (admin password + staff email magic link), email invitation system, AcceptInvite page, permission-based authorization replacing role checks, organizer analytics dashboard with Recharts** | **Database Schema (§5.3), Authentication & Authorization (§6.3, §6.4), API Endpoints (§7.4–§7.6, §7.11), Feature List (§8), Implementation Log (§11), Roadmap (§12)** |
 | **2026-07-17** | **Email polish: upgraded confirmation email with StagePass branding, Add to Calendar button (.ics download), Google Maps venue link, itemized order summary, support contact, cancellation policy. Created calendar controller + routes for .ics file generation. Created public buyer dashboard (Home page) with search/filters. Enhanced cart page with event banner and better layout.** | **API Endpoints (§7.11), Feature List (§8), Implementation Log (§11)** |
+| 2026-07-17 | Fixed Home.jsx regression (lost org picker after a prior session's rewrite); fixed undefined CSS vars; standardized Venues route path | Architecture (§3.3), Implementation Log, Roadmap |

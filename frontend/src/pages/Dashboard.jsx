@@ -1,36 +1,78 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useLocation, Link } from "react-router-dom";
+import { MapPin, CalendarDays, Store, Users, BarChart3, Settings, ArrowLeft } from "lucide-react";
 import apiClient from "../api/client";
-import { hasPermission } from "../utils/permissionsClient";
 
 /**
- * This page mirrors the backend pipeline on the frontend: it calls
- * /whoami for the current :orgSlug, which only succeeds if the
- * logged-in user is actually a member of this org (loadMembership
- * middleware) — otherwise the backend returns 403 and we show that
- * as an access-denied state instead of a broken dashboard.
+ * Checks a permissions[] array for an exact match, a global "*"
+ * wildcard, or a resource-level wildcard ("settings:*"). Falls back
+ * gracefully to `null` if permissions aren't available yet, so
+ * callers can fall back to role-based logic instead.
  */
+const hasPerm = (permissions, needed) => {
+  if (!permissions) return null;
+  const [resource] = needed.split(":");
+  return (
+    permissions.includes("*") ||
+    permissions.includes(`${resource}:*`) ||
+    permissions.includes(needed)
+  );
+};
+
+const SkeletonCard = () => (
+  <div className="animate-pulse rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+    <div className="mb-4 h-10 w-10 rounded-xl bg-white/10" />
+    <div className="mb-2 h-4 w-24 rounded bg-white/10" />
+    <div className="h-3 w-36 rounded bg-white/5" />
+  </div>
+);
+
+const GlassCard = ({ to, Icon, title, description }) => (
+  <Link
+    to={to}
+    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-lg backdrop-blur-xl transition-all hover:-translate-y-1 hover:border-gold/40 hover:bg-white/[0.07] hover:shadow-2xl"
+  >
+    <div className="mb-4 inline-flex rounded-xl bg-gold/10 p-3 text-gold transition-colors group-hover:bg-gold/20">
+      <Icon size={20} strokeWidth={2} />
+    </div>
+    <h3 className="font-display text-xl tracking-wide text-paper">{title}</h3>
+    <p className="mt-1 text-sm text-muted">{description}</p>
+  </Link>
+);
+
 const Dashboard = () => {
   const { orgSlug } = useParams();
-  const [context, setContext] = useState(null);
+  const location = useLocation();
+
+  // Instant paint: if we arrived here via an OrgCard click, the org
+  // name + role were already known on the Home page and passed along
+  // via navigation state — no need to wait on a network round-trip
+  // just to show the header.
+  const initial = location.state || null;
+
+  const [context, setContext] = useState(
+    initial ? { organization: initial.organization, membership: { role: initial.role } } : null,
+  );
+  const [permissions, setPermissions] = useState(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loadingCards, setLoadingCards] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      setLoading(true);
       setError("");
       try {
         const { data } = await apiClient.get(`/o/${orgSlug}/whoami`);
-        if (!cancelled) setContext(data);
+        if (cancelled) return;
+        setContext(data);
+        setPermissions(data.membership.permissions || null);
       } catch (err) {
         if (!cancelled) {
           setError(err.response?.data?.message || "Could not load this organization.");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoadingCards(false);
       }
     };
 
@@ -40,75 +82,97 @@ const Dashboard = () => {
     };
   }, [orgSlug]);
 
-  if (loading) return <p style={{ color: "var(--muted)" }}>Loading…</p>;
-
   if (error) {
     return (
-      <div className="card" style={{ maxWidth: 480 }}>
-        <h3 style={{ marginTop: 0, color: "var(--danger)" }}>Access denied</h3>
+      <div className="rounded-xl bg-paper p-6 text-ink-text shadow-lg max-w-md">
+        <h3 className="mt-0 font-semibold text-danger">Access denied</h3>
         <p>{error}</p>
       </div>
     );
   }
 
+  const role = context?.membership?.role;
+  const canSeeSettingsAndAnalytics =
+    hasPerm(permissions, "settings:read") ?? (role === "owner" || role === "admin");
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
-        <h1 style={{ color: "var(--paper)", margin: 0 }}>{context.organization.name}</h1>
-        <span className="badge">{context.membership.role}</span>
-      </div>
-      <p style={{ color: "var(--muted)", marginBottom: 32 }}>/o/{context.organization.slug}</p>
+      <Link
+        to="/"
+        className="mb-6 inline-flex items-center gap-1.5 text-sm text-gold-soft hover:underline"
+      >
+        <ArrowLeft size={15} /> Back to home
+      </Link>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-        <Link to={`/o/${orgSlug}/manage/venues`} className="card" style={cardLinkStyle}>
-          <h3 style={{ margin: 0 }}>Venues</h3>
-          <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
-            Manage the places your events happen
-          </p>
-        </Link>
-        <Link to={`/o/${orgSlug}/manage/events`} className="card" style={cardLinkStyle}>
-          <h3 style={{ margin: 0 }}>Events</h3>
-          <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
-            Create and manage events, tickets & banners
-          </p>
-        </Link>
-        <Link to={`/o/${orgSlug}/events`} className="card" style={cardLinkStyle}>
-          <h3 style={{ margin: 0 }}>Public storefront</h3>
-          <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
-            Preview what buyers see — no login needed
-          </p>
-        </Link>
-        <Link to={`/o/${orgSlug}/manage/team`} className="card" style={cardLinkStyle}>
-          <h3 style={{ margin: 0 }}>Team</h3>
-          <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
-            Invite members, manage roles & access
-          </p>
-        </Link>
-        {hasPermission("settings:read", context.membership.permissions) && (
-          <Link to={`/o/${orgSlug}/manage/analytics`} className="card" style={cardLinkStyle}>
-            <h3 style={{ margin: 0 }}>Analytics</h3>
-            <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
-              Bookings, revenue & performance
-            </p>
-          </Link>
-        )}
-        {hasPermission("settings:read", context.membership.permissions) && (
-          <Link to={`/o/${orgSlug}/manage/settings`} className="card" style={cardLinkStyle}>
-            <h3 style={{ margin: 0 }}>Settings</h3>
-            <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0" }}>
-              Organization name, slug, logo & delete
-            </p>
-          </Link>
+      {context ? (
+        <>
+          <div className="mb-1 flex items-baseline gap-3">
+            <h1 className="font-display text-4xl text-paper">{context.organization.name}</h1>
+            <span className="badge">{role}</span>
+          </div>
+          <p className="mb-8 font-mono text-sm text-muted">/o/{context.organization.slug}</p>
+        </>
+      ) : (
+        <div className="mb-8 animate-pulse">
+          <div className="mb-2 h-9 w-56 rounded bg-white/10" />
+          <div className="h-4 w-32 rounded bg-white/5" />
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {loadingCards ? (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        ) : (
+          <>
+            <GlassCard
+              to={`/o/${orgSlug}/manage/venues`}
+              Icon={MapPin}
+              title="Venues"
+              description="Manage the places your events happen"
+            />
+            <GlassCard
+              to={`/o/${orgSlug}/manage/events`}
+              Icon={CalendarDays}
+              title="Events"
+              description="Create and manage events, tickets & banners"
+            />
+            <GlassCard
+              to={`/o/${orgSlug}/events`}
+              Icon={Store}
+              title="Public storefront"
+              description="Preview what buyers see — no login needed"
+            />
+            <GlassCard
+              to={`/o/${orgSlug}/manage/team`}
+              Icon={Users}
+              title="Team"
+              description="Invite members, manage roles & access"
+            />
+            {canSeeSettingsAndAnalytics && (
+              <GlassCard
+                to={`/o/${orgSlug}/manage/analytics`}
+                Icon={BarChart3}
+                title="Analytics"
+                description="Bookings, revenue & performance"
+              />
+            )}
+            {canSeeSettingsAndAnalytics && (
+              <GlassCard
+                to={`/o/${orgSlug}/manage/settings`}
+                Icon={Settings}
+                title="Settings"
+                description="Organization name, slug, logo & delete"
+              />
+            )}
+          </>
         )}
       </div>
     </div>
   );
-};
-
-const cardLinkStyle = {
-  display: "block",
-  textDecoration: "none",
-  color: "var(--text)",
 };
 
 export default Dashboard;

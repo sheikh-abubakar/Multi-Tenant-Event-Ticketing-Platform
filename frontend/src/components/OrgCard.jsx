@@ -6,7 +6,15 @@ const OrgCard = ({ organization, role }) => {
 
   return (
     <button
-      onClick={() => navigate(`/o/${organization.slug}/dashboard`)}
+      onClick={() =>
+        navigate(`/o/${organization.slug}/dashboard`, {
+          // Dashboard can paint its header immediately with this,
+          // instead of showing a blank/loading state until /whoami
+          // resolves — the API call still happens for the real
+          // (security-authoritative) permissions data.
+          state: { organization, role },
+        })
+      }
       style={styles.card}
       aria-label={`Open ${organization.name} dashboard`}
     >

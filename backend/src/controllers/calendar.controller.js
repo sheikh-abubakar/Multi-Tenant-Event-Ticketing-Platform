@@ -1,6 +1,7 @@
 const Booking = require("../models/Booking");
 const Event = require("../models/Event");
 const Venue = require("../models/Venue");
+const moment = require("moment-timezone");
 
 /**
  * GET /api/o/:orgSlug/bookings/:bookingId/calendar.ics
@@ -33,15 +34,17 @@ const getCalendarEvent = async (req, res) => {
     const event = booking.eventId;
     const venue = event.venueId;
 
-    // Format dates for iCalendar (YYYYMMDDTHHMMSSZ format)
-    const formatDate = (date) => {
-      const d = new Date(date);
-      return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    // Get the event's timezone (from event.timezone, or venue's timezone, or default)
+    const timezone = event.timezone || venue?.timezone || "Asia/Karachi";
+
+    // Format dates for iCalendar in UTC using the event's timezone
+    const formatDateUTC = (date, tz) => {
+      return moment.tz(date, tz).utc().format("YYYYMMDDTHHmmss") + "Z";
     };
 
-    const eventStart = formatDate(event.dateTime);
+    const eventStart = formatDateUTC(event.dateTime, timezone);
     // Assume event duration is 3 hours (can be made configurable later)
-    const eventEnd = formatDate(new Date(new Date(event.dateTime).getTime() + 3 * 60 * 60 * 1000));
+    const eventEnd = formatDateUTC(new Date(new Date(event.dateTime).getTime() + 3 * 60 * 60 * 1000), timezone);
 
     // Build venue string for location
     const locationParts = [venue?.name, venue?.address, venue?.city].filter(Boolean);

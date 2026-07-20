@@ -68,6 +68,11 @@ const eventSchema = new mongoose.Schema(
       type: [ticketTypeSchema],
       default: [],
     },
+    timezone: {
+      type: String,
+      required: true,
+      default: "Asia/Karachi",
+    },
   },
   { timestamps: true }
 );

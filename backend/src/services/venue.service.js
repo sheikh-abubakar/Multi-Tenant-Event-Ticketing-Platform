@@ -26,7 +26,7 @@ const Venue = require("../models/Venue");
  */
 
 const createVenue = async (data, organizationId) => {
-  const { name, address, city, capacity } = data;
+  const { name, address, city, capacity, timezone } = data;
 
   if (!name) {
     const error = new Error("Venue name is required");
@@ -34,7 +34,7 @@ const createVenue = async (data, organizationId) => {
     throw error;
   }
 
-  return Venue.create({ organizationId, name, address, city, capacity });
+  return Venue.create({ organizationId, name, address, city, capacity, timezone });
 };
 
 const listVenues = async (organizationId) => {
@@ -52,7 +52,7 @@ const getVenueById = async (venueId, organizationId) => {
 };
 
 const updateVenue = async (venueId, organizationId, updates) => {
-  const allowedFields = ["name", "address", "city", "capacity"];
+  const allowedFields = ["name", "address", "city", "capacity", "timezone"];
   const safeUpdates = {};
   for (const field of allowedFields) {
     if (updates[field] !== undefined) safeUpdates[field] = updates[field];

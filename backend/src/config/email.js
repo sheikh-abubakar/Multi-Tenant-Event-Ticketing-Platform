@@ -1,4 +1,5 @@
 const nodemailer = require("nodemailer");
+const moment = require("moment-timezone");
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || "smtp.gmail.com",
@@ -10,39 +11,42 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Helper: format date for Google Calendar (YYYYMMDDTHHMMSSZ)
-const formatDateForGoogle = (date) => {
-  const d = new Date(date);
-  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+// Helper: format date for Google Calendar in UTC
+// Uses the event's timezone to convert local time to UTC
+// so Google Calendar automatically displays correct time for any user's timezone
+const formatDateForGoogle = (date, timezone) => {
+  const tz = timezone || "Asia/Karachi";
+  // Convert local time (in event's timezone) to UTC
+  const m = moment.tz(date, tz);
+  // Return in UTC format
+  return m.utc().format("YYYYMMDDTHHmmss") + "Z";
 };
 
 const sendBookingConfirmation = async (booking, event, qrCodeUrl, organizationId) => {
   const venue = event.venueId || {};
   const venueName = venue.name || "TBA";
   const venueAddress = [venue.address, venue.city].filter(Boolean).join(", ") || "Address TBA";
+  const timezone = event.timezone || "Asia/Karachi";
   const eventDate = new Date(event.dateTime);
-  const formattedDate = eventDate.toLocaleString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  
+  // Display date in venue's local timezone
+  const formattedDate = moment.tz(eventDate, timezone).format("dddd, MMMM D, YYYY [at] h:mm A");
+  const timezoneDisplay = timezone.split("/").pop().replace(/_/g, " ");
 
   // Google Maps link
   const mapsQuery = encodeURIComponent(`${venueName} ${venueAddress}`);
   const mapsLink = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
 
-  // Google Calendar "Quick Add" link — opens Google Calendar with pre-filled event
-  const eventStart = formatDateForGoogle(event.dateTime);
-  const eventEnd = formatDateForGoogle(new Date(new Date(event.dateTime).getTime() + 3 * 60 * 60 * 1000));
+  // Google Calendar "Quick Add" link — uses UTC times for correct display everywhere
+  const eventStart = formatDateForGoogle(event.dateTime, timezone);
+  const eventEnd = formatDateForGoogle(new Date(new Date(event.dateTime).getTime() + 3 * 60 * 60 * 1000), timezone);
   const location = encodeURIComponent(`${venueName}, ${venueAddress}`);
   const details = encodeURIComponent(
     [
       `Confirmation Code: ${booking.confirmationCode}`,
       `Buyer: ${booking.buyerName}`,
       `Total Paid: Rs. ${booking.totalAmount}`,
+      `Timezone: ${timezone} (UTC${moment.tz(timezone).format("Z")})`,
       ``,
       `Tickets:`,
       ...booking.items.map((item) => `  - ${item.ticketTypeName} x${item.quantity} (Rs. ${item.lineTotal})`),

@@ -29,6 +29,9 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     parsedTicketTypes = typeof ticketTypes === "string" ? JSON.parse(ticketTypes) : ticketTypes;
   }
 
+  // Inherit timezone from venue
+  const eventTimezone = venue.timezone || "Asia/Karachi";
+
   return Event.create({
     organizationId,
     venueId,
@@ -37,6 +40,7 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     dateTime,
     bannerImageUrl,
     ticketTypes: parsedTicketTypes,
+    timezone: eventTimezone,
   });
 };
 

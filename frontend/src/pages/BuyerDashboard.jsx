@@ -289,7 +289,7 @@ const BuyerDashboard = () => {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <Link
-                      to={`/o/${booking.organizationId}/bookings/${booking._id}/confirmation`}
+                      to={`/o/${booking.organizationId?.slug || booking.organizationId}/bookings/${booking._id}/confirmation`}
                       style={{
                         padding: "8px 14px",
                         background: "var(--gold)",

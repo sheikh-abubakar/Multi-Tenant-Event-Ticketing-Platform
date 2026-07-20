@@ -118,10 +118,14 @@ const Analytics = () => {
         }}
       >
         <StatCard label="Total Bookings" value={metrics.totalBookings} />
-        <StatCard label="Total Revenue" value={formatPKR(metrics.totalRevenue)} />
+        <StatCard label="Ticket Sales Revenue" value={formatPKR(metrics.totalRevenue)} />
+        <StatCard label="Refund Revenue (10%)" value={formatPKR(metrics.totalOrgRevenue)} />
+        <StatCard label="Net Revenue" value={formatPKR(metrics.netRevenue)} />
         <StatCard label="Tickets Sold" value={metrics.totalTicketsSold} />
         <StatCard label="Events" value={metrics.totalEvents} />
         <StatCard label="Venues" value={metrics.totalVenues} />
+        <StatCard label="Refunds Issued" value={metrics.totalRefunds} />
+        <StatCard label="Refunded Amount" value={formatPKR(metrics.totalRefundedAmount)} />
       </div>
 
       {/* ── Revenue over time ─────────────────────────────────── */}
@@ -342,7 +346,7 @@ const StatCard = ({ label, value }) => (
         margin: 0,
         fontSize: 26,
         fontWeight: 700,
-        color: "var(--paper)",
+        color: "var(--text)",
         fontFamily: "var(--font-display)",
         letterSpacing: "0.02em",
       }}

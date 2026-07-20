@@ -274,6 +274,8 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
         {
           organizationId,
           eventId,
+          eventName: event.name,
+          eventDateTime: event.dateTime,
           buyerName: buyerName.trim(),
           buyerEmail: normalizedEmail,
           items: bookingItems,
@@ -713,6 +715,8 @@ const createBooking = async (eventId, organizationId, data) => {
         {
           organizationId,
           eventId,
+          eventName: event.name,
+          eventDateTime: event.dateTime,
           buyerName: buyerName.trim(),
           buyerEmail: buyerEmail.trim().toLowerCase(),
           items: bookingItems,

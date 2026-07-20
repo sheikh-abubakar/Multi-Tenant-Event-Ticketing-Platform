@@ -189,6 +189,14 @@ const getMyBookings = async (userEmail) => {
         select: "name city",
       },
     })
+    // Needed so the frontend can link to /o/:orgSlug/... — the route
+    // resolves tenants by slug, not by organizationId, so without this
+    // the "View" button was building a link with the raw ObjectId and
+    // tenant resolution failed with "No organization found for slug".
+    .populate({
+      path: "organizationId",
+      select: "name slug",
+    })
     .sort({ createdAt: -1 })
     .lean();
 };

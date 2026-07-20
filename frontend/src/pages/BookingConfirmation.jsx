@@ -117,6 +117,9 @@ const BookingConfirmation = () => {
         >
           {isConfirmed ? "✅" : "⏳"}
         </div>
+        {/* This h1 is on the dark page background (not inside a .card),
+            so var(--paper) — light text for dark backgrounds — is
+            correct here. Left unchanged. */}
         <h1 style={{ color: "var(--paper)", margin: 0 }}>
           {isConfirmed ? "Booking Confirmed!" : "Payment Pending"}
         </h1>
@@ -128,7 +131,9 @@ const BookingConfirmation = () => {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0, color: "var(--paper)" }}>Booking Details</h3>
+        {/* Inside a .card (light background) — must use var(--text),
+            not var(--paper), or the heading is invisible. */}
+        <h3 style={{ marginTop: 0, color: "var(--text)" }}>Booking Details</h3>
 
         <div style={styles.detailGrid}>
           <div>
@@ -171,7 +176,7 @@ const BookingConfirmation = () => {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0, color: "var(--paper)" }}>Ticket Summary</h3>
+        <h3 style={{ marginTop: 0, color: "var(--text)" }}>Ticket Summary</h3>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr
@@ -216,10 +221,10 @@ const BookingConfirmation = () => {
                   borderBottom: "1px solid rgba(247, 242, 231, 0.06)",
                 }}
               >
-                <td style={{ padding: "10px 4px" }}>
+                <td style={{ padding: "10px 4px", color: "var(--text)" }}>
                   {item.ticketTypeName}
                 </td>
-                <td style={{ padding: "10px 4px", textAlign: "center" }}>
+                <td style={{ padding: "10px 4px", textAlign: "center", color: "var(--text)" }}>
                   {item.quantity}
                 </td>
                 <td
@@ -227,6 +232,7 @@ const BookingConfirmation = () => {
                     padding: "10px 4px",
                     textAlign: "right",
                     fontWeight: 700,
+                    color: "var(--text)",
                   }}
                 >
                   Rs. {item.lineTotal}
@@ -239,7 +245,7 @@ const BookingConfirmation = () => {
 
       {booking.qrCodeUrl && (
         <div className="card" style={{ textAlign: "center" }}>
-          <h3 style={{ marginTop: 0, color: "var(--paper)" }}>
+          <h3 style={{ marginTop: 0, color: "var(--text)" }}>
             Your QR Code
           </h3>
           <p style={{ color: "var(--muted)", fontSize: 14, marginBottom: 16 }}>
@@ -285,9 +291,13 @@ const styles = {
     textTransform: "uppercase",
     letterSpacing: "0.06em",
   },
+  // Was var(--paper) — light text meant for the dark page background —
+  // but this style is only ever used for values INSIDE a .card (light
+  // background), which made them invisible/unreadable except when
+  // selected with the mouse. See BookingConfirmation card values.
   value: {
     margin: "4px 0 0",
-    color: "var(--paper)",
+    color: "var(--text)",
     fontSize: 15,
   },
 };

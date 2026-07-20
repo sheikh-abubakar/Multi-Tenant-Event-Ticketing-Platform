@@ -45,6 +45,21 @@ const bookingSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // Snapshot of the event's name/date AT THE TIME OF BOOKING. The
+    // live `eventId` populate is still used where available (e.g. the
+    // event's current banner image), but analytics/history views prefer
+    // these snapshot fields so a booking's event name never breaks or
+    // shows "Unknown" just because the event was later renamed or
+    // deleted — the same pattern e-commerce receipts use for line-item
+    // names.
+    eventName: {
+      type: String,
+      default: null,
+    },
+    eventDateTime: {
+      type: Date,
+      default: null,
+    },
     buyerName: {
       type: String,
       required: true,

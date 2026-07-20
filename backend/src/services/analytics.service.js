@@ -172,6 +172,15 @@ const getOwnerAnalytics = async (organizationId) => {
   const totalDeduction = refundStatsResult.totalDeduction || 0;
   const totalOrgRevenue = refundStatsResult.totalOrgRevenue || 0;
 
+  // Net revenue = revenue from confirmed ticket sales + the 10% the org
+  // keeps whenever a buyer takes a direct Stripe refund (refunded
+  // bookings are excluded from `totalRevenue` above since their tickets
+  // were returned, but the org still earned that 10% cut for processing
+  // the refund — that's real revenue and should count toward the total).
+  // Wallet refunds contribute 0 here since they're a 100% refund with no
+  // org cut (see refund.service.js#processWalletRefund).
+  const netRevenue = totalRevenue + totalOrgRevenue;
+
   // Fill in missing days in revenueByDay with zeroes
   const revenueMap = {};
   revenueByDay.forEach((d) => {
@@ -196,8 +205,12 @@ const getOwnerAnalytics = async (organizationId) => {
     id: b._id,
     buyerName: b.buyerName,
     buyerEmail: b.buyerEmail,
-    eventName: b.eventId?.name || "Unknown",
-    eventDate: b.eventId?.dateTime || null,
+    // Prefer the snapshot saved at booking time — falls back to the
+    // live populated event only for older bookings created before this
+    // snapshot existed. This is why "Unknown" can still show up for
+    // bookings made before this fix; new bookings will always have it.
+    eventName: b.eventName || b.eventId?.name || "Unknown",
+    eventDate: b.eventDateTime || b.eventId?.dateTime || null,
     totalAmount: b.totalAmount,
     status: b.status,
     createdAt: b.createdAt,
@@ -207,7 +220,8 @@ const getOwnerAnalytics = async (organizationId) => {
     metrics: {
       totalBookings: totalBookingsResult,
       totalRevenue,
-      totalTicketsSold,
+      netRevenue,
+      totalTicketsSold: totalTicketsSold,
       totalEvents: eventsCountResult,
       totalVenues: venuesCountResult,
       totalRefunds,

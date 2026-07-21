@@ -37,8 +37,14 @@ const createVenue = async (data, organizationId) => {
   return Venue.create({ organizationId, name, address, city, capacity, timezone });
 };
 
-const listVenues = async (organizationId) => {
-  return Venue.find({ organizationId }).sort({ createdAt: -1 });
+const listVenues = async (organizationId, assignedVenueIds = null) => {
+  const filter = { organizationId };
+  // If assignedVenueIds is an array (staff member with restricted access),
+  // only return those venues. If empty array, return nothing.
+  if (Array.isArray(assignedVenueIds)) {
+    filter._id = { $in: assignedVenueIds };
+  }
+  return Venue.find(filter).sort({ createdAt: -1 });
 };
 
 const getVenueById = async (venueId, organizationId) => {

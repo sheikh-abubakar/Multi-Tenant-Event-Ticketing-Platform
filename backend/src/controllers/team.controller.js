@@ -113,6 +113,24 @@ const removeMember = async (req, res) => {
   }
 };
 
+/**
+ * PUT /api/o/:orgSlug/team/:memberId/venues
+ * Assign venues to a staff member. Body: { venueIds: [] }
+ */
+const assignVenues = async (req, res) => {
+  try {
+    const { venueIds } = req.body;
+    const member = await teamService.assignVenues({
+      organizationId: req.organizationId,
+      memberId: req.params.memberId,
+      venueIds: venueIds || [],
+    });
+    return res.json({ member });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getMembers,
   inviteMember,
@@ -120,4 +138,5 @@ module.exports = {
   updateMemberRole,
   updateMemberPermissions,
   removeMember,
+  assignVenues,
 };

@@ -23,7 +23,9 @@ const create = async (req, res) => {
 
 const list = async (req, res) => {
   try {
-    const events = await eventService.listEvents(req.organizationId);
+    // If assignedVenueIds is set (from filterByAssignedVenues middleware),
+    // pass it to the service. Otherwise pass null (show all).
+    const events = await eventService.listEvents(req.organizationId, req.assignedVenueIds);
     return res.json({ events });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

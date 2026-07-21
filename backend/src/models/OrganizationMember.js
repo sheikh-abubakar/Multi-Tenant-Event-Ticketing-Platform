@@ -54,6 +54,10 @@ const organizationMemberSchema = new mongoose.Schema(
         return this.role === "owner" || this.role === "admin";
       },
     },
+    assignedVenues: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Venue" }],
+      default: [],
+    },
   },
   { timestamps: true }
 );

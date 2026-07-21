@@ -2,12 +2,13 @@ const express = require("express");
 const authenticate = require("../middlewares/authenticate");
 const resolveTenant = require("../middlewares/resolveTenant");
 const loadMembership = require("../middlewares/loadMembership");
+const filterByAssignedVenues = require("../middlewares/filterByAssignedVenues");
 const checkPermission = require("../middlewares/checkPermission");
 const venueController = require("../controllers/venue.controller");
 
 const router = express.Router({ mergeParams: true });
 
-router.use(authenticate, resolveTenant, loadMembership);
+router.use(authenticate, resolveTenant, loadMembership, filterByAssignedVenues);
 
 // Permission-gated CRUD
 router.post("/", checkPermission("venues:create"), venueController.create);

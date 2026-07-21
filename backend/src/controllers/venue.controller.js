@@ -11,7 +11,7 @@ const create = async (req, res) => {
 
 const list = async (req, res) => {
   try {
-    const venues = await venueService.listVenues(req.organizationId);
+    const venues = await venueService.listVenues(req.organizationId, req.assignedVenueIds);
     return res.json({ venues });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

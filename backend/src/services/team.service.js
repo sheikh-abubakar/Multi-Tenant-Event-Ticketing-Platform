@@ -13,6 +13,7 @@ const { sendTeamInvitation } = require("../config/email");
 const getMembers = async (organizationId) => {
   const members = await OrganizationMember.find({ organizationId })
     .populate("userId", "name email")
+    .populate("assignedVenues", "name city")
     .sort({ role: 1, createdAt: -1 });
 
   return members
@@ -26,6 +27,7 @@ const getMembers = async (organizationId) => {
       },
       role: m.role,
       permissions: m.permissions || [],
+      assignedVenues: m.assignedVenues || [],
       passwordSet: m.passwordSet,
       joinedAt: m.createdAt,
     }));
@@ -391,6 +393,62 @@ const removeMember = async ({ organizationId, memberId }) => {
   return { removed: true };
 };
 
+/**
+ * Assign venues to a member (staff only).
+ * Owner/Admin can set which venues a staff member has access to.
+ */
+const assignVenues = async ({ organizationId, memberId, venueIds }) => {
+  const member = await OrganizationMember.findOne({
+    _id: memberId,
+    organizationId,
+  });
+
+  if (!member) {
+    const error = new Error("Member not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (member.role === "owner") {
+    const error = new Error("Cannot assign venues to the organization owner");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  // Validate all venueIds belong to this org
+  const Venue = require("../models/Venue");
+  const venues = await Venue.find({
+    _id: { $in: venueIds },
+    organizationId,
+  });
+
+  if (venues.length !== venueIds.length) {
+    const error = new Error("One or more venues do not belong to this organization");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  member.assignedVenues = venueIds;
+  await member.save();
+
+  const populated = await OrganizationMember.findById(member._id)
+    .populate("userId", "name email")
+    .populate("assignedVenues", "name city");
+
+  return {
+    id: populated._id,
+    user: {
+      id: populated.userId._id,
+      name: populated.userId.name,
+      email: populated.userId.email,
+    },
+    role: populated.role,
+    permissions: populated.permissions,
+    assignedVenues: populated.assignedVenues,
+    joinedAt: populated.createdAt,
+  };
+};
+
 module.exports = {
   getMembers,
   inviteMember,
@@ -398,4 +456,5 @@ module.exports = {
   updateMemberRole,
   updateMemberPermissions,
   removeMember,
+  assignVenues,
 };

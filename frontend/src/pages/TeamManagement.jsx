@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import { X } from "lucide-react";
 import apiClient from "../api/client";
 import { getPermissionCatalog } from "../utils/permissionsClient";
 
@@ -40,6 +41,12 @@ const TeamManagement = () => {
   // Permissions editing
   const [editingPermissions, setEditingPermissions] = useState(null); // memberId or null
   const [permChanges, setPermChanges] = useState({}); // memberId -> string[]
+
+  // Venue assignment
+  const [venueModal, setVenueModal] = useState(null); // member object or null
+  const [orgVenues, setOrgVenues] = useState([]);
+  const [selectedVenueIds, setSelectedVenueIds] = useState([]);
+  const [savingVenues, setSavingVenues] = useState(false);
 
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -153,6 +160,50 @@ const TeamManagement = () => {
 
   const cancelPermissionsEdit = () => {
     setEditingPermissions(null);
+  };
+
+  // ── Venue Assignment ─────────────────────────────────────────────
+
+  const openVenueModal = async (member) => {
+    setVenueModal(member);
+    setError("");
+    setSuccessMsg("");
+    try {
+      const res = await apiClient.get(`/o/${orgSlug}/venues`);
+      setOrgVenues(res.data.venues);
+      // Pre-select venues that are already assigned
+      const assigned = member.assignedVenues || [];
+      setSelectedVenueIds(assigned.map((v) => v._id || v));
+    } catch (err) {
+      setError("Could not load venues: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const toggleVenueSelection = (venueId) => {
+    setSelectedVenueIds((prev) =>
+      prev.includes(venueId)
+        ? prev.filter((id) => id !== venueId)
+        : [...prev, venueId],
+    );
+  };
+
+  const saveVenueAssignment = async () => {
+    if (!venueModal) return;
+    setSavingVenues(true);
+    setError("");
+    setSuccessMsg("");
+    try {
+      await apiClient.put(`/o/${orgSlug}/team/${venueModal.id}/venues`, {
+        venueIds: selectedVenueIds,
+      });
+      setSuccessMsg(`Venues assigned to ${venueModal.user?.name || venueModal.user?.email}`);
+      setVenueModal(null);
+      await loadData();
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not assign venues.");
+    } finally {
+      setSavingVenues(false);
+    }
   };
 
   // ── Remove member ────────────────────────────────────────────────
@@ -304,6 +355,7 @@ const TeamManagement = () => {
                 onRoleChange={handleRoleChange}
                 onRemove={handleRemove}
                 onEditPermissions={() => openPermissionsEditor(member)}
+                onAssignVenues={() => openVenueModal(member)}
                 getRoleBadgeClass={getRoleBadgeClass}
               />
 
@@ -390,6 +442,121 @@ const TeamManagement = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Venue Assignment Modal ───────────────────────────────── */}
+      {venueModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0,0,0,0.6)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+          padding: 20,
+        }}>
+          <div style={{
+            background: "var(--card)",
+            borderRadius: 16,
+            padding: "28px 24px",
+            maxWidth: 480,
+            width: "100%",
+            border: "1px solid var(--border)",
+            position: "relative",
+            maxHeight: "80vh",
+            overflow: "auto",
+          }}>
+            <button
+              onClick={() => setVenueModal(null)}
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 12,
+                background: "none",
+                border: "none",
+                color: "var(--muted)",
+                cursor: "pointer",
+                fontSize: 20,
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <h3 style={{ color: "var(--paper)", margin: "0 0 4px", fontSize: 18 }}>
+              🏟️ Assign Venues
+            </h3>
+            <p style={{ color: "var(--muted)", margin: "0 0 20px", fontSize: 14 }}>
+              Select venues for <strong>{venueModal.user?.name || venueModal.user?.email}</strong> ({venueModal.role})
+            </p>
+
+            {orgVenues.length === 0 ? (
+              <p style={{ color: "var(--muted)", fontSize: 14, textAlign: "center", padding: 20 }}>
+                No venues created yet. <Link to={`/o/${orgSlug}/manage/venues`}>Create venues first</Link>.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {orgVenues.map((venue) => {
+                  const checked = selectedVenueIds.includes(venue._id);
+                  return (
+                    <label
+                      key={venue._id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "12px 14px",
+                        borderRadius: 8,
+                        background: checked ? "rgba(201, 154, 60, 0.08)" : "rgba(255,255,255,0.03)",
+                        border: `1px solid ${checked ? "#c99a3c" : "var(--border)"}`,
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleVenueSelection(venue._id)}
+                        style={{ width: 18, height: 18, accentColor: "#c99a3c" }}
+                      />
+                      <div>
+                        <p style={{ margin: 0, color: "var(--paper)", fontSize: 14, fontWeight: 500 }}>
+                          {venue.name}
+                        </p>
+                        {venue.city && (
+                          <p style={{ margin: "2px 0 0", color: "var(--muted)", fontSize: 12 }}>
+                            📍 {venue.city}{venue.capacity ? ` • Capacity: ${venue.capacity}` : ""}
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+              <button
+                onClick={saveVenueAssignment}
+                className="btn btn-primary"
+                disabled={savingVenues}
+                style={{ flex: 1, padding: "12px 20px" }}
+              >
+                {savingVenues ? "Saving…" : `Save (${selectedVenueIds.length} venues)`}
+              </button>
+              <button
+                onClick={() => setVenueModal(null)}
+                className="btn btn-ghost"
+                style={{ padding: "12px 20px" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -408,6 +575,7 @@ const MemberRow = ({
   onRoleChange,
   onRemove,
   onEditPermissions,
+  onAssignVenues,
   getRoleBadgeClass,
 }) => {
   const memberRole = member.role;
@@ -506,6 +674,22 @@ const MemberRow = ({
             title="Customize permissions"
           >
             Permissions
+          </button>
+        )}
+
+        {/* Assign Venues button (for staff members only) */}
+        {canManageRoles && memberRole === "staff" && !editingPermissions && (
+          <button
+            onClick={onAssignVenues}
+            className="btn btn-ghost"
+            style={{
+              padding: "4px 10px",
+              fontSize: 12,
+              background: "transparent",
+            }}
+            title="Assign venues to this staff member"
+          >
+            🏟️ Venues
           </button>
         )}
 

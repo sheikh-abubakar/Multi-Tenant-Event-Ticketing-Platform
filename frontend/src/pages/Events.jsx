@@ -23,7 +23,7 @@ const Events = () => {
     setLoading(true);
     try {
       const [eventsRes, venuesRes, whoamiRes] = await Promise.all([
-        apiClient.get(`/o/${orgSlug}/events`),
+        apiClient.get(`/o/${orgSlug}/events/manage`),
         apiClient.get(`/o/${orgSlug}/venues`),
         apiClient.get(`/o/${orgSlug}/whoami`),
       ]);
@@ -140,7 +140,7 @@ const Events = () => {
 
       {venues.length === 0 && !loading && (
         <div className="error-banner">
-          You need at least one venue before creating an event. <Link to={`/o/${orgSlug}/venues`}>Add a venue &rarr;</Link>
+          You need at least one venue before creating an event. <Link to={`/o/${orgSlug}/manage/venues`}>Add a venue &rarr;</Link>
         </div>
       )}
 

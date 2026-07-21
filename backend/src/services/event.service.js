@@ -44,8 +44,12 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
   });
 };
 
-const listEvents = async (organizationId) => {
-  return Event.find({ organizationId }).populate("venueId", "name city").sort({ dateTime: 1 });
+const listEvents = async (organizationId, assignedVenueIds = null) => {
+  const filter = { organizationId };
+  if (Array.isArray(assignedVenueIds)) {
+    filter.venueId = { $in: assignedVenueIds };
+  }
+  return Event.find(filter).populate("venueId", "name city").sort({ dateTime: 1 });
 };
 
 const getEventById = async (eventId, organizationId) => {

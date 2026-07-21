@@ -31,4 +31,7 @@ router.put("/:memberId/permissions", checkPermission("permissions:manage"), team
 // DELETE — remove requires team:remove permission
 router.delete("/:memberId", checkPermission("team:remove"), teamController.removeMember);
 
+// PUT — assign venues to staff member (requires team:role permission)
+router.put("/:memberId/venues", checkPermission("team:role"), teamController.assignVenues);
+
 module.exports = router;

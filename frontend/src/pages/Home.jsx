@@ -83,8 +83,10 @@ const Home = () => {
       if (!matchesSearch) return false;
     }
 
-    if (filterOrg !== "all" && event.organizationId !== filterOrg) {
-      return false;
+    if (filterOrg !== "all") {
+      // organizationId is an object from populate, so we compare using _id
+      const eventOrgId = event.organizationId?._id?.toString() || event.organizationId?.toString();
+      if (eventOrgId !== filterOrg) return false;
     }
 
     if (filterDate !== "all") {

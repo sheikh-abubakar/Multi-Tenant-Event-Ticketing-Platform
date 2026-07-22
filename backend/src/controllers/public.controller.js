@@ -9,29 +9,26 @@ const Organization = require("../models/Organization");
 const getAllPublicEvents = async (req, res) => {
   try {
     const now = new Date();
-    console.log("[Public] Fetching events, now:", now.toISOString());
 
-    // Fetch ALL events first (no date filter) to debug
+    // Fetch events — populate orgId ONLY if org is NOT soft-deleted
     const allEvents = await Event.find({})
-      .populate("organizationId", "name slug")
+      .populate({
+        path: "organizationId",
+        match: { isDeleted: { $ne: true } },
+        select: "name slug",
+      })
       .populate("venueId", "name address city")
       .sort({ dateTime: 1 })
       .lean();
 
-    console.log("[Public] Total events in DB:", allEvents.length);
-    allEvents.forEach((e) => {
-      console.log(
-        `  - ${e.name}: dateTime=${e.dateTime}, isFuture=${new Date(e.dateTime) >= now}`,
-      );
-    });
+    // Filter out events whose org was soft-deleted (populate returns null for match miss)
+    const validEvents = allEvents.filter((event) => event.organizationId !== null);
 
     // Filter to only upcoming events
-    const upcomingEvents = allEvents.filter((event) => {
+    const upcomingEvents = validEvents.filter((event) => {
       const eventDate = new Date(event.dateTime);
       return eventDate >= now;
     });
-
-    console.log("[Public] Upcoming events:", upcomingEvents.length);
 
     // Shape the response
     const shapedEvents = upcomingEvents.map((event) => ({
@@ -61,7 +58,10 @@ const getAllPublicEvents = async (req, res) => {
  */
 const getAllOrganizations = async (req, res) => {
   try {
-    const orgs = await Organization.find({}).sort({ name: 1 }).lean();
+    // Only return organizations that are NOT soft-deleted
+    const orgs = await Organization.find({ isDeleted: { $ne: true } })
+      .sort({ name: 1 })
+      .lean();
     return res.json({ organizations: orgs });
   } catch (error) {
     console.error("[Public] Error fetching organizations:", error);

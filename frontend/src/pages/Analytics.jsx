@@ -11,6 +11,9 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  AreaChart,
+  Area,
+  Legend,
 } from "recharts";
 
 const formatPKR = (value) =>
@@ -135,7 +138,7 @@ const Analytics = () => {
         </h3>
         <div style={{ width: "100%", height: 280 }}>
           <ResponsiveContainer>
-            <BarChart data={revenueByDay}>
+            <AreaChart data={revenueByDay}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e8e0d0" />
               <XAxis
                 dataKey="date"
@@ -160,8 +163,10 @@ const Analytics = () => {
                   fontSize: 13,
                 }}
               />
-              <Bar dataKey="revenue" fill="#c99a3c" radius={[3, 3, 0, 0]} />
-            </BarChart>
+              <Legend />
+              <Area type="monotone" dataKey="revenue" name="Sales revenue" stroke="#c99a3c" fill="#c99a3c" fillOpacity={0.25} strokeWidth={3} />
+              <Area type="monotone" dataKey="refundedAmount" name="Refunded amount" stroke="#dc2626" fill="#dc2626" fillOpacity={0.1} strokeWidth={2} />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>

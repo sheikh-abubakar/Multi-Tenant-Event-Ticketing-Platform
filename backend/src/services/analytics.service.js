@@ -26,6 +26,7 @@ const getOwnerAnalytics = async (organizationId) => {
     bookingsPerEvent,
     recentBookings,
     revenueByDay,
+    refundsByDay,
     refundStats,
     refundsByEvent,
   ] = await Promise.all([
@@ -78,8 +79,9 @@ const getOwnerAnalytics = async (organizationId) => {
       },
     ]),
 
-    // Recent 10 bookings (for the table)
-    Booking.find({ organizationId: orgId, status: "confirmed" })
+    // Recent completed/refunded bookings. A refund is business activity and
+    // must remain visible to organizers instead of disappearing from history.
+    Booking.find({ organizationId: orgId, status: { $in: ["confirmed", "refunded"] } })
       .populate("eventId", "name dateTime")
       .sort({ createdAt: -1 })
       .limit(10)
@@ -112,6 +114,13 @@ const getOwnerAnalytics = async (organizationId) => {
       },
     ]),
 
+    // Refund trend for the same 30-day reporting window.
+    Booking.aggregate([
+      { $match: { organizationId: orgId, status: "refunded", "refundInfo.processedAt": { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } },
+      { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$refundInfo.processedAt" } }, refunds: { $sum: 1 }, refundedAmount: { $sum: "$refundInfo.amount" } } },
+      { $project: { _id: 0, date: "$_id", refunds: 1, refundedAmount: 1 } },
+    ]),
+
     // Refund stats
     Booking.aggregate([
       { $match: { organizationId: orgId, status: "refunded" } },
@@ -119,7 +128,7 @@ const getOwnerAnalytics = async (organizationId) => {
         $group: {
           _id: null,
           totalRefunds: { $sum: 1 },
-          totalRefundedAmount: { $sum: "$totalAmount" },
+          totalRefundedAmount: { $sum: "$refundInfo.amount" },
           totalDeduction: { $sum: "$refundInfo.deduction" },
           totalOrgRevenue: { $sum: "$refundInfo.organizationRevenue" },
         },
@@ -133,7 +142,7 @@ const getOwnerAnalytics = async (organizationId) => {
         $group: {
           _id: "$eventId",
           refundCount: { $sum: 1 },
-          refundedAmount: { $sum: "$totalAmount" },
+          refundedAmount: { $sum: "$refundInfo.amount" },
           orgRevenue: { $sum: "$refundInfo.organizationRevenue" },
         },
       },
@@ -186,6 +195,7 @@ const getOwnerAnalytics = async (organizationId) => {
   revenueByDay.forEach((d) => {
     revenueMap[d.date] = { revenue: d.revenue, bookings: d.bookings };
   });
+  const refundMap = Object.fromEntries(refundsByDay.map((d) => [d.date, d]));
 
   const filledRevenueByDay = [];
   const now = new Date();
@@ -197,6 +207,9 @@ const getOwnerAnalytics = async (organizationId) => {
       date: dateStr,
       revenue: revenueMap[dateStr]?.revenue || 0,
       bookings: revenueMap[dateStr]?.bookings || 0,
+      refunds: refundMap[dateStr]?.refunds || 0,
+      refundedAmount: refundMap[dateStr]?.refundedAmount || 0,
+      netRevenue: (revenueMap[dateStr]?.revenue || 0) - (refundMap[dateStr]?.refundedAmount || 0),
     });
   }
 
@@ -212,7 +225,10 @@ const getOwnerAnalytics = async (organizationId) => {
     eventName: b.eventName || b.eventId?.name || "Unknown",
     eventDate: b.eventDateTime || b.eventId?.dateTime || null,
     totalAmount: b.totalAmount,
+    originalAmount: b.originalAmount || b.totalAmount,
     status: b.status,
+    paymentStatus: b.paymentStatus,
+    refundInfo: b.refundInfo || null,
     createdAt: b.createdAt,
   }));
 

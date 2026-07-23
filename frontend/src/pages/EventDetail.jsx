@@ -67,6 +67,18 @@ const EventDetail = () => {
 
   if (!event) return null;
 
+  if (event.purchaseMode === "seatmap") {
+    return (
+      <div className="card" style={{ maxWidth: 780, margin: "0 auto" }}>
+        <p><Link to={`/o/${orgSlug}/events`}>&larr; Back to events</Link></p>
+        {event.bannerImageUrl && <img src={event.bannerImageUrl} alt="" style={{ width: "100%", maxHeight: 300, objectFit: "cover", borderRadius: 10 }} />}
+        <h1>{event.name}</h1><p style={{ color: "var(--muted)" }}>{new Date(event.dateTime).toLocaleString()} · {event.venueId?.name}</p>
+        <p>{event.description || "Choose your exact seats from the interactive seating plan."}</p>
+        <Link to={`/o/${orgSlug}/events/${eventId}/seats`} className="btn btn-primary">Choose seats</Link>
+      </div>
+    );
+  }
+
   const totalRemaining = remainingTickets(event.ticketTypes);
 
   return (

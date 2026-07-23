@@ -16,6 +16,7 @@ const analyticsRoutes = require("./routes/analytics.routes");
 const calendarRoutes = require("./routes/calendar.routes");
 const publicRoutes = require("./routes/public.routes");
 const refundRoutes = require("./routes/refund.routes");
+const seatmapRoutes = require("./routes/seatmap.routes");
 
 const app = express();
 
@@ -58,7 +59,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/organizations", organizationRoutes);
 app.use("/api/o/:orgSlug", tenantRoutes);
 app.use("/api/o/:orgSlug/venues", venueRoutes);
+app.use("/api/o/:orgSlug/venues", seatmapRoutes.templates);
 app.use("/api/o/:orgSlug/events", eventRoutes);
+app.use("/api/o/:orgSlug/events", seatmapRoutes.eventMaps);
 app.use("/api/o/:orgSlug/events/:eventId/bookings", bookingRoutes);
 // Simpler path for confirmation — Stripe redirects here without eventId
 app.use("/api/o/:orgSlug/bookings", bookingConfirmRoutes);

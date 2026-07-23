@@ -7,6 +7,27 @@ const walletService = require("./wallet.service");
 const REFUND_WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const STRIPE_DEDUCTION_PERCENT = 0.1; // 10%
 
+// Seat-map bookings reserve individual inventory records. A successful refund
+// must return exactly those seats, just as legacy ticket refunds return value
+// to the buyer. Keep this transaction tenant-scoped to avoid cross-org writes.
+const releaseRefundedSeats = async (booking) => {
+  if (!booking.selectedSeats?.length) return;
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+    const event = await Event.findOne({ _id: booking.eventId, organizationId: booking.organizationId }).session(session);
+    if (event?.selectedSeatMap) {
+      for (const reference of booking.selectedSeats) {
+        const seat = event.selectedSeatMap.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+        if (seat?.status === "sold") seat.status = "available";
+      }
+      event.markModified("selectedSeatMap");
+      await event.save({ session });
+    }
+    await session.commitTransaction();
+  } catch (error) { await session.abortTransaction(); throw error; } finally { session.endSession(); }
+};
+
 /**
  * Refund Service
  * 
@@ -78,6 +99,7 @@ const processWalletRefund = async (booking, userId) => {
     processedAt: new Date(),
   };
   await booking.save();
+  await releaseRefundedSeats(booking);
 
   return {
     method: "wallet",
@@ -123,6 +145,7 @@ const processStripeRefund = async (booking, userId) => {
       processedAt: new Date(),
     };
     await booking.save();
+    await releaseRefundedSeats(booking);
 
     return {
       method: "stripe",

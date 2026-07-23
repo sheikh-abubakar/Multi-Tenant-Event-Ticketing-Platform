@@ -1106,6 +1106,14 @@ are marked as complete; this section lists what's **left**.
 
 ## Change Log
 
+### Seat-map implementation (2026-07-22)
+
+- New events use `purchaseMode: "seatmap"`; legacy `ticketTypes` documents are retained for historical bookings.
+- `Venue.seatmaps` stores reusable tenant-scoped templates. `Event.selectedSeatMap` stores the independent event copy, including stable block and seat IDs.
+- Organizer APIs: template CRUD under `/api/o/:orgSlug/venues/:venueId/seatmaps`, and event-map read/save/seed under `/api/o/:orgSlug/events/:eventId/seatmap`. Template/event-map writes require the `owner` or `admin` role.
+- Buyers choose seats by stable `{ blockId, seatId }`; the session cart snapshots each seat’s label, block name and price. Checkout atomically marks available seats `checkout-held`, confirmation marks them `sold`, and expiry/webhook release returns them to `available`.
+- Frontend routes: `/o/:orgSlug/manage/venues/:venueId/seatmaps/new`, `/o/:orgSlug/manage/events/:eventId/seatmap`, and `/o/:orgSlug/events/:eventId/seats`.
+
 > Every entry here should reference the section(s) updated.
 
 | Date | Change | Section(s) affected |

@@ -68,4 +68,9 @@ const clearCart = async (req, res) => {
   }
 };
 
-module.exports = { getCart, addItem, updateItem, removeItem, clearCart };
+const removeSeat = async (req, res) => {
+  try { const cart = cartService.removeSeat(req, req.organizationId, req.params.eventId, req.params.blockId, req.params.seatId); return res.json({ cart }); }
+  catch (error) { return res.status(error.statusCode || 500).json({ message: error.message }); }
+};
+
+module.exports = { getCart, addItem, updateItem, removeItem, removeSeat, clearCart };

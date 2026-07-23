@@ -7,6 +7,7 @@ const router = express.Router({ mergeParams: true });
 // Cart is public for buyers, but always tenant-scoped via :orgSlug.
 router.get("/:eventId", resolveTenant, cartController.getCart);
 router.post("/:eventId/items", resolveTenant, cartController.addItem);
+router.delete("/:eventId/seats/:blockId/:seatId", resolveTenant, cartController.removeSeat);
 router.put("/:eventId/items", resolveTenant, cartController.updateItem);
 router.delete("/:eventId/items/:ticketTypeIndex", resolveTenant, cartController.removeItem);
 router.delete("/:eventId", resolveTenant, cartController.clearCart);

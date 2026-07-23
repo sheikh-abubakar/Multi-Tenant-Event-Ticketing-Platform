@@ -59,10 +59,9 @@ const CheckoutPage = () => {
     setError("");
 
     try {
-      const items = (cart?.items || []).map((item) => ({
-        ticketTypeIndex: item.ticketTypeIndex,
-        quantity: item.quantity,
-      }));
+      const items = (cart?.items || []).map((item) => item.blockId && item.seatId
+        ? { blockId: item.blockId, seatId: item.seatId }
+        : { ticketTypeIndex: item.ticketTypeIndex, quantity: item.quantity });
 
       const res = await apiClient.post(
         `/o/${orgSlug}/events/${eventId}/bookings/checkout`,
@@ -161,8 +160,8 @@ const CheckoutPage = () => {
           </thead>
           <tbody>
             {cart.items.map((item) => (
-              <tr key={item.ticketTypeIndex} style={{ borderBottom: "1px solid #e8e2d3" }}>
-                <td style={{ padding: "10px 4px" }}>{item.ticketTypeName}</td>
+              <tr key={item.ticketTypeIndex ?? `${item.blockId}:${item.seatId}`} style={{ borderBottom: "1px solid #e8e2d3" }}>
+                <td style={{ padding: "10px 4px" }}>{item.ticketTypeName || `${item.sectionName} — ${item.seatName}`}</td>
                 <td style={{ padding: "10px 4px", textAlign: "center" }}>{item.quantity}</td>
                 <td style={{ padding: "10px 4px", textAlign: "right", fontWeight: 700 }}>
                   Rs. {Number(item.unitPrice || 0) * Number(item.quantity || 0)}

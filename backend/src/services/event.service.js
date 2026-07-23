@@ -2,7 +2,7 @@ const Event = require("../models/Event");
 const Venue = require("../models/Venue");
 
 const createEvent = async (data, organizationId, bannerImageUrl) => {
-  const { name, description, dateTime, venueId, ticketTypes } = data;
+  const { name, description, dateTime, venueId } = data;
 
   if (!name || !dateTime || !venueId) {
     const error = new Error("name, dateTime and venueId are required");
@@ -22,13 +22,6 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     throw error;
   }
 
-  let parsedTicketTypes = [];
-  if (ticketTypes) {
-    // ticketTypes may arrive as a JSON string (multipart/form-data
-    // can't send nested arrays natively) or as a real array (JSON body).
-    parsedTicketTypes = typeof ticketTypes === "string" ? JSON.parse(ticketTypes) : ticketTypes;
-  }
-
   // Inherit timezone from venue
   const eventTimezone = venue.timezone || "Asia/Karachi";
 
@@ -39,7 +32,8 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     description,
     dateTime,
     bannerImageUrl,
-    ticketTypes: parsedTicketTypes,
+    purchaseMode: "seatmap",
+    ticketTypes: [],
     timezone: eventTimezone,
   });
 };
@@ -66,16 +60,15 @@ const getEventById = async (eventId, organizationId) => {
 };
 
 const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => {
-  const allowedFields = ["name", "description", "dateTime", "venueId", "ticketTypes"];
+  // Ticket types are intentionally absent: all new events are seat-map
+  // events. Legacy documents remain readable because their old values are
+  // never overwritten by this metadata editor.
+  const allowedFields = ["name", "description", "dateTime", "venueId"];
   const safeUpdates = {};
 
   for (const field of allowedFields) {
     if (updates[field] !== undefined) {
-      if (field === "ticketTypes" && typeof updates[field] === "string") {
-        safeUpdates[field] = JSON.parse(updates[field]);
-      } else {
-        safeUpdates[field] = updates[field];
-      }
+      safeUpdates[field] = updates[field];
     }
   }
 

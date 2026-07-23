@@ -57,6 +57,7 @@ const getCartByEvent = async (req, organizationId, eventId) => {
 };
 
 const addItem = async (req, organizationId, eventId, data) => {
+  if (data.seatId && data.blockId) return addSeat(req, organizationId, eventId, data);
   const { ticketTypeIndex, quantity } = data;
 
   const ticketTypeIdx = Number(ticketTypeIndex);
@@ -120,6 +121,25 @@ const addItem = async (req, organizationId, eventId, data) => {
   saveCart(req, organizationId, eventId, cart);
 
   return cart;
+};
+
+const addSeat = async (req, organizationId, eventId, { blockId, seatId }) => {
+  const event = await Event.findOne({ _id: eventId, organizationId });
+  if (!event) { const error = new Error("Event not found"); error.statusCode = 404; throw error; }
+  if (event.purchaseMode !== "seatmap" || !event.selectedSeatMap) { const error = new Error("This event does not use seat selection"); error.statusCode = 400; throw error; }
+  const block = event.selectedSeatMap.blocks?.find((item) => item.id === blockId);
+  const seat = block?.seats?.find((item) => item.id === seatId);
+  if (!seat || !block) { const error = new Error("Seat not found"); error.statusCode = 404; throw error; }
+  if (seat.status !== "available") { const error = new Error("This seat is no longer available"); error.statusCode = 409; throw error; }
+  const cart = getOrCreateCart(req, organizationId, eventId);
+  if (!cart.items.some((item) => item.blockId === blockId && item.seatId === seatId)) cart.items.push({ blockId, seatId, seatName: seat.seatName, sectionName: block.name, category: block.category || null, quantity: 1, unitPrice: Number(block.price || 0) });
+  saveCart(req, organizationId, eventId, cart); return cart;
+};
+
+const removeSeat = (req, organizationId, eventId, blockId, seatId) => {
+  const cart = getOrCreateCart(req, organizationId, eventId);
+  cart.items = cart.items.filter((item) => item.blockId !== blockId || item.seatId !== seatId);
+  saveCart(req, organizationId, eventId, cart); return cart;
 };
 
 const updateItem = async (req, organizationId, eventId, data) => {
@@ -230,7 +250,9 @@ const clearCart = (req, organizationId, eventId) => {
 module.exports = {
   getCartByEvent,
   addItem,
+  addSeat,
   updateItem,
   removeItem,
+  removeSeat,
   clearCart,
 };

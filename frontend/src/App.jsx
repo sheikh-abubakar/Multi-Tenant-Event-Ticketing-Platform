@@ -18,6 +18,9 @@ import TeamManagement from "./pages/TeamManagement";
 import AcceptInvite from "./pages/AcceptInvite";
 import Analytics from "./pages/Analytics";
 import BuyerDashboard from "./pages/BuyerDashboard";
+import VenueSeatMapBuilder from "./pages/VenueSeatMapBuilder";
+import EventSeatMapBuilder from "./pages/EventSeatMapBuilder";
+import SeatSelection from "./pages/SeatSelection";
 
 function App() {
   return (
@@ -59,6 +62,8 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/o/:orgSlug/manage/venues/:venueId/seatmaps/:seatmapId?" element={<ProtectedRoute><VenueSeatMapBuilder /></ProtectedRoute>} />
+        <Route path="/o/:orgSlug/manage/events/:eventId/seatmap" element={<ProtectedRoute><EventSeatMapBuilder /></ProtectedRoute>} />
         <Route
           path="/o/:orgSlug/manage/settings"
           element={
@@ -86,6 +91,7 @@ function App() {
         {/* Public buyer-facing routes */}
         <Route path="/o/:orgSlug/events" element={<PublicEvents />} />
         <Route path="/o/:orgSlug/events/:eventId" element={<EventDetail />} />
+        <Route path="/o/:orgSlug/events/:eventId/seats" element={<SeatSelection />} />
         {/* Public invite acceptance (no auth) */}
         <Route path="/o/:orgSlug/accept-invite" element={<AcceptInvite />} />
         {/* Cart & Checkout */}

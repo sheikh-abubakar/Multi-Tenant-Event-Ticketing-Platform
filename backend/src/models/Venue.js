@@ -67,6 +67,13 @@ const venueSchema = new mongoose.Schema(
       ],
       default: "Asia/Karachi",
     },
+    // Reusable canvas layouts. A schema-less subdocument is deliberate here:
+    // the editor preserves stable block/seat ids and can evolve without a
+    // destructive migration of tenant-owned templates.
+    seatmaps: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: [],
+    },
   },
   { timestamps: true }
 );

@@ -63,6 +63,32 @@ const parseCheckoutItems = (items) => {
   );
 };
 
+const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => {
+  const { buyerName, buyerEmail, items, useWallet, walletDeduction } = data;
+  if (!buyerName || !buyerEmail || !Array.isArray(items) || !items.length) { const error = new Error("buyerName, buyerEmail and selected seats are required"); error.statusCode = 400; throw error; }
+  const dbSession = await mongoose.startSession();
+  try {
+    dbSession.startTransaction();
+    const event = await Event.findOne({ _id: eventId, organizationId, purchaseMode: "seatmap" }).session(dbSession);
+    if (!event?.selectedSeatMap) { const error = new Error("Seat map is not configured for this event"); error.statusCode = 400; throw error; }
+    const seen = new Set(); const selectedSeats = []; let totalAmount = 0;
+    for (const request of items) {
+      const key = `${request.blockId}:${request.seatId}`; if (seen.has(key)) continue; seen.add(key);
+      const block = event.selectedSeatMap.blocks?.find((item) => item.id === request.blockId); const seat = block?.seats?.find((item) => item.id === request.seatId);
+      if (!block || !seat || seat.status !== "available") { const error = new Error("One or more seats are no longer available"); error.statusCode = 409; throw error; }
+      const unitPrice = Number(block.price || 0); seat.status = "checkout-held"; selectedSeats.push({ blockId: block.id, seatId: seat.id, seatName: seat.seatName, sectionName: block.name, category: block.category || null, unitPrice }); totalAmount += unitPrice;
+    }
+    if (!selectedSeats.length) { const error = new Error("Select at least one seat"); error.statusCode = 400; throw error; }
+    const walletAmount = useWallet ? Math.min(Number(walletDeduction || 0), totalAmount) : 0;
+    const [booking] = await Booking.create([{ organizationId, eventId, eventName: event.name, eventDateTime: event.dateTime, buyerName: buyerName.trim(), buyerEmail: buyerEmail.trim().toLowerCase(), items: selectedSeats.map((seat) => ({ ticketTypeName: `${seat.sectionName} — ${seat.seatName}`, quantity: 1, unitPrice: seat.unitPrice, lineTotal: seat.unitPrice })), selectedSeats, totalAmount: totalAmount - walletAmount, originalAmount: totalAmount, walletDeduction: walletAmount, walletDeductionPending: walletAmount, currency: "PKR", status: "pending", paymentStatus: "pending", confirmationCode: generateConfirmationCode(), expiresAt: new Date(Date.now() + HOLD_DURATION_MS) }], { session: dbSession });
+    event.markModified("selectedSeatMap"); await event.save({ session: dbSession });
+    const paymentRatio = totalAmount ? (totalAmount - walletAmount) / totalAmount : 1;
+    const stripeItems = selectedSeats.map((seat) => ({ price_data: { currency: "pkr", product_data: { name: `${event.name} — ${seat.sectionName} ${seat.seatName}` }, unit_amount: Math.max(1, Math.round(seat.unitPrice * 100 * paymentRatio)) }, quantity: 1 }));
+    const stripeSession = await stripe.checkout.sessions.create({ payment_method_types: ["card"], mode: "payment", customer_email: booking.buyerEmail, client_reference_id: booking._id.toString(), metadata: { bookingId: booking._id.toString(), eventId: String(eventId), organizationId: String(organizationId), purchaseMode: "seatmap", useWallet: useWallet ? "true" : "false", walletDeduction: String(walletAmount) }, line_items: stripeItems, success_url: `${FRONTEND_URL}/o/${orgSlug}/bookings/${booking._id}/confirmation?session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${FRONTEND_URL}/o/${orgSlug}/events/${eventId}` }, { idempotencyKey: `seatmap-${booking._id}` });
+    booking.stripeSessionId = stripeSession.id; await booking.save({ session: dbSession }); await dbSession.commitTransaction(); return { bookingId: booking._id, stripeSessionId: stripeSession.id, stripeUrl: stripeSession.url };
+  } catch (error) { await dbSession.abortTransaction(); throw error; } finally { dbSession.endSession(); }
+};
+
 /**
  * Create a pending booking and generate a Stripe Checkout Session.
  * IDEMPOTENT: If a pending booking already exists for this buyer + event,
@@ -70,6 +96,9 @@ const parseCheckoutItems = (items) => {
  * This prevents double charges if the buyer clicks "Pay" twice.
  */
 const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => {
+  if (Array.isArray(data.items) && data.items.some((item) => item.blockId && item.seatId)) {
+    return createSeatmapCheckout(eventId, organizationId, orgSlug, data);
+  }
   const { buyerName, buyerEmail, items, cartKey, useWallet, walletDeduction } = data;
 
   if (!buyerName || !buyerEmail) {
@@ -444,6 +473,14 @@ const confirmBooking = async (stripeSessionId) => {
   booking.status = "confirmed";
   booking.paymentStatus = "paid";
   booking.qrCodeUrl = qrCodeUrl;
+  if (booking.selectedSeats?.length) {
+    const seatEvent = await Event.findOne({ _id: booking.eventId, organizationId: booking.organizationId });
+    for (const reference of booking.selectedSeats) {
+      const seat = seatEvent?.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+      if (seat?.status === "checkout-held") seat.status = "sold";
+    }
+    if (seatEvent) { seatEvent.markModified("selectedSeatMap"); await seatEvent.save(); }
+  }
   await booking.save();
 
   // If wallet was used, deduct from wallet now
@@ -526,7 +563,14 @@ const expireBookingIfStillPending = async (booking) => {
       organizationId: booking.organizationId,
     }).session(session);
 
-    if (event) {
+    if (event && booking.selectedSeats?.length) {
+      for (const reference of booking.selectedSeats) {
+        const seat = event.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+        if (seat?.status === "checkout-held") seat.status = "available";
+      }
+      event.markModified("selectedSeatMap");
+      await event.save({ session });
+    } else if (event) {
       for (const item of booking.items) {
         const ticketType = event.ticketTypes[item.ticketTypeIndex];
         if (!ticketType) continue;

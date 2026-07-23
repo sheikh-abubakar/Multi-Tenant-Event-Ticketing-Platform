@@ -140,7 +140,14 @@ const releaseExpiredBookings = async () => {
         organizationId: booking.organizationId,
       }).session(session);
 
-      if (event) {
+      if (event && booking.selectedSeats?.length) {
+        for (const reference of booking.selectedSeats) {
+          const seat = event.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+          if (seat?.status === "checkout-held") seat.status = "available";
+        }
+        event.markModified("selectedSeatMap");
+        await event.save({ session });
+      } else if (event) {
         for (const item of booking.items) {
           const ticketType = event.ticketTypes[item.ticketTypeIndex];
           if (!ticketType) continue;

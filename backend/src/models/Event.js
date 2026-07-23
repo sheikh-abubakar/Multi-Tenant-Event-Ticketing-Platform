@@ -68,6 +68,20 @@ const eventSchema = new mongoose.Schema(
       type: [ticketTypeSchema],
       default: [],
     },
+    // Existing events without this field are legacy ticket events. All new
+    // events use the seat-map checkout path.
+    purchaseMode: {
+      type: String,
+      enum: ["legacy-ticket", "seatmap"],
+      default: "seatmap",
+      index: true,
+    },
+    // Event-specific copy of a venue template. Seats hold the live inventory
+    // status (available, organizer-held, checkout-held, sold).
+    selectedSeatMap: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
     timezone: {
       type: String,
       required: true,

@@ -4,29 +4,39 @@ const bookingItemSchema = new mongoose.Schema(
   {
     ticketTypeName: {
       type: String,
-      required: true,
       trim: true,
     },
     ticketTypeIndex: {
       type: Number,
-      required: true,
       min: 0,
     },
     quantity: {
       type: Number,
-      required: true,
+      default: 1,
       min: 1,
     },
     unitPrice: {
       type: Number,
-      required: true,
+      default: 0,
       min: 0,
     },
     lineTotal: {
       type: Number,
-      required: true,
+      default: 0,
       min: 0,
     },
+  },
+  { _id: false },
+);
+
+const selectedSeatSchema = new mongoose.Schema(
+  {
+    blockId: { type: String, required: true },
+    seatId: { type: String, required: true },
+    seatName: { type: String, required: true },
+    sectionName: { type: String, default: null },
+    category: { type: String, default: null },
+    unitPrice: { type: Number, required: true, min: 0 },
   },
   { _id: false },
 );
@@ -73,6 +83,10 @@ const bookingSchema = new mongoose.Schema(
     },
     items: {
       type: [bookingItemSchema],
+      default: [],
+    },
+    selectedSeats: {
+      type: [selectedSeatSchema],
       default: [],
     },
     totalAmount: {

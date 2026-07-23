@@ -298,6 +298,12 @@ const Venues = () => {
                   >
                     <Pencil size={14} /> Edit
                   </button>
+                  <Link
+                    to={`/o/${orgSlug}/manage/venues/${venue._id}/seatmaps/new`}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-gold px-3 py-2 text-sm font-semibold text-ink hover:bg-gold-soft"
+                  >
+                    Seat maps
+                  </Link>
                   {canDelete && (
                     <button
                       onClick={() => handleDelete(venue._id)}

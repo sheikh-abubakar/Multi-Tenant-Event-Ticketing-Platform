@@ -9,6 +9,7 @@ const eventRoutes = require("./routes/event.routes");
 const bookingRoutes = require("./routes/booking.routes");
 const bookingConfirmRoutes = require("./routes/bookingConfirm.routes");
 const cartRoutes = require("./routes/cart.routes");
+const globalCartRoutes = require("./routes/globalCart.routes");
 const bookingController = require("./controllers/booking.controller");
 const orgSettingsRoutes = require("./routes/orgSettings.routes");
 const teamRoutes = require("./routes/team.routes");
@@ -66,6 +67,7 @@ app.use("/api/o/:orgSlug/events/:eventId/bookings", bookingRoutes);
 // Simpler path for confirmation — Stripe redirects here without eventId
 app.use("/api/o/:orgSlug/bookings", bookingConfirmRoutes);
 app.use("/api/o/:orgSlug/cart", cartRoutes);
+app.use("/api/cart", globalCartRoutes);
 app.use("/api/o/:orgSlug/settings", orgSettingsRoutes);
 app.use("/api/o/:orgSlug/team", teamRoutes);
 app.use("/api/o/:orgSlug/analytics", analyticsRoutes);

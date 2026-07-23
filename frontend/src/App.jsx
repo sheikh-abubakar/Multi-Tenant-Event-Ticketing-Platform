@@ -22,6 +22,7 @@ import BuyerDashboard from "./pages/BuyerDashboard";
 import VenueSeatMapBuilder from "./pages/VenueSeatMapBuilder";
 import EventSeatMapBuilder from "./pages/EventSeatMapBuilder";
 import SeatSelection from "./pages/SeatSelection";
+import GlobalCart from "./pages/GlobalCart";
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
         {/* Public buyer dashboard — shows all events across all orgs */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/browse" element={<Home />} />
+        <Route path="/cart" element={<ProtectedRoute><GlobalCart /></ProtectedRoute>} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
         <Route

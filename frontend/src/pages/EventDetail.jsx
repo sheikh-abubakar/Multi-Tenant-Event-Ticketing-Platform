@@ -134,7 +134,7 @@ const EventDetail = () => {
           <span>Ticket types</span>
           {event.ticketTypes?.length > 0 && (
             <Link
-              to={`/o/${orgSlug}/cart/${eventId}`}
+              to="/cart"
               className="badge"
               style={{ textDecoration: "none" }}
             >

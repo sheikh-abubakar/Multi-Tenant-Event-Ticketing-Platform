@@ -1,4 +1,5 @@
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { ShoppingCart, WalletCards } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import "./Layout.css";
 import "./PageVisuals.css";
@@ -32,8 +33,6 @@ const Layout = ({ children }) => {
           <p className="sidebar-caption">ORGANIZER CONSOLE</p>
           <nav className="sidebar-nav" aria-label="Organization navigation">
             <NavLink to="/browse" className="sidebar-link sidebar-link--global">My Organizations</NavLink>
-            <span className="sidebar-link sidebar-link--disabled" title="Cart opens from a specific event">View Cart <small>EVENT</small></span>
-            <NavLink to="/my/dashboard" className="sidebar-link sidebar-link--global">Wallet <small>ACCOUNT</small></NavLink>
             <span className="sidebar-divider" />
             <p className="sidebar-caption">THIS ORGANIZATION</p>
             {organizationLinks.map(([label, to]) => (
@@ -66,6 +65,12 @@ const Layout = ({ children }) => {
             {user ? (
               <>
                 <Link to="/browse" className="nav-login">My Organizations</Link>
+                <Link to="/cart" className="nav-personal-link" aria-label="View cart" title="View cart">
+                  <ShoppingCart size={15} aria-hidden="true" /> <span>Cart</span>
+                </Link>
+                <Link to="/my/dashboard" className="nav-personal-link" aria-label="Open wallet" title="Wallet">
+                  <WalletCards size={15} aria-hidden="true" /> <span>Wallet</span>
+                </Link>
                 <span style={{ color: "var(--muted)", fontSize: 13 }}>
                   {user.name}
                 </span>

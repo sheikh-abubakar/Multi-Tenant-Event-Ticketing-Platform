@@ -247,6 +247,54 @@ const clearCart = (req, organizationId, eventId) => {
   };
 };
 
+const getAllSessionCarts = async (req) => {
+  const sessionCarts = Object.values(req.session?.carts || {}).filter((cart) => cart.items?.length);
+  if (!sessionCarts.length) return [];
+
+  const events = await Event.find({ _id: { $in: sessionCarts.map((cart) => cart.eventId) } })
+    .select("name description dateTime bannerImageUrl purchaseMode venueId organizationId")
+    .populate("venueId", "name city")
+    .populate("organizationId", "name slug")
+    .lean();
+  const eventById = new Map(events.map((event) => [String(event._id), event]));
+
+  return sessionCarts.flatMap((cart) => {
+    const event = eventById.get(String(cart.eventId));
+    if (!event || String(event.organizationId?._id || event.organizationId) !== String(cart.organizationId)) return [];
+    return [{
+      organizationId: String(cart.organizationId),
+      organizationSlug: event.organizationId?.slug,
+      organizationName: event.organizationId?.name,
+      eventId: String(cart.eventId),
+      event,
+      items: cart.items,
+      total: cart.items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0),
+    }];
+  });
+};
+
+const removeGlobalCartItem = (req, { eventId, blockId, seatId, ticketTypeIndex }) => {
+  const cart = Object.values(req.session?.carts || {}).find((item) => String(item.eventId) === String(eventId));
+  if (!cart) {
+    const error = new Error("Cart not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (blockId && seatId) {
+    cart.items = cart.items.filter((item) => item.blockId !== blockId || item.seatId !== seatId);
+  } else {
+    const index = Number(ticketTypeIndex);
+    if (!Number.isInteger(index) || index < 0) {
+      const error = new Error("A valid cart item is required");
+      error.statusCode = 400;
+      throw error;
+    }
+    cart.items = cart.items.filter((item) => item.ticketTypeIndex !== index);
+  }
+  saveCart(req, cart.organizationId, cart.eventId, cart);
+  return cart;
+};
+
 module.exports = {
   getCartByEvent,
   addItem,
@@ -255,4 +303,6 @@ module.exports = {
   removeItem,
   removeSeat,
   clearCart,
+  getAllSessionCarts,
+  removeGlobalCartItem,
 };

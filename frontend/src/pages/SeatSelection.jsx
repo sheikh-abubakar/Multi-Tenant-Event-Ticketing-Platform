@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import apiClient from "../api/client";
+import { cachedGet } from "../api/requestCache";
 import SeatMapCanvas from "../components/seatmap/SeatMapCanvas";
 
 export default function SeatSelection() {
   const { orgSlug, eventId } = useParams(); const navigate = useNavigate(); const [map, setMap] = useState(null); const [cart, setCart] = useState({ items: [] }); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
-  const load = async () => { try { const [mapResponse, cartResponse] = await Promise.all([apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap`), apiClient.get(`/o/${orgSlug}/cart/${eventId}`)]); setMap(mapResponse.data.seatmap); setCart(cartResponse.data.cart); } catch (err) { setError(err.response?.data?.message || "Could not load this seating plan."); } };
+  const load = async () => { try { const [mapResponse, cartResponse] = await Promise.all([cachedGet(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000), apiClient.get(`/o/${orgSlug}/cart/${eventId}`)]); setMap(mapResponse.data.seatmap); setCart(cartResponse.data.cart); } catch (err) { setError(err.response?.data?.message || "Could not load this seating plan."); } };
   useEffect(() => { load(); }, [orgSlug, eventId]);
   const selected = useMemo(() => new Set(cart.items.map((item) => `${item.blockId}:${item.seatId}`)), [cart]); const total = cart.items.reduce((sum, item) => sum + Number(item.unitPrice || 0), 0);
   const toggle = async (block, seat) => { if (seat.status !== "available" || busy) return; setBusy(true); try { const exists = selected.has(`${block.id}:${seat.id}`); const response = exists ? await apiClient.delete(`/o/${orgSlug}/cart/${eventId}/seats/${block.id}/${seat.id}`) : await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items`, { blockId: block.id, seatId: seat.id }); setCart(response.data.cart); } catch (err) { setError(err.response?.data?.message || "Could not update your selection."); } finally { setBusy(false); } };

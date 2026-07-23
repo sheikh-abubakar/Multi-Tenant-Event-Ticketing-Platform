@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
+import { cachedGet, prefetch } from "../api/requestCache";
 
 const EventDetail = () => {
   const { orgSlug, eventId } = useParams();
@@ -21,8 +22,8 @@ const EventDetail = () => {
       setError("");
       try {
         const [infoRes, eventRes] = await Promise.all([
-          apiClient.get(`/o/${orgSlug}/info`),
-          apiClient.get(`/o/${orgSlug}/events/${eventId}`),
+          cachedGet(`/o/${orgSlug}/info`, 60_000),
+          cachedGet(`/o/${orgSlug}/events/${eventId}`, 30_000),
         ]);
 
         if (!cancelled) {
@@ -74,7 +75,14 @@ const EventDetail = () => {
         {event.bannerImageUrl && <img src={event.bannerImageUrl} alt="" style={{ width: "100%", maxHeight: 300, objectFit: "cover", borderRadius: 10 }} />}
         <h1>{event.name}</h1><p style={{ color: "var(--muted)" }}>{new Date(event.dateTime).toLocaleString()} · {event.venueId?.name}</p>
         <p>{event.description || "Choose your exact seats from the interactive seating plan."}</p>
-        <Link to={`/o/${orgSlug}/events/${eventId}/seats`} className="btn btn-primary">Choose seats</Link>
+        <Link
+          to={`/o/${orgSlug}/events/${eventId}/seats`}
+          className="btn btn-primary"
+          onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000)}
+          onFocus={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000)}
+        >
+          Choose seats
+        </Link>
       </div>
     );
   }

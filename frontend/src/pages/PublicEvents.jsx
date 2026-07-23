@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import apiClient from "../api/client";
+import { cachedGet, prefetch } from "../api/requestCache";
 
 const PublicEvents = () => {
   const { orgSlug } = useParams();
@@ -17,8 +18,8 @@ const PublicEvents = () => {
       setError("");
       try {
         const [infoRes, eventsRes] = await Promise.all([
-          apiClient.get(`/o/${orgSlug}/info`),
-          apiClient.get(`/o/${orgSlug}/events`),
+          cachedGet(`/o/${orgSlug}/info`, 60_000),
+          cachedGet(`/o/${orgSlug}/events`, 30_000),
         ]);
 
         if (!cancelled) {
@@ -83,6 +84,8 @@ const PublicEvents = () => {
             <Link
               key={event._id}
               to={`/o/${orgSlug}/events/${event._id}`}
+              onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${event._id}`, 30_000)}
+              onFocus={() => prefetch(`/o/${orgSlug}/events/${event._id}`, 30_000)}
               className="card storefront-event-card"
               style={styles.card}
             >

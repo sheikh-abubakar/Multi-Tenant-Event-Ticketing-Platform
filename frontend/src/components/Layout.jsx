@@ -66,7 +66,6 @@ const Layout = ({ children }) => {
             {user ? (
               <>
                 <Link to="/browse" className="nav-login">My Organizations</Link>
-                <Link to="/my/dashboard" className="nav-login">My Tickets</Link>
                 <span style={{ color: "var(--muted)", fontSize: 13 }}>
                   {user.name}
                 </span>

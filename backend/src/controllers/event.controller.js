@@ -32,6 +32,15 @@ const list = async (req, res) => {
   }
 };
 
+const listPublic = async (req, res) => {
+  try {
+    const events = await eventService.listEvents(req.organizationId, null, { includeSeatMap: false });
+    return res.json({ events });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 const getOne = async (req, res) => {
   try {
     const event = await eventService.getEventById(req.params.eventId, req.organizationId);
@@ -65,4 +74,4 @@ const remove = async (req, res) => {
   }
 };
 
-module.exports = { create, list, getOne, update, remove };
+module.exports = { create, list, listPublic, getOne, update, remove };

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Wallet, Ticket, ArrowLeft, ArrowRight, Clock, CreditCard, TrendingUp, ChevronDown, X } from "lucide-react";
 import apiClient from "../api/client";
+import "./BuyerDashboard.css";
 
 const BuyerDashboard = () => {
   const [wallet, setWallet] = useState(null);
@@ -87,6 +88,9 @@ const BuyerDashboard = () => {
     <div className="buyer-dashboard-page" style={{ maxWidth: 900, margin: "0 auto" }}>
       {/* Header */}
       <div className="buyer-dashboard__masthead" style={{ marginBottom: 40 }}>
+        <Link to="/browse" className="buyer-dashboard__back" aria-label="Back to browse events">
+          <ArrowLeft size={15} /> Back to browse
+        </Link>
         <h1 style={{ color: "var(--paper)", fontSize: 36, margin: "0 0 8px" }}>
           My Dashboard
         </h1>

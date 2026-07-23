@@ -11,27 +11,22 @@ const getAllPublicEvents = async (req, res) => {
     const now = new Date();
 
     // Fetch events — populate orgId ONLY if org is NOT soft-deleted
-    const allEvents = await Event.find({})
+    const allEvents = await Event.find({ dateTime: { $gte: now } })
+      .select("name description dateTime bannerImageUrl ticketTypes venueId organizationId createdAt updatedAt")
       .populate({
         path: "organizationId",
         match: { isDeleted: { $ne: true } },
         select: "name slug",
       })
-      .populate("venueId", "name address city")
+      .populate("venueId", "name city")
       .sort({ dateTime: 1 })
       .lean();
 
     // Filter out events whose org was soft-deleted (populate returns null for match miss)
     const validEvents = allEvents.filter((event) => event.organizationId !== null);
 
-    // Filter to only upcoming events
-    const upcomingEvents = validEvents.filter((event) => {
-      const eventDate = new Date(event.dateTime);
-      return eventDate >= now;
-    });
-
     // Shape the response
-    const shapedEvents = upcomingEvents.map((event) => ({
+    const shapedEvents = validEvents.map((event) => ({
       _id: event._id,
       name: event.name,
       description: event.description,
@@ -60,6 +55,7 @@ const getAllOrganizations = async (req, res) => {
   try {
     // Only return organizations that are NOT soft-deleted
     const orgs = await Organization.find({ isDeleted: { $ne: true } })
+      .select("name slug")
       .sort({ name: 1 })
       .lean();
     return res.json({ organizations: orgs });

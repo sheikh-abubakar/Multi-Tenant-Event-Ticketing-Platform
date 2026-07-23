@@ -38,19 +38,23 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
   });
 };
 
-const listEvents = async (organizationId, assignedVenueIds = null) => {
+const listEvents = async (organizationId, assignedVenueIds = null, { includeSeatMap = true } = {}) => {
   const filter = { organizationId };
   if (Array.isArray(assignedVenueIds)) {
     filter.venueId = { $in: assignedVenueIds };
   }
-  return Event.find(filter).populate("venueId", "name city").sort({ dateTime: 1 });
+  const query = Event.find(filter).populate("venueId", "name city").sort({ dateTime: 1 });
+  if (!includeSeatMap) {
+    query.select("name description dateTime bannerImageUrl ticketTypes purchaseMode venueId timezone createdAt updatedAt");
+  }
+  return query.lean();
 };
 
 const getEventById = async (eventId, organizationId) => {
-  const event = await Event.findOne({ _id: eventId, organizationId }).populate(
-    "venueId",
-    "name city"
-  );
+  const event = await Event.findOne({ _id: eventId, organizationId })
+    .select("name description dateTime bannerImageUrl ticketTypes purchaseMode venueId timezone createdAt updatedAt")
+    .populate("venueId", "name city")
+    .lean();
   if (!event) {
     const error = new Error("Event not found");
     error.statusCode = 404;

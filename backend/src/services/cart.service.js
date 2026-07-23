@@ -37,10 +37,10 @@ const saveCart = (req, organizationId, eventId, cart) => {
 };
 
 const getCartByEvent = async (req, organizationId, eventId) => {
-  const event = await Event.findOne({ _id: eventId, organizationId }).populate(
-    "venueId",
-    "name city",
-  );
+  const event = await Event.findOne({ _id: eventId, organizationId })
+    .select("name description dateTime bannerImageUrl ticketTypes purchaseMode venueId timezone")
+    .populate("venueId", "name city")
+    .lean();
 
   if (!event) {
     const error = new Error("Event not found");

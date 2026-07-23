@@ -10,7 +10,7 @@ const eventController = require("../controllers/event.controller");
 const router = express.Router({ mergeParams: true });
 
 // Public storefront reads: no login required — ALL events visible
-router.get("/", resolveTenant, eventController.list);
+router.get("/", resolveTenant, eventController.listPublic);
 
 // Organizer-only listing that respects venue assignments (MUST be before :eventId wildcard)
 router.get("/manage", authenticate, resolveTenant, loadMembership, filterByAssignedVenues, checkPermission("events:read"), eventController.list);

@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import apiClient from "../api/client";
 import OrgCard from "../components/OrgCard";
 import "./BrowseHub.css";
+import { cachedGet, prefetch } from "../api/requestCache";
 
 const Home = () => {
   const { user } = useAuth();
@@ -48,8 +49,8 @@ const Home = () => {
       setEventsLoading(true);
       try {
         const [eventsRes, orgsRes] = await Promise.all([
-          apiClient.get("/events"),
-          apiClient.get("/organizations/public"),
+          cachedGet("/events", 30_000),
+          cachedGet("/organizations/public", 60_000),
         ]);
         if (!cancelled) {
           setEvents(eventsRes.data.events || []);
@@ -305,6 +306,7 @@ const Home = () => {
               <Link
                 key={event._id}
                 to={`/o/${event.organizationSlug}/events/${event._id}`}
+                onFocus={() => prefetch(`/o/${event.organizationSlug}/events/${event._id}`, 30_000)}
                 className="browse-hub__event-card"
                 style={{
                   display: "block",
@@ -319,6 +321,7 @@ const Home = () => {
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = "translateY(-4px)";
                   e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)";
+                  prefetch(`/o/${event.organizationSlug}/events/${event._id}`, 30_000);
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = "translateY(0)";

@@ -1104,6 +1104,25 @@ are marked as complete; this section lists what's **left**.
 
 ---
 
+### UI Enhancement — Theme System and Public Landing Page (2026-07-23)
+
+- Added root-level `data-theme` values in `frontend/src/index.css`. The existing
+  design tokens keep their names (`--ink`, `--ink-soft`, `--paper`, `--gold`,
+  `--gold-soft`, `--violet`, `--text`, `--muted`, `--danger`, `--success`,
+  `--card`, `--border`, `--shadow`, `--radius`, and the font variables); only
+  their values resolve differently in light and dark themes.
+- Added the shared navigation toggle in `frontend/src/components/Layout.jsx`.
+  It applies `data-theme` to the root HTML element, persists the selected value
+  in `localStorage` as `stagepass-theme`, and defaults to dark.
+- Added the responsive public StagePass landing page at `/`, preserving the
+  existing event browser at `/browse` and leaving all organization, event,
+  checkout, seat-map and management paths unchanged.
+
+> **Current UI decision (2026-07-23):** StagePass is dark-theme only. The
+> former light-theme toggle and persistence behaviour were removed. Login and
+> signup received visual-only styling; their authentication behaviour is
+> unchanged.
+
 ## Change Log
 
 ### Seat-map implementation (2026-07-22)
@@ -1118,6 +1137,8 @@ are marked as complete; this section lists what's **left**.
 
 | Date | Change | Section(s) affected |
 |---|---|---|
+| 2026-07-23 | Simplified the visual system to the StagePass dark theme only; removed the theme toggle, refined shared header actions, and restyled the existing login/signup forms without changing authentication logic | Implementation Log (§11), Frontend routes/UI |
+| 2026-07-23 | Added persisted light/dark theme system and a responsive StagePass public landing page; retained public event browsing at `/browse` | Implementation Log (§11), Frontend routes/UI |
 | 2026-07-14 | Initial document created, covering Week 1 (complete) and Week 2 Day 1 Venue + Event CRUD | All |
 | 2026-07-14 | Switched image storage from local disk to Cloudinary (team lead decision); documented seat-map deferral decision | Tech Stack, Key Technical Decisions, Environment & Setup, API Endpoints (7.6), Implementation Log |
 | 2026-07-15 | Frontend Stage 1 built (auth, org creation, dashboard shell); added GET /organizations/mine + "My Organizations" card grid UI | API Endpoints (7.2), Implementation Log, Roadmap |

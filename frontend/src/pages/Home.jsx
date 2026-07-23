@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import apiClient from "../api/client";
 import OrgCard from "../components/OrgCard";
+import "./BrowseHub.css";
 
 const Home = () => {
   const { user } = useAuth();
@@ -104,9 +105,10 @@ const Home = () => {
   });
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 20px" }}>
+    <div className="browse-hub" style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 20px" }}>
       {/* ── Hero ─────────────────────────────────────────────────── */}
-      <div style={{ textAlign: "center", marginBottom: 48 }}>
+      <div className="browse-hub__masthead" style={{ textAlign: "center", marginBottom: 48 }}>
+        <p className="browse-hub__eyebrow">STAGEPASS MEMBER HUB</p>
         <h1
           style={{
             fontSize: 48,
@@ -141,8 +143,8 @@ const Home = () => {
 
       {/* ── "Your organizations" — only when logged in ─────────────── */}
       {user && (
-        <div style={{ marginBottom: 48 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div className="browse-hub__org-section" style={{ marginBottom: 48 }}>
+          <div className="browse-hub__section-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <h2 style={{ color: "var(--paper)", fontFamily: "var(--font-display)", fontSize: 28, margin: 0 }}>
               Your organizations
             </h2>
@@ -163,7 +165,7 @@ const Home = () => {
           )}
 
           {!myOrgsLoading && myOrgs.length > 0 && (
-            <div
+            <div className="browse-hub__org-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
@@ -176,7 +178,7 @@ const Home = () => {
             </div>
           )}
 
-          <details style={{ marginTop: 12 }}>
+          <details className="browse-hub__slug-panel" style={{ marginTop: 12 }}>
             <summary style={{ color: "var(--muted)", cursor: "pointer", fontSize: 13 }}>
               Have a slug for an organization not showing above?
             </summary>
@@ -209,11 +211,11 @@ const Home = () => {
       )}
 
       {/* ── Browse events — everyone sees this, no login required ──── */}
-      <h2 style={{ color: "var(--paper)", fontFamily: "var(--font-display)", fontSize: 28, marginBottom: 16 }}>
+      <h2 className="browse-hub__events-title" style={{ color: "var(--paper)", fontFamily: "var(--font-display)", fontSize: 28, marginBottom: 16 }}>
         Browse events
       </h2>
 
-      <div
+      <div className="browse-hub__filters"
         style={{
           background: "var(--card)",
           padding: 20,
@@ -284,7 +286,7 @@ const Home = () => {
           <p style={{ fontSize: 14 }}>Try adjusting your search or filters</p>
         </div>
       ) : (
-        <div
+        <div className="browse-hub__event-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
@@ -303,6 +305,7 @@ const Home = () => {
               <Link
                 key={event._id}
                 to={`/o/${event.organizationSlug}/events/${event._id}`}
+                className="browse-hub__event-card"
                 style={{
                   display: "block",
                   background: "var(--card)",

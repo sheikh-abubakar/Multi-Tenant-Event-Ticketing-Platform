@@ -86,7 +86,7 @@ const Analytics = () => {
   const { metrics, bookingsPerEvent, recentBookings, revenueByDay } = data;
 
   return (
-    <div className="mx-auto" style={{ maxWidth: 1100 }}>
+    <div className="analytics-page mx-auto" style={{ maxWidth: 1100 }}>
       <p style={{ marginBottom: 16 }}>
         <Link to={`/o/${orgSlug}/dashboard`} style={{ color: "var(--gold-soft)" }}>
           &larr; Back to dashboard

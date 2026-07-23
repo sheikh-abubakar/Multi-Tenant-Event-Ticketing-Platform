@@ -244,7 +244,7 @@ const TeamManagement = () => {
   }
 
   return (
-    <div className="mx-auto" style={{ maxWidth: 800 }}>
+    <div className="team-page mx-auto" style={{ maxWidth: 800 }}>
       <p style={{ marginBottom: 16 }}>
         <Link to={`/o/${orgSlug}/dashboard`} style={{ color: "var(--gold-soft)" }}>
           &larr; Back to dashboard

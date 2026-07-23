@@ -98,7 +98,7 @@ const BookingConfirmation = () => {
     booking.status === "confirmed" && booking.paymentStatus === "paid";
 
   return (
-    <div style={{ maxWidth: 740, margin: "0 auto" }}>
+    <div className="confirmation-page" style={{ maxWidth: 740, margin: "0 auto" }}>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <div
           style={{
@@ -130,7 +130,7 @@ const BookingConfirmation = () => {
         </p>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card confirmation-details-card" style={{ marginBottom: 16 }}>
         {/* Inside a .card (light background) — must use var(--text),
             not var(--paper), or the heading is invisible. */}
         <h3 style={{ marginTop: 0, color: "var(--text)" }}>Booking Details</h3>
@@ -175,7 +175,7 @@ const BookingConfirmation = () => {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card confirmation-tickets-card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0, color: "var(--text)" }}>Ticket Summary</h3>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
@@ -244,7 +244,7 @@ const BookingConfirmation = () => {
       </div>
 
       {booking.qrCodeUrl && (
-        <div className="card" style={{ textAlign: "center" }}>
+        <div className="card confirmation-qr-card" style={{ textAlign: "center" }}>
           <h3 style={{ marginTop: 0, color: "var(--text)" }}>
             Your QR Code
           </h3>

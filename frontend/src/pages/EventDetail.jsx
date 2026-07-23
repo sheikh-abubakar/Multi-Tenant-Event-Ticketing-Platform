@@ -69,7 +69,7 @@ const EventDetail = () => {
 
   if (event.purchaseMode === "seatmap") {
     return (
-      <div className="card" style={{ maxWidth: 780, margin: "0 auto" }}>
+      <div className="card event-seatmap-hero" style={{ maxWidth: 780, margin: "0 auto" }}>
         <p><Link to={`/o/${orgSlug}/events`}>&larr; Back to events</Link></p>
         {event.bannerImageUrl && <img src={event.bannerImageUrl} alt="" style={{ width: "100%", maxHeight: 300, objectFit: "cover", borderRadius: 10 }} />}
         <h1>{event.name}</h1><p style={{ color: "var(--muted)" }}>{new Date(event.dateTime).toLocaleString()} · {event.venueId?.name}</p>
@@ -82,7 +82,7 @@ const EventDetail = () => {
   const totalRemaining = remainingTickets(event.ticketTypes);
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto" }}>
+    <div className="event-detail-page" style={{ maxWidth: 980, margin: "0 auto" }}>
       <p style={{ marginBottom: 16 }}>
         <Link to={`/o/${orgSlug}/events`}>&larr; Back to events</Link>
       </p>
@@ -96,7 +96,7 @@ const EventDetail = () => {
         <span className="badge">{totalRemaining} remaining</span>
       </div>
 
-      <div className="card" style={styles.heroCard}>
+      <div className="card event-hero-card" style={styles.heroCard}>
         {event.bannerImageUrl ? (
           <img src={event.bannerImageUrl} alt="" style={styles.heroImage} />
         ) : (
@@ -121,7 +121,7 @@ const EventDetail = () => {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 20 }}>
+      <div className="card event-pricing-panel" style={{ marginTop: 20 }}>
         <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 0 }}>
           <span>Ticket types</span>
           {event.ticketTypes?.length > 0 && (
@@ -161,7 +161,7 @@ const EventDetail = () => {
               );
 
               return (
-                <div key={ticketType._id || ticketType.name} style={styles.ticketRow}>
+                <div key={ticketType._id || ticketType.name} className="event-ticket-row" style={styles.ticketRow}>
                   <div style={{ flex: 1 }}>
                     <h4 style={{ margin: "0 0 4px", color: "var(--paper)" }}>{ticketType.name}</h4>
                     <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>

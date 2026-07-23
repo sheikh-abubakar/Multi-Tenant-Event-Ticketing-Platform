@@ -6,6 +6,7 @@ const OrgCard = ({ organization, role }) => {
 
   return (
     <button
+      className="browse-hub__org-card"
       onClick={() =>
         navigate(`/o/${organization.slug}/dashboard`, {
           // Dashboard can paint its header immediately with this,

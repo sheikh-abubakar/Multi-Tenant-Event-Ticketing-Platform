@@ -92,7 +92,7 @@ const CartPage = () => {
   const eventDate = new Date(event.dateTime);
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+    <div className="cart-page" style={{ maxWidth: 900, margin: "0 auto" }}>
       <p style={{ marginBottom: 16 }}>
         <Link to={`/o/${orgSlug}/events/${eventId}`}>&larr; Back to event</Link>
         <span style={{ marginLeft: 16 }}>
@@ -101,7 +101,7 @@ const CartPage = () => {
       </p>
 
       {/* Event Info Card */}
-      <div className="card" style={{ marginBottom: 20, padding: 0, overflow: "hidden" }}>
+      <div className="card cart-event-card" style={{ marginBottom: 20, padding: 0, overflow: "hidden" }}>
         {event.bannerImageUrl && (
           <div
             style={{
@@ -147,7 +147,7 @@ const CartPage = () => {
                 : 0;
 
               return (
-                <div key={item.ticketTypeIndex} className="card" style={styles.itemCard}>
+                <div key={item.ticketTypeIndex} className="card cart-item-card" style={styles.itemCard}>
                   <div style={styles.itemInfo}>
                     <h4 style={{ margin: "0 0 4px", color: "var(--text)", fontSize: 16 }}>
                       {item.ticketTypeName}
@@ -197,7 +197,7 @@ const CartPage = () => {
             })}
           </div>
 
-          <div className="card" style={{ marginTop: 16, ...styles.summaryCard }}>
+          <div className="card cart-summary-card" style={{ marginTop: 16, ...styles.summaryCard }}>
             <div style={styles.summaryRow}>
               <div>
                 <span style={{ fontSize: 16, color: "var(--text)" }}>

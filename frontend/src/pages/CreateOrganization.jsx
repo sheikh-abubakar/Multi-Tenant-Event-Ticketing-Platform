@@ -32,7 +32,7 @@ const CreateOrganization = () => {
   };
 
   return (
-    <div style={{ maxWidth: 480, margin: "0 auto" }}>
+    <div className="create-org-page" style={{ maxWidth: 480, margin: "0 auto" }}>
       <h1 style={{ color: "var(--paper)", marginBottom: 8 }}>Create your organization</h1>
       <p style={{ color: "var(--muted)", marginBottom: 24 }}>
         You'll become the owner of this organization and can invite your team later.

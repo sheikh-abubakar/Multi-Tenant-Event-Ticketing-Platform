@@ -84,9 +84,9 @@ const BuyerDashboard = () => {
   }
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+    <div className="buyer-dashboard-page" style={{ maxWidth: 900, margin: "0 auto" }}>
       {/* Header */}
-      <div style={{ marginBottom: 40 }}>
+      <div className="buyer-dashboard__masthead" style={{ marginBottom: 40 }}>
         <h1 style={{ color: "var(--paper)", fontSize: 36, margin: "0 0 8px" }}>
           My Dashboard
         </h1>
@@ -122,7 +122,7 @@ const BuyerDashboard = () => {
       )}
 
       {/* Wallet Card */}
-      <div style={{
+      <div className="buyer-dashboard__wallet" style={{
         background: "linear-gradient(135deg, #192436 0%, #2a3148 100%)",
         borderRadius: 16,
         padding: "28px 32px",
@@ -206,7 +206,7 @@ const BuyerDashboard = () => {
       </div>
 
       {/* My Bookings */}
-      <div>
+      <div className="buyer-dashboard__bookings">
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
           <Ticket size={20} color="#c99a3c" />
           <h2 style={{ color: "var(--paper)", margin: 0, fontSize: 22, fontWeight: 600 }}>
@@ -225,7 +225,7 @@ const BuyerDashboard = () => {
         </div>
 
         {bookings.length === 0 ? (
-          <div style={{
+          <div className="buyer-dashboard__empty" style={{
             textAlign: "center",
             padding: 40,
             background: "var(--card)",
@@ -236,7 +236,7 @@ const BuyerDashboard = () => {
             <p style={{ color: "var(--muted)", fontSize: 15, margin: 0 }}>
               No bookings found
             </p>
-            <Link to="/" style={{ color: "var(--gold)", fontSize: 14, marginTop: 8, display: "inline-block" }}>
+            <Link to="/browse" style={{ color: "var(--gold)", fontSize: 14, marginTop: 8, display: "inline-block" }}>
               Browse Events →
             </Link>
           </div>
@@ -248,7 +248,7 @@ const BuyerDashboard = () => {
               const canRefund = booking.status === "confirmed" && isWithinRefundWindow(booking);
 
               return (
-                <div key={booking._id} style={{
+                <div key={booking._id} className="buyer-dashboard__booking" style={{
                   background: "var(--card)",
                   borderRadius: 12,
                   padding: "18px 20px",
@@ -358,7 +358,7 @@ const BuyerDashboard = () => {
           zIndex: 9999,
           padding: 20,
         }}>
-          <div style={{
+          <div className="buyer-dashboard__modal" style={{
             background: "var(--card)",
             borderRadius: 16,
             padding: "32px 28px",
@@ -477,8 +477,8 @@ const BuyerDashboard = () => {
       )}
 
       {/* Footer */}
-      <div style={{ textAlign: "center", marginTop: 40 }}>
-        <Link to="/" style={{ color: "var(--gold)", fontSize: 14 }}>
+      <div className="buyer-dashboard__footer" style={{ textAlign: "center", marginTop: 40 }}>
+        <Link to="/browse" style={{ color: "var(--gold)", fontSize: 14 }}>
           ← Browse More Events
         </Link>
       </div>

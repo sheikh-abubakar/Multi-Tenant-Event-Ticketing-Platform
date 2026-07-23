@@ -128,7 +128,7 @@ const Venues = () => {
   };
 
   return (
-    <div>
+    <div className="venues-page">
       <Link
         to={`/o/${orgSlug}/dashboard`}
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-gold-soft hover:underline"

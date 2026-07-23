@@ -130,7 +130,7 @@ const CheckoutPage = () => {
   }
 
   return (
-    <div style={{ maxWidth: 740, margin: "0 auto" }}>
+    <div className="checkout-page" style={{ maxWidth: 740, margin: "0 auto" }}>
       <p style={{ marginBottom: 16 }}>
         <Link to={`/o/${orgSlug}/cart/${eventId}`}>&larr; Back to cart</Link>
       </p>
@@ -148,7 +148,7 @@ const CheckoutPage = () => {
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card checkout-summary-card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Order Summary</h3>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
@@ -207,7 +207,7 @@ const CheckoutPage = () => {
         </table>
       </div>
 
-      <div className="card">
+      <div className="card checkout-buyer-card">
         <h3 style={{ marginTop: 0 }}>Buyer Information</h3>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 14 }}>

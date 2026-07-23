@@ -48,8 +48,8 @@ const PublicEvents = () => {
     );
 
   return (
-    <div>
-      <div style={styles.header}>
+    <div className="storefront-page">
+      <div className="storefront-header" style={styles.header}>
         <div>
           <p style={styles.kicker}>Public storefront</p>
           <h1 style={{ color: "var(--paper)", margin: "4px 0 0" }}>
@@ -83,7 +83,7 @@ const PublicEvents = () => {
             <Link
               key={event._id}
               to={`/o/${orgSlug}/events/${event._id}`}
-              className="card"
+              className="card storefront-event-card"
               style={styles.card}
             >
               {event.bannerImageUrl ? (

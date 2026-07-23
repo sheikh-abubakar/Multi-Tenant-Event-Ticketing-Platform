@@ -75,7 +75,7 @@ const AcceptInvite = () => {
   };
 
   return (
-    <div className="mx-auto" style={{ maxWidth: 460, paddingTop: 60 }}>
+    <div className="invite-page mx-auto" style={{ maxWidth: 460, paddingTop: 60 }}>
       {/* Branding */}
       <div style={{ textAlign: "center", marginBottom: 36 }}>
         <h1

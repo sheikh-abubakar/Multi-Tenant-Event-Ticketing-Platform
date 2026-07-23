@@ -105,7 +105,7 @@ const OrgSettings = () => {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="settings-page mx-auto max-w-2xl">
       <p className="mb-4">
         <Link to={`/o/${orgSlug}/dashboard`} className="text-gold-soft hover:underline">
           &larr; Back to dashboard

@@ -19,7 +19,7 @@ const Signup = () => {
     setLoading(true);
     try {
       await signup(form);
-      navigate("/");
+      navigate("/browse");
     } catch (err) {
       setError(err.response?.data?.message || "Something went wrong. Try again.");
     } finally {
@@ -28,9 +28,14 @@ const Signup = () => {
   };
 
   return (
-    <div style={{ maxWidth: 420, margin: "0 auto" }}>
-      <h1 style={{ color: "var(--paper)", marginBottom: 24 }}>Create your account</h1>
-      <div className="card">
+    <div className="auth-page">
+      <div className="auth-intro">
+        <p className="eyebrow">YOUR ALL-ACCESS PASS</p>
+        <h1>Create your<br /><em>account.</em></h1>
+        <p>Start discovering events, choosing seats and keeping every ticket in one place.</p>
+      </div>
+      <div className="card auth-card">
+        <div className="auth-card-heading"><span>01 / JOIN STAGEPASS</span><b>Make it official.</b></div>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="field">
@@ -60,12 +65,12 @@ const Signup = () => {
               minLength={8}
             />
           </div>
-          <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: "100%" }}>
+          <button className="btn btn-primary auth-submit" type="submit" disabled={loading} style={{ width: "100%" }}>
             {loading ? "Creating account…" : "Sign up"}
           </button>
         </form>
       </div>
-      <p style={{ marginTop: 16, color: "var(--muted)" }}>
+      <p className="auth-switch">
         Already have an account? <Link to="/login">Log in</Link>
       </p>
     </div>

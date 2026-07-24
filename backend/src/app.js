@@ -69,6 +69,7 @@ app.use("/api/o/:orgSlug/events/:eventId/bookings", bookingRoutes);
 // Simpler path for confirmation — Stripe redirects here without eventId
 app.use("/api/o/:orgSlug/bookings", bookingConfirmRoutes);
 app.use("/api/o/:orgSlug/cart", cartRoutes);
+app.use("/api/o/:orgSlug/coupons", couponRoutes);
 app.use("/api/cart", globalCartRoutes);
 app.use("/api/o/:orgSlug/settings", orgSettingsRoutes);
 app.use("/api/o/:orgSlug/team", teamRoutes);
@@ -77,5 +78,4 @@ app.use("/api/o/:orgSlug", calendarRoutes);
 app.use("/api", publicRoutes);
 app.use("/api", refundRoutes);
 app.use("/api/referrals", referralRoutes);
-app.use("/api/o/:orgSlug/coupons", couponRoutes);
 module.exports = app;

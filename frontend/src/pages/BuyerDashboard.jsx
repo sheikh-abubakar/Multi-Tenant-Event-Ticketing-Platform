@@ -1,28 +1,32 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Wallet, Ticket, ArrowLeft, ArrowRight, Clock, CreditCard, TrendingUp, ChevronDown, X } from "lucide-react";
+import { Wallet, Ticket, ArrowLeft, ArrowRight, Clock, CreditCard, TrendingUp, ChevronDown, X, Gift } from "lucide-react";
 import apiClient from "../api/client";
 import "./BuyerDashboard.css";
 
 const BuyerDashboard = () => {
   const [wallet, setWallet] = useState(null);
   const [bookings, setBookings] = useState([]);
+  const [referralData, setReferralData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [refundModal, setRefundModal] = useState(null); // booking object or null
   const [refunding, setRefunding] = useState(false);
+  const [referralCopied, setReferralCopied] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
     setError("");
     try {
-      const [walletRes, bookingsRes] = await Promise.all([
+      const [walletRes, bookingsRes, referralRes] = await Promise.all([
         apiClient.get("/wallet"),
         apiClient.get("/bookings/mine"),
+        apiClient.get("/referrals/me").catch(() => null),
       ]);
       setWallet(walletRes.data.wallet);
       setBookings(bookingsRes.data.bookings || []);
+      if (referralRes) setReferralData(referralRes.data.data);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to load data");
     } finally {
@@ -208,6 +212,105 @@ const BuyerDashboard = () => {
           </p>
         )}
       </div>
+
+      {/* Referrals & Rewards Card */}
+      {referralData && (
+        <div style={{
+          background: "linear-gradient(135deg, rgba(201,154,60,0.07), rgba(25,36,54,0.85))",
+          borderRadius: 16,
+          padding: "28px 32px",
+          marginBottom: 32,
+          border: "1px solid rgba(201,154,60,0.25)",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 20, flexWrap: "wrap", gap: 16 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <Gift size={20} color="#c99a3c" />
+                <h2 style={{ color: "#f7f2e7", margin: 0, fontSize: 18, fontWeight: 600 }}>Referrals &amp; Rewards</h2>
+              </div>
+              <p style={{ color: "#f7f2e7", opacity: 0.6, margin: 0, fontSize: 13 }}>
+                Share events, earn 10% discount rewards (up to 50% per checkout)
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 16 }}>
+              <div style={{ textAlign: "center" }}>
+                <p style={{ color: "#4ade80", fontSize: 28, fontWeight: 700, margin: 0, fontFamily: "monospace" }}>
+                  {referralData.availableRewardsCount}
+                </p>
+                <p style={{ color: "#f7f2e7", opacity: 0.5, fontSize: 12, margin: "4px 0 0" }}>Available</p>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <p style={{ color: "#c99a3c", fontSize: 28, fontWeight: 700, margin: 0, fontFamily: "monospace" }}>
+                  {referralData.totalEarnedCount}
+                </p>
+                <p style={{ color: "#f7f2e7", opacity: 0.5, fontSize: 12, margin: "4px 0 0" }}>Total Earned</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Referral code + copy link */}
+          <div style={{ marginBottom: 20 }}>
+            <p style={{ color: "#c99a3c", fontSize: 12, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Your Referral Code</p>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <code style={{ background: "rgba(255,255,255,0.08)", padding: "8px 14px", borderRadius: 8, color: "#f7f2e7", fontSize: 16, fontWeight: 700, letterSpacing: "0.05em" }}>
+                {referralData.referralCode}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    `${window.location.origin}/browse?ref=${referralData.referralCode}`
+                  ).then(() => {
+                    setReferralCopied(true);
+                    setTimeout(() => setReferralCopied(false), 2000);
+                  });
+                }}
+                style={{ padding: "8px 16px", background: "var(--gold)", color: "var(--navy)", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+              >
+                {referralCopied ? "✓ Copied!" : "📋 Copy Link"}
+              </button>
+            </div>
+          </div>
+
+          {/* Available rewards */}
+          {referralData.availableRewards?.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <p style={{ color: "#4ade80", fontSize: 12, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>Available Rewards</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {referralData.availableRewards.slice(0, 5).map((reward) => (
+                  <div key={reward._id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "rgba(74,222,128,0.07)", borderRadius: 8, border: "1px solid rgba(74,222,128,0.15)" }}>
+                    <span style={{ color: "#f7f2e7", fontSize: 13 }}>🎁 Friend: <strong>{reward.referredEmail}</strong></span>
+                    <span style={{ color: "#4ade80", fontWeight: 700, fontSize: 13 }}>+{reward.discountPercent}% off</span>
+                  </div>
+                ))}
+                {referralData.availableRewards.length > 5 && (
+                  <p style={{ color: "#f7f2e7", opacity: 0.5, fontSize: 12, textAlign: "center", margin: 0 }}>+{referralData.availableRewards.length - 5} more rewards</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Used rewards history */}
+          {referralData.usedRewardsHistory?.length > 0 && (
+            <div>
+              <p style={{ color: "#c99a3c", fontSize: 12, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>Used Rewards</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {referralData.usedRewardsHistory.slice(0, 3).map((reward) => (
+                  <div key={reward._id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+                    <span style={{ color: "#f7f2e7", opacity: 0.6, fontSize: 13 }}>✓ Friend: {reward.referredEmail}</span>
+                    <span style={{ color: "var(--muted)", fontSize: 12 }}>Used</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {referralData.availableRewardsCount === 0 && referralData.totalEarnedCount === 0 && (
+            <p style={{ color: "#f7f2e7", opacity: 0.4, fontSize: 14, textAlign: "center", padding: "12px 0 0" }}>
+              No rewards yet. Share your code on any event page and earn 10% off every time a friend buys!
+            </p>
+          )}
+        </div>
+      )}
 
       {/* My Bookings */}
       <div className="buyer-dashboard__bookings">

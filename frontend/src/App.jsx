@@ -1,4 +1,5 @@
-import { Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
+import { Routes, Route, useSearchParams } from "react-router-dom";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Home from "./pages/Home";
@@ -25,6 +26,16 @@ import SeatSelection from "./pages/SeatSelection";
 import GlobalCart from "./pages/GlobalCart";
 
 function App() {
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const refCode = searchParams.get("ref");
+    if (refCode) {
+      sessionStorage.setItem("referralCode", refCode);
+      console.log("Globally captured referralCode in sessionStorage:", refCode);
+    }
+  }, [searchParams]);
+
   return (
     <Layout>
       <Routes>

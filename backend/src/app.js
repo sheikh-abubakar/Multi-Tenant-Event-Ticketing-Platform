@@ -18,6 +18,7 @@ const calendarRoutes = require("./routes/calendar.routes");
 const publicRoutes = require("./routes/public.routes");
 const refundRoutes = require("./routes/refund.routes");
 const seatmapRoutes = require("./routes/seatmap.routes");
+const referralRoutes = require("./routes/referral.routes");
 
 const app = express();
 
@@ -74,4 +75,5 @@ app.use("/api/o/:orgSlug/analytics", analyticsRoutes);
 app.use("/api/o/:orgSlug", calendarRoutes);
 app.use("/api", publicRoutes);
 app.use("/api", refundRoutes);
+app.use("/api/referrals", referralRoutes);
 module.exports = app;

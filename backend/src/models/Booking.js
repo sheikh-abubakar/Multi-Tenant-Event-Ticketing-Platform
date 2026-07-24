@@ -200,6 +200,25 @@ const bookingSchema = new mongoose.Schema(
         default: null,
       },
     },
+    // ─── Referral fields ──────────────────────────────────────────────
+    referredByCode: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    referrerUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    referralRewardsUsedCount: {
+      type: Number,
+      default: 0,
+    },
+    discountAmount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true },
 );

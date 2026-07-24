@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 import apiClient from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 const CheckoutPage = () => {
   const { orgSlug, eventId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const [cart, setCart] = useState(null);
   const [event, setEvent] = useState(null);
   const [walletBalance, setWalletBalance] = useState(0);
@@ -16,9 +18,15 @@ const CheckoutPage = () => {
     buyerName: "",
     buyerEmail: "",
   });
+  const [referralStats, setReferralStats] = useState(null); // { availableRewardsCount }
+  const [rewardsToApply, setRewardsToApply] = useState(0);
+
   const locationState = location.state || {};
   const useWallet = locationState.useWallet || false;
   const walletDeductionFromState = locationState.walletDeduction || 0;
+
+  // The referral code captured from ?ref=CODE on event page
+  const refCode = sessionStorage.getItem("referralCode") || "";
 
   useEffect(() => {
     let cancelled = false;
@@ -27,14 +35,24 @@ const CheckoutPage = () => {
       setLoading(true);
       setError("");
       try {
-        const [cartRes, walletRes] = await Promise.all([
+        const requests = [
           apiClient.get(`/o/${orgSlug}/cart/${eventId}`),
           apiClient.get("/wallet").catch(() => ({ data: { wallet: { balance: 0 } } })),
-        ]);
+        ];
+
+        // Load referral stats for logged-in users to show available reward count
+        if (user) {
+          requests.push(apiClient.get("/referrals/me").catch(() => null));
+        }
+
+        const [cartRes, walletRes, referralRes] = await Promise.all(requests);
         if (!cancelled) {
           setCart(cartRes.data.cart);
           setEvent(cartRes.data.event);
           setWalletBalance(walletRes.data.wallet?.balance || 0);
+          if (referralRes) {
+            setReferralStats(referralRes.data.data);
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -47,7 +65,7 @@ const CheckoutPage = () => {
 
     load();
     return () => { cancelled = true; };
-  }, [orgSlug, eventId]);
+  }, [orgSlug, eventId, user]);
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -69,18 +87,20 @@ const CheckoutPage = () => {
           buyerName: form.buyerName,
           buyerEmail: form.buyerEmail,
           items,
-          // Without these two, the backend has no idea the buyer opted
-          // to pay part of the total with wallet balance — it would
-          // silently create a Stripe session for the FULL cart total.
           useWallet,
           walletDeduction,
+          refCode: refCode || undefined,
+          rewardsToApply: rewardsToApply > 0 ? rewardsToApply : undefined,
+          // auth service returns `id` (not `_id`) — needed for referral reward discount lookup
+          userId: user?.id,
         },
       );
 
       const { stripeUrl } = res.data;
 
       if (stripeUrl) {
-        // Redirect to Stripe Checkout
+        // Clear referral code from sessionStorage after successful checkout initiation
+        sessionStorage.removeItem("referralCode");
         window.location.href = stripeUrl;
       } else {
         setError("Stripe checkout URL not returned. Please try again.");
@@ -97,11 +117,17 @@ const CheckoutPage = () => {
     0,
   );
 
-  // Calculate wallet deduction
-  const walletDeduction = useWallet 
-    ? (walletDeductionFromState > 0 ? walletDeductionFromState : Math.min(walletBalance, cartTotal))
+  // Calculate referral discount
+  const maxRewards = Math.min(referralStats?.availableRewardsCount || 0, 5);
+  const referralDiscountAmount = Math.round((cartTotal * (rewardsToApply * 10)) / 100);
+  const afterReferralDiscount = Math.max(0, cartTotal - referralDiscountAmount);
+
+  // Calculate wallet deduction (applied after referral discount)
+  const walletDeduction = useWallet
+    ? (walletDeductionFromState > 0 ? walletDeductionFromState : Math.min(walletBalance, afterReferralDiscount))
     : 0;
-  const remainingAfterWallet = Math.max(0, cartTotal - walletDeduction);
+
+  const finalAmountDue = Math.max(0, afterReferralDiscount - walletDeduction);
 
   if (loading) return <p style={{ color: "var(--muted)" }}>Loading checkout…</p>;
 
@@ -142,9 +168,63 @@ const CheckoutPage = () => {
         </div>
       </div>
 
+      {/* Referral code badge (when arriving via a friend's link) */}
+      {refCode && (
+        <div style={styles.refBadge}>
+          <span>🎟️ Referred via <strong style={{ color: "var(--gold)" }}>{refCode}</strong></span>
+          <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 8 }}>The sharer earns a 10% reward when you complete this purchase</span>
+        </div>
+      )}
+
       {error && (
         <div className="card" style={{ background: "rgba(220, 38, 38, 0.1)", border: "1px solid rgba(220, 38, 38, 0.3)", marginBottom: 16 }}>
           <p style={{ margin: 0, color: "var(--danger)" }}>{error}</p>
+        </div>
+      )}
+
+      {/* Referral Rewards Selector — only for logged-in users with available rewards */}
+      {user && maxRewards > 0 && (
+        <div className="card" style={styles.rewardsCard}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 20 }}>🏆</span>
+            <div>
+              <p style={{ margin: 0, fontWeight: 700, color: "#f7f2e7", fontSize: 15 }}>
+                You have {maxRewards} referral reward{maxRewards !== 1 ? "s" : ""} available
+              </p>
+              <p style={{ margin: 0, fontSize: 12, color: "rgba(247, 242, 231, 0.6)" }}>
+                Each reward = 10% off. Max 5 rewards (50%) per order.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <label style={{ fontSize: 13, color: "rgba(247, 242, 231, 0.7)", fontWeight: 600 }}>Apply rewards:</label>
+            {[0, ...Array.from({ length: maxRewards }, (_, i) => i + 1)].map((n) => (
+              <button
+                key={n}
+                onClick={() => setRewardsToApply(n)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 8,
+                  border: rewardsToApply === n ? "2px solid var(--gold)" : "1px solid rgba(247, 242, 231, 0.2)",
+                  background: rewardsToApply === n ? "var(--gold)" : "rgba(255, 255, 255, 0.05)",
+                  color: rewardsToApply === n ? "#14162b" : "#f7f2e7",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {n === 0 ? "None" : `${n} (${n * 10}% off)`}
+              </button>
+            ))}
+          </div>
+
+          {rewardsToApply > 0 && (
+            <p style={{ margin: "12px 0 0", fontSize: 13, color: "#4ade80", fontWeight: 600 }}>
+              🎉 {rewardsToApply * 10}% discount applied → saving Rs. {referralDiscountAmount}
+            </p>
+          )}
         </div>
       )}
 
@@ -170,39 +250,47 @@ const CheckoutPage = () => {
             ))}
           </tbody>
           <tfoot>
-            {useWallet && walletDeduction > 0 ? (
-              <>
-                <tr style={{ background: "rgba(201, 154, 60, 0.06)" }}>
-                  <td colSpan={2} style={{ padding: "10px 4px", fontSize: 14, color: "var(--muted)" }}>
-                    Subtotal ({cart.items.reduce((s, i) => s + Number(i.quantity || 0), 0)} tickets)
-                  </td>
-                  <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "var(--muted)" }}>
-                    Rs. {cartTotal}
-                  </td>
-                </tr>
-                <tr>
-                  <td colSpan={2} style={{ padding: "10px 4px", fontSize: 14, color: "#4ade80" }}>
-                    💰 Wallet Payment
-                  </td>
-                  <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "#4ade80", fontWeight: 600 }}>
-                    -Rs. {walletDeduction}
-                  </td>
-                </tr>
-                <tr style={{ borderTop: "2px solid #c99a3c" }}>
-                  <td colSpan={2} style={{ padding: "12px 4px", fontWeight: 700, fontSize: 16 }}>Amount to Pay</td>
-                  <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "#c99a3c", fontSize: 20 }}>
-                    Rs. {remainingAfterWallet}
-                  </td>
-                </tr>
-              </>
-            ) : (
-              <tr style={{ borderTop: "2px solid #c99a3c" }}>
-                <td colSpan={2} style={{ padding: "12px 4px", fontWeight: 700, fontSize: 16 }}>Total</td>
-                <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "#c99a3c", fontSize: 20 }}>
-                  Rs. {cartTotal}
+            {/* Subtotal */}
+            <tr style={{ background: "rgba(201, 154, 60, 0.04)" }}>
+              <td colSpan={2} style={{ padding: "10px 4px", fontSize: 14, color: "var(--muted)" }}>
+                Subtotal ({cart.items.reduce((s, i) => s + Number(i.quantity || 0), 0)} tickets)
+              </td>
+              <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "var(--muted)" }}>
+                Rs. {cartTotal}
+              </td>
+            </tr>
+
+            {/* Referral rewards discount row */}
+            {rewardsToApply > 0 && (
+              <tr>
+                <td colSpan={2} style={{ padding: "10px 4px", fontSize: 14, color: "#4ade80" }}>
+                  🏆 Referral Rewards ({rewardsToApply * 10}% off)
+                </td>
+                <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "#4ade80", fontWeight: 600 }}>
+                  -Rs. {referralDiscountAmount}
                 </td>
               </tr>
             )}
+
+            {/* Wallet row */}
+            {useWallet && walletDeduction > 0 && (
+              <tr>
+                <td colSpan={2} style={{ padding: "10px 4px", fontSize: 14, color: "#4ade80" }}>
+                  💰 Wallet Payment
+                </td>
+                <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "#4ade80", fontWeight: 600 }}>
+                  -Rs. {walletDeduction}
+                </td>
+              </tr>
+            )}
+
+            {/* Final total */}
+            <tr style={{ borderTop: "2px solid #c99a3c" }}>
+              <td colSpan={2} style={{ padding: "12px 4px", fontWeight: 700, fontSize: 16 }}>Amount to Pay</td>
+              <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "#c99a3c", fontSize: 20 }}>
+                Rs. {finalAmountDue}
+              </td>
+            </tr>
           </tfoot>
         </table>
       </div>
@@ -248,7 +336,7 @@ const CheckoutPage = () => {
           >
             {submitting
               ? "Processing…"
-              : `Pay Rs. ${useWallet && walletDeduction > 0 ? remainingAfterWallet : cartTotal} with Card`}
+              : `Pay Rs. ${finalAmountDue} with Card`}
           </button>
 
           <p style={{ margin: "12px 0 0", fontSize: 13, color: "var(--muted)", textAlign: "center" }}>
@@ -270,6 +358,25 @@ const styles = {
     letterSpacing: "0.12em",
     fontSize: 12,
     color: "var(--muted)",
+  },
+  refBadge: {
+    padding: "10px 16px",
+    borderRadius: 10,
+    background: "rgba(201,154,60,0.1)",
+    border: "1px solid rgba(201,154,60,0.3)",
+    marginBottom: 16,
+    fontSize: 13,
+    color: "var(--paper)",
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    flexWrap: "wrap",
+  },
+  rewardsCard: {
+    marginBottom: 16,
+    background: "linear-gradient(135deg, rgba(201, 154, 60, 0.15), rgba(20, 22, 43, 0.95))",
+    border: "1px solid rgba(201, 154, 60, 0.3)",
+    color: "#f7f2e7",
   },
   label: {
     display: "block",

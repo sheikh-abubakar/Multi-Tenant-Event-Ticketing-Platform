@@ -219,6 +219,16 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // ─── Coupon fields ──────────────────────────────────────────────
+    couponCode: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    couponDiscountAmount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true },
 );

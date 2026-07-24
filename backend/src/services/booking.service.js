@@ -8,6 +8,7 @@ const stripe = require("../config/stripe");
 const { sendBookingConfirmation } = require("../config/email");
 const walletService = require("./wallet.service");
 const referralService = require("./referral.service");
+const couponService = require("./coupon.service");
 
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -66,8 +67,58 @@ const parseCheckoutItems = (items) => {
   );
 };
 
+const calculateDiscounts = async (organizationId, eventId, totalAmount, data) => {
+  const { couponCode, rewardsToApply, userId } = data;
+  const requestedRewardsCount = rewardsToApply ? parseInt(rewardsToApply, 10) : 0;
+
+  let couponDiscountAmount = 0;
+  let appliedCouponCode = null;
+
+  if (couponCode && String(couponCode).trim()) {
+    try {
+      const couponResult = await couponService.validateAndApplyCoupon(
+        organizationId,
+        eventId,
+        couponCode,
+        totalAmount
+      );
+      couponDiscountAmount = couponResult.discountAmount;
+      appliedCouponCode = couponResult.code;
+    } catch (err) {
+      console.error("Coupon validation error during checkout:", err.message);
+      const error = new Error(err.message || "Invalid coupon code");
+      error.statusCode = err.statusCode || 400;
+      throw error;
+    }
+  }
+
+  // Calculate referral discount ONLY if no coupon was applied (no stacking)
+  let referralDiscountAmount = 0;
+  let rewardsUsedCount = 0;
+  if (!appliedCouponCode && requestedRewardsCount > 0 && userId) {
+    try {
+      const refDiscount = await referralService.calculateReferralDiscount(
+        userId,
+        requestedRewardsCount,
+        totalAmount
+      );
+      referralDiscountAmount = refDiscount.discountAmount;
+      rewardsUsedCount = refDiscount.rewardsToApplyCount;
+    } catch (err) {
+      console.error("Referral discount calculation error:", err.message);
+    }
+  }
+
+  return {
+    couponCode: appliedCouponCode,
+    couponDiscountAmount,
+    referralDiscountAmount,
+    referralRewardsUsedCount: rewardsUsedCount,
+  };
+};
+
 const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => {
-  const { buyerName, buyerEmail, items, useWallet, walletDeduction, refCode } = data;
+  const { buyerName, buyerEmail, items, useWallet, walletDeduction, refCode, couponCode, rewardsToApply, userId } = data;
   if (!buyerName || !buyerEmail || !Array.isArray(items) || !items.length) {
     const error = new Error("buyerName, buyerEmail and selected seats are required");
     error.statusCode = 400;
@@ -113,8 +164,19 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
       error.statusCode = 400;
       throw error;
     }
+
+    // Calculate coupon & referral discounts
+    const discountRes = await calculateDiscounts(organizationId, eventId, totalAmount, {
+      couponCode,
+      rewardsToApply,
+      userId,
+    });
+
+    const totalDiscount = discountRes.couponDiscountAmount + discountRes.referralDiscountAmount;
     const cleanRefCode = refCode ? String(refCode).trim() : null;
-    const walletAmount = useWallet ? Math.min(Number(walletDeduction || 0), totalAmount) : 0;
+    const walletAmount = useWallet ? Math.min(Number(walletDeduction || 0), Math.max(0, totalAmount - totalDiscount)) : 0;
+    const finalAmount = Math.max(0, totalAmount - walletAmount - totalDiscount);
+
     const [booking] = await Booking.create(
       [
         {
@@ -131,11 +193,15 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
             lineTotal: seat.unitPrice,
           })),
           selectedSeats,
-          totalAmount: totalAmount - walletAmount,
+          totalAmount: finalAmount,
           originalAmount: totalAmount,
           walletDeduction: walletAmount,
           walletDeductionPending: walletAmount,
           referredByCode: cleanRefCode,
+          referralRewardsUsedCount: discountRes.referralRewardsUsedCount,
+          discountAmount: discountRes.referralDiscountAmount,
+          couponCode: discountRes.couponCode,
+          couponDiscountAmount: discountRes.couponDiscountAmount,
           currency: "PKR",
           status: "pending",
           paymentStatus: "pending",
@@ -148,7 +214,7 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
     event.markModified("selectedSeatMap");
     await event.save({ session: dbSession });
 
-    const paymentRatio = totalAmount ? (totalAmount - walletAmount) / totalAmount : 1;
+    const paymentRatio = totalAmount ? finalAmount / totalAmount : 1;
     const stripeItems = selectedSeats.map((seat) => ({
       price_data: {
         currency: "pkr",
@@ -171,6 +237,7 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
           useWallet: useWallet ? "true" : "false",
           walletDeduction: String(walletAmount),
           refCode: cleanRefCode || "",
+          couponCode: discountRes.couponCode || "",
         },
         line_items: stripeItems,
         success_url: `${FRONTEND_URL}/o/${orgSlug}/bookings/${booking._id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
@@ -368,22 +435,16 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
 
     const confirmationCode = generateConfirmationCode();
 
-    // Calculate referral discount if requested
-    let referralDiscountAmount = 0;
-    let rewardsUsedCount = 0;
-    if (requestedRewardsCount > 0 && userId) {
-      try {
-        const refDiscount = await referralService.calculateReferralDiscount(userId, requestedRewardsCount, totalAmount);
-        referralDiscountAmount = refDiscount.discountAmount;
-        rewardsUsedCount = refDiscount.rewardsToApplyCount;
-      } catch (err) {
-        console.error("Referral discount calculation error:", err.message);
-      }
-    }
+    // Calculate coupon & referral discounts
+    const discountRes = await calculateDiscounts(organizationId, eventId, totalAmount, {
+      couponCode,
+      rewardsToApply,
+      userId,
+    });
 
-    // Calculate final amount after wallet deduction and referral discount
-    const walletAmount = useWallet && walletDeduction > 0 ? Math.min(walletDeduction, Math.max(0, totalAmount - referralDiscountAmount)) : 0;
-    const finalAmount = Math.max(0, totalAmount - walletAmount - referralDiscountAmount);
+    const totalDiscount = discountRes.couponDiscountAmount + discountRes.referralDiscountAmount;
+    const walletAmount = useWallet && walletDeduction > 0 ? Math.min(walletDeduction, Math.max(0, totalAmount - totalDiscount)) : 0;
+    const finalAmount = Math.max(0, totalAmount - walletAmount - totalDiscount);
 
     const [booking] = await Booking.create(
       [
@@ -399,8 +460,10 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           originalAmount: totalAmount,
           walletDeduction: walletAmount,
           referredByCode: cleanRefCode,
-          referralRewardsUsedCount: rewardsUsedCount,
-          discountAmount: referralDiscountAmount,
+          referralRewardsUsedCount: discountRes.referralRewardsUsedCount,
+          discountAmount: discountRes.referralDiscountAmount,
+          couponCode: discountRes.couponCode,
+          couponDiscountAmount: discountRes.couponDiscountAmount,
           currency: "PKR",
           status: "pending",
           paymentStatus: "pending",
@@ -416,8 +479,8 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
       await booking.save({ session: mongoSession });
     }
 
-    let adjustedStripeLineItems = stripeLineItems;
-    const totalDeductions = walletAmount + referralDiscountAmount;
+     let adjustedStripeLineItems = stripeLineItems;
+    const totalDeductions = walletAmount + totalDiscount;
     if (totalDeductions > 0 && totalDeductions < totalAmount) {
       const ratio = (totalAmount - totalDeductions) / totalAmount;
       adjustedStripeLineItems = stripeLineItems.map((item) => ({
@@ -460,6 +523,7 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           useWallet: useWallet ? "true" : "false",
           walletDeduction: walletAmount.toString(),
           refCode: cleanRefCode || "",
+          couponCode: discountRes.couponCode || "",
         },
         line_items: adjustedStripeLineItems,
         success_url: `${FRONTEND_URL}/o/${orgSlug}/bookings/${booking._id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
@@ -580,6 +644,15 @@ const confirmBooking = async (stripeSessionId) => {
       }
     } catch (consumeErr) {
       console.error("Consuming referral rewards failed:", consumeErr.message);
+    }
+  }
+
+  // Increment coupon usage count if coupon was used
+  if (booking.couponCode) {
+    try {
+      await couponService.incrementCouponUses(booking.organizationId, booking.couponCode);
+    } catch (couponErr) {
+      console.error("Incrementing coupon uses failed:", couponErr.message);
     }
   }
 

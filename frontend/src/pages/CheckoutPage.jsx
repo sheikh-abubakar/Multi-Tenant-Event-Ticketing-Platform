@@ -21,6 +21,11 @@ const CheckoutPage = () => {
   const [referralStats, setReferralStats] = useState(null); // { availableRewardsCount }
   const [rewardsToApply, setRewardsToApply] = useState(0);
 
+  const [couponInput, setCouponInput] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponError, setCouponError] = useState("");
+
   const locationState = location.state || {};
   const useWallet = locationState.useWallet || false;
   const walletDeductionFromState = locationState.walletDeduction || 0;
@@ -35,24 +40,24 @@ const CheckoutPage = () => {
       setLoading(true);
       setError("");
       try {
-        const requests = [
-          apiClient.get(`/o/${orgSlug}/cart/${eventId}`),
-          apiClient.get("/wallet").catch(() => ({ data: { wallet: { balance: 0 } } })),
-        ];
+        const cartRes = await apiClient.get(`/o/${orgSlug}/cart/${eventId}`);
+        let walletBalanceVal = 0;
+        let refStatsVal = null;
 
-        // Load referral stats for logged-in users to show available reward count
         if (user) {
-          requests.push(apiClient.get("/referrals/me").catch(() => null));
+          const [walletRes, referralRes] = await Promise.all([
+            apiClient.get("/wallet").catch(() => ({ data: { wallet: { balance: 0 } } })),
+            apiClient.get("/referrals/me").catch(() => null),
+          ]);
+          walletBalanceVal = walletRes?.data?.wallet?.balance || 0;
+          refStatsVal = referralRes?.data?.data || null;
         }
 
-        const [cartRes, walletRes, referralRes] = await Promise.all(requests);
         if (!cancelled) {
           setCart(cartRes.data.cart);
           setEvent(cartRes.data.event);
-          setWalletBalance(walletRes.data.wallet?.balance || 0);
-          if (referralRes) {
-            setReferralStats(referralRes.data.data);
-          }
+          setWalletBalance(walletBalanceVal);
+          setReferralStats(refStatsVal);
         }
       } catch (err) {
         if (!cancelled) {
@@ -91,6 +96,7 @@ const CheckoutPage = () => {
           walletDeduction,
           refCode: refCode || undefined,
           rewardsToApply: rewardsToApply > 0 ? rewardsToApply : undefined,
+          couponCode: appliedCoupon?.code || undefined,
           // auth service returns `id` (not `_id`) — needed for referral reward discount lookup
           userId: user?.id,
         },
@@ -112,22 +118,60 @@ const CheckoutPage = () => {
     }
   };
 
+  const handleApplyCoupon = async () => {
+    if (!couponInput.trim()) return;
+    setCouponLoading(true);
+    setCouponError("");
+    try {
+      const res = await apiClient.post(`/o/${orgSlug}/coupons/validate`, {
+        code: couponInput.trim(),
+        eventId,
+        originalTotal: cartTotal,
+      });
+      setAppliedCoupon(res.data.data);
+      setRewardsToApply(0); // clear referral rewards (no-stacking)
+    } catch (err) {
+      setCouponError(err.response?.data?.message || "Invalid coupon code");
+      setAppliedCoupon(null);
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponError("");
+  };
+
   const cartTotal = (cart?.items || []).reduce(
     (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0),
     0,
   );
 
-  // Calculate referral discount
+  // Calculate discounts (mutual exclusivity enforced: either coupon OR referral rewards)
   const maxRewards = Math.min(referralStats?.availableRewardsCount || 0, 5);
-  const referralDiscountAmount = Math.round((cartTotal * (rewardsToApply * 10)) / 100);
-  const afterReferralDiscount = Math.max(0, cartTotal - referralDiscountAmount);
+  const referralDiscountAmount = appliedCoupon ? 0 : Math.round((cartTotal * (rewardsToApply * 10)) / 100);
 
-  // Calculate wallet deduction (applied after referral discount)
+  let couponDiscountAmount = 0;
+  if (appliedCoupon) {
+    if (appliedCoupon.discountType === "percentage") {
+      couponDiscountAmount = Math.round((cartTotal * appliedCoupon.discountValue) / 100);
+    } else {
+      couponDiscountAmount = Number(appliedCoupon.discountValue);
+    }
+    couponDiscountAmount = Math.min(couponDiscountAmount, cartTotal);
+  }
+
+  const totalDiscount = referralDiscountAmount + couponDiscountAmount;
+  const afterDiscount = Math.max(0, cartTotal - totalDiscount);
+
+  // Calculate wallet deduction (applied after discounts)
   const walletDeduction = useWallet
-    ? (walletDeductionFromState > 0 ? walletDeductionFromState : Math.min(walletBalance, afterReferralDiscount))
+    ? (walletDeductionFromState > 0 ? walletDeductionFromState : Math.min(walletBalance, afterDiscount))
     : 0;
 
-  const finalAmountDue = Math.max(0, afterReferralDiscount - walletDeduction);
+  const finalAmountDue = Math.max(0, afterDiscount - walletDeduction);
 
   if (loading) return <p style={{ color: "var(--muted)" }}>Loading checkout…</p>;
 
@@ -202,7 +246,14 @@ const CheckoutPage = () => {
             {[0, ...Array.from({ length: maxRewards }, (_, i) => i + 1)].map((n) => (
               <button
                 key={n}
-                onClick={() => setRewardsToApply(n)}
+                onClick={() => {
+                  setRewardsToApply(n);
+                  if (n > 0) {
+                    setAppliedCoupon(null);
+                    setCouponInput("");
+                    setCouponError("");
+                  }
+                }}
                 style={{
                   padding: "6px 14px",
                   borderRadius: 8,
@@ -227,6 +278,79 @@ const CheckoutPage = () => {
           )}
         </div>
       )}
+
+      {/* Coupon Code Section */}
+      <div className="card" style={styles.couponCard}>
+        <h4 style={{ margin: "0 0 10px", color: "#f7f2e7", fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🎟️</span> Apply Promo / Coupon Code
+        </h4>
+        
+        {appliedCoupon ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.3)", padding: "10px 14px", borderRadius: 8 }}>
+            <div>
+              <span style={{ color: "#4ade80", fontWeight: 700, fontSize: 14 }}>
+                Active Code: <strong style={{ color: "var(--gold)" }}>{appliedCoupon.code}</strong>
+              </span>
+              <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(247,242,231,0.6)" }}>
+                {appliedCoupon.discountType === "percentage" 
+                  ? `${appliedCoupon.discountValue}% discount applied` 
+                  : `Rs. ${appliedCoupon.discountValue} discount applied`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleRemoveCoupon}
+              style={{ background: "transparent", border: "1px solid #f87171", color: "#f87171", padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            >
+              Remove
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="text"
+                value={couponInput}
+                onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                placeholder="ENTER CODE (e.g. SUMMER15)"
+                style={{
+                  flex: 1,
+                  padding: "9px 12px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(247, 242, 231, 0.2)",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  color: "#f7f2e7",
+                  fontSize: 13,
+                  outline: "none",
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleApplyCoupon}
+                disabled={couponLoading || !couponInput.trim()}
+                style={{
+                  padding: "9px 16px",
+                  background: "var(--gold)",
+                  color: "var(--navy)",
+                  border: "none",
+                  borderRadius: 8,
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  opacity: (couponLoading || !couponInput.trim()) ? 0.6 : 1,
+                }}
+              >
+                {couponLoading ? "Checking..." : "Apply"}
+              </button>
+            </div>
+            {couponError && (
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: "#f87171", fontWeight: 600 }}>
+                ❌ {couponError}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="card checkout-summary-card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Order Summary</h3>
@@ -268,6 +392,18 @@ const CheckoutPage = () => {
                 </td>
                 <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "#4ade80", fontWeight: 600 }}>
                   -Rs. {referralDiscountAmount}
+                </td>
+              </tr>
+            )}
+
+            {/* Coupon discount row */}
+            {appliedCoupon && couponDiscountAmount > 0 && (
+              <tr>
+                <td colSpan={2} style={{ padding: "10px 4px", fontSize: 14, color: "#4ade80" }}>
+                  🎟️ Coupon Discount ({appliedCoupon.code})
+                </td>
+                <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "#4ade80", fontWeight: 600 }}>
+                  -Rs. {couponDiscountAmount}
                 </td>
               </tr>
             )}
@@ -376,6 +512,12 @@ const styles = {
     marginBottom: 16,
     background: "linear-gradient(135deg, rgba(201, 154, 60, 0.15), rgba(20, 22, 43, 0.95))",
     border: "1px solid rgba(201, 154, 60, 0.3)",
+    color: "#f7f2e7",
+  },
+  couponCard: {
+    marginBottom: 16,
+    background: "linear-gradient(135deg, rgba(79, 70, 229, 0.12), rgba(20, 22, 43, 0.95))",
+    border: "1px solid rgba(99, 102, 241, 0.35)",
     color: "#f7f2e7",
   },
   label: {

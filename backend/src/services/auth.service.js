@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const { generateToken } = require("../utils/jwt");
+const { sendPasswordResetOTP } = require("../config/email");
 
 /**
  * Auth Service — all business logic for signup/login lives here.
@@ -64,4 +65,117 @@ const login = async ({ email, password }) => {
   };
 };
 
-module.exports = { signup, login };
+const updateProfile = async (userId, { name }) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  user.name = name.trim();
+  await user.save();
+
+  return {
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+    },
+  };
+};
+
+const updatePassword = async (userId, { currentPassword, newPassword }) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isMatch) {
+    const error = new Error("Incorrect current password");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await user.save();
+
+  return { message: "Password updated successfully" };
+};
+
+const generatePasswordResetOTP = async (email) => {
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user) {
+    const error = new Error("No account found with this email");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  user.otpCode = otpCode;
+  user.otpExpiresAt = otpExpiresAt;
+  await user.save();
+
+  try {
+    await sendPasswordResetOTP(user.email, otpCode);
+  } catch (emailErr) {
+    console.error("Failed to send OTP email:", emailErr.message);
+    const error = new Error("Failed to send verification email. Please check your SMTP settings.");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  return { message: "Verification code sent to your email" };
+};
+
+const resetPasswordWithOTP = async ({ email, otpCode, newPassword }) => {
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!user.otpCode || user.otpCode !== otpCode) {
+    const error = new Error("Invalid verification code");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (new Date() > user.otpExpiresAt) {
+    const error = new Error("Verification code has expired");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  user.otpCode = null;
+  user.otpExpiresAt = null;
+  await user.save();
+
+  const token = generateToken(user._id);
+
+  return {
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+    },
+    message: "Password reset successful",
+  };
+};
+
+module.exports = {
+  signup,
+  login,
+  updateProfile,
+  updatePassword,
+  generatePasswordResetOTP,
+  resetPasswordWithOTP,
+};

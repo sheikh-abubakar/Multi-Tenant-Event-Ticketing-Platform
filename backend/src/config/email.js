@@ -288,4 +288,40 @@ const sendTeamInvitation = async ({ email, orgName, orgSlug, inviterName, invita
   return transporter.sendMail(mailOptions);
 };
 
-module.exports = { sendBookingConfirmation, sendPaymentReminder, sendTeamInvitation };
+const sendPasswordResetOTP = async (email, otpCode) => {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || '"StagePass" <noreply@stagepass.com>',
+    to: email,
+    subject: `Password Reset Verification Code — ${otpCode}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; color: #1e2030;">
+        <div style="background: #192436; padding: 24px; border-radius: 8px 8px 0 0; text-align: center;">
+          <h1 style="color: #c99a3c; margin: 0; font-size: 24px; letter-spacing: 0.04em;">StagePass</h1>
+          <p style="color: #f7f2e7; margin: 4px 0 0; font-size: 13px;">Password Reset Request</p>
+        </div>
+        <div style="background: #fffdf8; padding: 24px; border: 1px solid #e8e0d0; border-top: none; border-radius: 0 0 8px 8px;">
+          <p style="font-size: 15px; margin: 0 0 16px;">Hi,</p>
+          <p style="font-size: 14px; line-height: 1.5; color: #3d3848; margin: 0 0 20px;">
+            You requested to reset your password. Use the following 6-digit verification code to complete the reset. This code is valid for <strong>10 minutes</strong>.
+          </p>
+          
+          <div style="background: #f7f2e7; text-align: center; padding: 18px; border-radius: 6px; margin-bottom: 20px; border: 1px dashed #c99a3c;">
+            <span style="font-size: 32px; font-weight: 800; letter-spacing: 0.25em; color: #192436;">${otpCode}</span>
+          </div>
+
+          <p style="font-size: 13px; color: #6b6054; line-height: 1.4; margin: 0 0 20px;">
+            If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.
+          </p>
+          
+          <div style="border-top: 1px solid #e8e0d0; padding-top: 16px; font-size: 12px; color: #8a8070;">
+            — StagePass Team
+          </div>
+        </div>
+      </div>
+    `,
+  };
+
+  return transporter.sendMail(mailOptions);
+};
+
+module.exports = { sendBookingConfirmation, sendPaymentReminder, sendTeamInvitation, sendPasswordResetOTP };

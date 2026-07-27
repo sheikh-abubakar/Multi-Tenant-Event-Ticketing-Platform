@@ -123,6 +123,60 @@ button {
   padding: 32px;
 }
 
+/* Dark-themed card variant — used on pages with a dark (navy) background
+   where the default light .card would cause invisible text. */
+.profile-card {
+  background: #1c1f3d;
+  color: #f7f2e7;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 32px;
+  border: 1px solid rgba(247, 242, 231, 0.10);
+}
+
+.profile-card h1,
+.profile-card h2,
+.profile-card h3,
+.profile-card p,
+.profile-card span:not(.badge) {
+  color: #f7f2e7;
+}
+
+.profile-card .field label {
+  color: #a8a4c0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.profile-card .field input,
+.profile-card .field textarea,
+.profile-card .field select {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(247, 242, 231, 0.18);
+  color: #f7f2e7;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: var(--font-body);
+}
+
+.profile-card .field input:focus,
+.profile-card .field textarea:focus {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.profile-card .field input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.profile-card .field input::placeholder {
+  color: rgba(247, 242, 231, 0.3);
+}
+
 .field {
   display: flex;
   flex-direction: column;

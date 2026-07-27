@@ -24,6 +24,9 @@ import VenueSeatMapBuilder from "./pages/VenueSeatMapBuilder";
 import EventSeatMapBuilder from "./pages/EventSeatMapBuilder";
 import SeatSelection from "./pages/SeatSelection";
 import GlobalCart from "./pages/GlobalCart";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import UserProfile from "./pages/UserProfile";
 
 function App() {
   const [searchParams] = useSearchParams();
@@ -43,8 +46,14 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/browse" element={<Home />} />
         <Route path="/cart" element={<ProtectedRoute><GlobalCart /></ProtectedRoute>} />
+        
+        {/* Auth routes */}
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+
         <Route
           path="/create-organization"
           element={
@@ -107,13 +116,17 @@ function App() {
         <Route path="/o/:orgSlug/events" element={<PublicEvents />} />
         <Route path="/o/:orgSlug/events/:eventId" element={<EventDetail />} />
         <Route path="/o/:orgSlug/events/:eventId/seats" element={<SeatSelection />} />
+        
         {/* Public invite acceptance (no auth) */}
         <Route path="/o/:orgSlug/accept-invite" element={<AcceptInvite />} />
+        
         {/* Cart & Checkout */}
         <Route path="/o/:orgSlug/cart/:eventId" element={<CartPage />} />
         <Route path="/o/:orgSlug/checkout/:eventId" element={<CheckoutPage />} />
+        
         {/* Booking confirmation */}
         <Route path="/o/:orgSlug/bookings/:bookingId/confirmation" element={<BookingConfirmation />} />
+        
         {/* Buyer Dashboard — wallet + my bookings + refund */}
         <Route
           path="/my/dashboard"

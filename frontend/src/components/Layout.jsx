@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { ShoppingCart, WalletCards } from "lucide-react";
+import { ShoppingCart, WalletCards, User } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import "./Layout.css";
 import "./PageVisuals.css";
@@ -70,6 +70,9 @@ const Layout = ({ children }) => {
                 </Link>
                 <Link to="/my/dashboard" className="nav-personal-link" aria-label="Open wallet" title="Wallet">
                   <WalletCards size={15} aria-hidden="true" /> <span>Wallet</span>
+                </Link>
+                <Link to="/profile" className="nav-personal-link" aria-label="View profile" title="Profile">
+                  <User size={15} aria-hidden="true" /> <span>Profile</span>
                 </Link>
                 <span style={{ color: "var(--muted)", fontSize: 13 }}>
                   {user.name}

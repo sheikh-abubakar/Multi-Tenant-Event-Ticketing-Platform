@@ -14,4 +14,12 @@ router.get("/me", authenticate, (req, res) => {
   res.json({ user: req.user });
 });
 
+// Profile & Password Updates
+router.put("/profile", authenticate, authController.updateProfile);
+router.put("/password", authenticate, authController.updatePassword);
+
+// Password Recovery
+router.post("/forgot-password", authController.forgotPassword);
+router.post("/reset-password", authController.resetPassword);
+
 module.exports = router;

@@ -35,6 +35,16 @@ const login = async (req, res) => {
   }
 };
 
+const googleSignIn = async (req, res) => {
+  try {
+    if (!req.body?.credential) return res.status(400).json({ message: "Google credential is required" });
+    const result = await authService.signInWithGoogle(req.body.credential);
+    return res.status(200).json(result);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 const updateProfile = async (req, res) => {
   try {
     const { name } = req.body;
@@ -52,8 +62,8 @@ const updateProfile = async (req, res) => {
 const updatePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ message: "currentPassword and newPassword are required" });
+    if (!newPassword) {
+      return res.status(400).json({ message: "newPassword is required" });
     }
 
     const result = await authService.updatePassword(req.user._id, { currentPassword, newPassword });
@@ -94,6 +104,7 @@ const resetPassword = async (req, res) => {
 module.exports = {
   signup,
   login,
+  googleSignIn,
   updateProfile,
   updatePassword,
   forgotPassword,

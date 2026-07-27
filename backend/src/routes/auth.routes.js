@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.post("/signup", authController.signup);
 router.post("/login", authController.login);
+router.post("/google", authController.googleSignIn);
 
 // Protected test route: proves the authenticate middleware works.
 // Only checks "who is this user" — no org/role logic here (that

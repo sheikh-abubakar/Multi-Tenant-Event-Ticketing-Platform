@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
 const Signup = () => {
-  const { signup } = useAuth();
+  const { signup, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
@@ -11,6 +12,16 @@ const Signup = () => {
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleGoogleSuccess = async (credential) => {
+    setError(""); setLoading(true);
+    try {
+      const result = await loginWithGoogle(credential);
+      navigate(result.user.requiresPasswordSetup ? "/set-password" : "/browse");
+    }
+    catch (err) { setError(err.response?.data?.message || "Google sign-up failed. Please try again."); }
+    finally { setLoading(false); }
   };
 
   const handleSubmit = async (e) => {
@@ -69,6 +80,7 @@ const Signup = () => {
             {loading ? "Creating account…" : "Sign up"}
           </button>
         </form>
+        <GoogleSignInButton onSuccess={handleGoogleSuccess} onError={setError} />
       </div>
       <p className="auth-switch">
         Already have an account? <Link to="/login">Log in</Link>

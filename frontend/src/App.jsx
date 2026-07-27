@@ -27,6 +27,7 @@ import GlobalCart from "./pages/GlobalCart";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import UserProfile from "./pages/UserProfile";
+import SetPassword from "./pages/SetPassword";
 
 function App() {
   const [searchParams] = useSearchParams();
@@ -52,6 +53,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/set-password" element={<ProtectedRoute><SetPassword /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
 
         <Route

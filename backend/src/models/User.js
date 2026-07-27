@@ -25,7 +25,18 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: {
       type: String,
-      required: true,
+      required: false,
+      default: null,
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      default: null,
+    },
+    requiresPasswordSetup: {
+      type: Boolean,
+      default: false,
     },
     referralCode: {
       type: String,

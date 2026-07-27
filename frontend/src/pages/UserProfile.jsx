@@ -6,6 +6,8 @@ import { User, Lock, Wallet, Ticket, Gift, Building, ArrowRight, CheckCircle } f
 
 const UserProfile = () => {
   const { user, updateUser } = useAuth();
+  // The one-time setup is handled by /set-password immediately after a new Google sign-in.
+  const needsPasswordSetup = false;
 
   // Profile fields state
   const [profileForm, setProfileForm] = useState({ name: user?.name || "" });
@@ -82,10 +84,11 @@ const UserProfile = () => {
 
     setPasswordLoading(true);
     try {
-      await apiClient.put("/auth/password", {
+      const { data } = await apiClient.put("/auth/password", {
         currentPassword: passwordForm.currentPassword,
         newPassword: passwordForm.newPassword,
       });
+      updateUser(data.user);
       setPasswordSuccess("Password changed successfully.");
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
     } catch (err) {
@@ -173,7 +176,7 @@ const UserProfile = () => {
           <div className="profile-card">
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
               <Lock size={20} color="#c99a3c" />
-              <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Change Password</h2>
+              <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{needsPasswordSetup ? "Set a Password" : "Change Password"}</h2>
             </div>
 
             {passwordError && (
@@ -189,7 +192,7 @@ const UserProfile = () => {
             )}
 
             <form onSubmit={handlePasswordSubmit}>
-              <div className="field">
+              {!needsPasswordSetup && <div className="field">
                 <label htmlFor="currentPassword">Current Password</label>
                 <input
                   id="currentPassword"
@@ -199,7 +202,8 @@ const UserProfile = () => {
                   onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
                   required
                 />
-              </div>
+              </div>}
+              {needsPasswordSetup && <p style={{ color: "#a8a4c0", fontSize: 13, marginTop: 0 }}>Your account uses Google sign-in. Set a password once if you would also like to use email and password.</p>}
 
               <div className="field">
                 <label htmlFor="newPassword">New Password</label>
@@ -231,7 +235,7 @@ const UserProfile = () => {
                 disabled={passwordLoading}
                 style={{ marginTop: 8, padding: "10px 20px" }}
               >
-                {passwordLoading ? "Changing Password…" : "Change Password"}
+                {passwordLoading ? "Saving Password…" : needsPasswordSetup ? "Set Password" : "Change Password"}
               </button>
             </form>
           </div>

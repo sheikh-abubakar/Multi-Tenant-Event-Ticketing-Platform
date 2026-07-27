@@ -55,7 +55,7 @@ even though everything lives in shared MongoDB collections.
 | Backend framework | Express.js |
 | Database | MongoDB Atlas (cloud-hosted) |
 | ODM | Mongoose |
-| Authentication | JWT (jsonwebtoken), bcryptjs for password hashing |
+| Authentication | JWT (jsonwebtoken), bcryptjs for password hashing, Google Identity Services |
 | File uploads | Multer (in-memory) → Cloudinary (hosted image storage) |
 | Payment processing | Stripe (test mode) |
 | Email | Nodemailer (Gmail SMTP / App Password) |
@@ -224,7 +224,8 @@ Global identity. No `organizationId` — a user is not owned by any org.
 |---|---|---|
 | `name` | String | required |
 | `email` | String | required, unique, lowercase |
-| `passwordHash` | String | required — bcrypt hash, never plaintext |
+| `passwordHash` | String | bcrypt hash; nullable for Google-only accounts, never plaintext |
+| `googleId` | String | nullable, unique Google subject ID used to link a Google identity |
 | `createdAt` / `updatedAt` | Date | auto (timestamps) |
 
 ### 5.2 `Organization`
@@ -337,6 +338,9 @@ complexity (orphaned carts, cleanup jobs) for no real benefit at this scope.
   project's scope (see [Change Log](#change-log)).
 - Passwords are hashed with bcrypt (10 salt rounds) before storage; never
   stored or logged in plaintext.
+- Google sign-in posts a Google ID token to the API. The API verifies its
+  signature and audience using `GOOGLE_CLIENT_ID`; Google-only users can set a
+  local password later from their profile.
 
 ### 6.2 Authorization Pipeline
 
@@ -386,6 +390,7 @@ Base URL (local dev): `http://localhost:5000`
 |---|---|---|---|---|
 | POST | `/api/auth/signup` | No | `{ name, email, password }` | Creates a `User`, returns `{ token, user }` |
 | POST | `/api/auth/login` | No | `{ email, password }` | Returns `{ token, user }` |
+| POST | `/api/auth/google` | No | `{ credential }` | Verifies a Google ID token, creates or links the verified-email user, returns `{ token, user }` |
 | GET | `/api/auth/me` | Yes (Bearer token) | — | Returns the logged-in user's own profile. Proves `authenticate` middleware works; no org/role logic. |
 
 ### 7.2 Organizations — `/api/organizations`
@@ -713,6 +718,7 @@ Full list of all environment variables used by the backend:
 | `EMAIL_PASS` | Conditional* | Gmail App Password (16 chars, no spaces) — NOT the regular Gmail password |
 | `EMAIL_FROM` | No | Sender name/address (default: `"StagePass <noreply@stagepass.com>"`) |
 | `FRONTEND_URL` | No | Frontend URL for Stripe redirect (default: `http://localhost:5173`) |
+| `GOOGLE_CLIENT_ID` | Conditional | Google Cloud OAuth 2.0 Web client ID; required to enable Google sign-in |
 
 > **\*Email is optional:** If `EMAIL_USER` is not set, the confirmation email
 > will be skipped (logged as a warning) but the booking will still be confirmed
@@ -1123,6 +1129,15 @@ are marked as complete; this section lists what's **left**.
 > signup received visual-only styling; their authentication behaviour is
 > unchanged.
 
+### Google Sign-In & First-Time Password Setup (2026-07-27)
+
+- Added secure Google ID-token verification through `google-auth-library`.
+- Added Google buttons to signup and login. A verified Google email creates a
+  passwordless account or links to an existing account with that same email.
+- A brand-new Google account is sent once to `/set-password`. Saving the
+  password clears this one-time flag; later logins go directly to the app and
+  `/profile` retains the normal current-password confirmation.
+
 ## Change Log
 
 ### Seat-map implementation (2026-07-22)
@@ -1137,6 +1152,7 @@ are marked as complete; this section lists what's **left**.
 
 | Date | Change | Section(s) affected |
 |---|---|---|
+| 2026-07-27 | Added Google sign-in/sign-up plus first-time local-password setup for Google-only users | Tech Stack, Database Schema, Authentication, Auth API, Environment Setup, Implementation Log |
 | 2026-07-23 | Simplified the visual system to the StagePass dark theme only; removed the theme toggle, refined shared header actions, and restyled the existing login/signup forms without changing authentication logic | Implementation Log (§11), Frontend routes/UI |
 | 2026-07-23 | Added persisted light/dark theme system and a responsive StagePass public landing page; retained public event browsing at `/browse` | Implementation Log (§11), Frontend routes/UI |
 | 2026-07-14 | Initial document created, covering Week 1 (complete) and Week 2 Day 1 Venue + Event CRUD | All |

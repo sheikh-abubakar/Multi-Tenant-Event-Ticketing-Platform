@@ -1,7 +1,9 @@
 import axios from "axios";
 
+const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:5000/api").replace(/\/$/, "");
+
 const apiClient = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL: apiBaseUrl,
   withCredentials: true,  // 🔴 IMPORTANT: Send session cookie with every request
 });
 

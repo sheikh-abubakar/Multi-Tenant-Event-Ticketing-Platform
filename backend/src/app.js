@@ -1,6 +1,9 @@
 const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const { MongoStore } = require("connect-mongo");
 const authRoutes = require("./routes/auth.routes");
 const organizationRoutes = require("./routes/organization.routes");
 const tenantRoutes = require("./routes/tenant.routes");
@@ -22,6 +25,15 @@ const referralRoutes = require("./routes/referral.routes");
 const couponRoutes = require("./routes/coupon.routes");
 
 const app = express();
+const isProduction = process.env.NODE_ENV === "production";
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
+if (isProduction) app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.use(helmet({ crossOriginResourcePolicy: false }));
 
 // Stripe webhook must be BEFORE express.json() — Stripe needs the raw body
 // for signature verification
@@ -33,22 +45,48 @@ app.post(
 
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ""))) return callback(null, true);
+      return callback(new Error("Origin is not allowed by CORS"));
+    },
     credentials: true,
   }),
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 1000,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Too many authentication attempts. Please try again in 15 minutes." },
+});
 
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "stagepass-cart-secret",
+    name: process.env.SESSION_COOKIE_NAME || "stagepass.sid",
+    secret: process.env.SESSION_SECRET,
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
+    rolling: true,
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGO_URI,
+      collectionName: "sessions",
+      ttl: 24 * 60 * 60,
+      touchAfter: 24 * 60 * 60,
+    }),
     cookie: {
       httpOnly: true,
-      secure: false,
-      sameSite: "lax",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
   }),
@@ -58,6 +96,8 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Ticketing platform API is running" });
 });
 
+app.use("/api", apiLimiter);
+app.use("/api/auth", authLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/organizations", organizationRoutes);
 app.use("/api/o/:orgSlug", tenantRoutes);
@@ -78,4 +118,17 @@ app.use("/api/o/:orgSlug", calendarRoutes);
 app.use("/api", publicRoutes);
 app.use("/api", refundRoutes);
 app.use("/api/referrals", referralRoutes);
+
+app.use((req, res) => res.status(404).json({ message: "Route not found" }));
+
+app.use((error, req, res, next) => {
+  if (error.name === "MulterError") return res.status(400).json({ message: error.message });
+  if (error.type === "entity.parse.failed") return res.status(400).json({ message: "Invalid JSON request body" });
+
+  console.error("Unhandled API error:", error);
+  return res.status(error.statusCode || 500).json({
+    message: error.statusCode ? error.message : "Internal server error",
+  });
+});
+
 module.exports = app;

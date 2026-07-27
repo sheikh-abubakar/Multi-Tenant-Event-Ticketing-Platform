@@ -719,6 +719,9 @@ Full list of all environment variables used by the backend:
 | `EMAIL_FROM` | No | Sender name/address (default: `"StagePass <noreply@stagepass.com>"`) |
 | `FRONTEND_URL` | No | Frontend URL for Stripe redirect (default: `http://localhost:5173`) |
 | `GOOGLE_CLIENT_ID` | Conditional | Google Cloud OAuth 2.0 Web client ID; required to enable Google sign-in |
+| `CORS_ALLOWED_ORIGINS` | Yes in production | Comma-separated frontend origins that may call the API |
+| `SESSION_COOKIE_NAME` | No | Mongo-backed session cookie name (default: `stagepass.sid`) |
+| `ENABLE_BOOKING_SCHEDULER` | Yes in production | Set `true` on exactly one backend instance to prevent duplicate scheduler workers |
 
 > **\*Email is optional:** If `EMAIL_USER` is not set, the confirmation email
 > will be skipped (logged as a warning) but the booking will still be confirmed

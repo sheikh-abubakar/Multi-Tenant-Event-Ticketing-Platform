@@ -200,11 +200,19 @@ const runSweep = async () => {
  * Starts the periodic background sweep. Call this once, from
  * server.js, after the DB connection is established.
  */
+let schedulerInterval;
+
 const startBookingScheduler = () => {
+  if (schedulerInterval) return;
   console.log(
     `[Scheduler] Booking scheduler started — sweeping every ${SWEEP_INTERVAL_MS / 1000}s`,
   );
-  setInterval(runSweep, SWEEP_INTERVAL_MS);
+  schedulerInterval = setInterval(runSweep, SWEEP_INTERVAL_MS);
 };
 
-module.exports = { startBookingScheduler, sendPendingReminders, releaseExpiredBookings };
+const stopBookingScheduler = () => {
+  if (schedulerInterval) clearInterval(schedulerInterval);
+  schedulerInterval = undefined;
+};
+
+module.exports = { startBookingScheduler, stopBookingScheduler, sendPendingReminders, releaseExpiredBookings };

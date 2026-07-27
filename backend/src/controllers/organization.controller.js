@@ -1,4 +1,5 @@
 const organizationService = require("../services/organization.service");
+const { recordPlatformAudit } = require("../utils/platformAudit");
 
 /**
  * req.user is already attached here because this route runs behind
@@ -12,6 +13,7 @@ const create = async (req, res) => {
       { name, slug },
       req.user._id
     );
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: organization._id, action: "organization.created", targetType: "organization", targetId: organization._id, metadata: { organizationName: organization.name } });
     return res.status(201).json({ organization });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

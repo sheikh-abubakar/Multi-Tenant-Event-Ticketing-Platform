@@ -28,6 +28,13 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import UserProfile from "./pages/UserProfile";
 import SetPassword from "./pages/SetPassword";
+import PlatformAdminRoute from "./components/PlatformAdminRoute";
+import PlatformAdminLayout from "./components/PlatformAdminLayout";
+import PlatformAdminLogin from "./pages/PlatformAdminLogin";
+import PlatformAdminOverview from "./pages/PlatformAdminOverview";
+import PlatformOrganizations from "./pages/PlatformOrganizations";
+import PlatformOrganizationDetail from "./pages/PlatformOrganizationDetail";
+import PlatformActivity from "./pages/PlatformActivity";
 
 function App() {
   const [searchParams] = useSearchParams();
@@ -55,6 +62,14 @@ function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/set-password" element={<ProtectedRoute><SetPassword /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+
+        <Route path="/platform-admin/login" element={<PlatformAdminLogin />} />
+        <Route path="/platform-admin" element={<PlatformAdminRoute><PlatformAdminLayout /></PlatformAdminRoute>}>
+          <Route index element={<PlatformAdminOverview />} />
+          <Route path="organizations" element={<PlatformOrganizations />} />
+          <Route path="organizations/:organizationId" element={<PlatformOrganizationDetail />} />
+          <Route path="activity" element={<PlatformActivity />} />
+        </Route>
 
         <Route
           path="/create-organization"

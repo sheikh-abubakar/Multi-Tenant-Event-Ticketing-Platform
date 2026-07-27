@@ -18,6 +18,7 @@ const toAuthUser = (user) => ({
   email: user.email,
   hasPassword: Boolean(user.passwordHash),
   requiresPasswordSetup: Boolean(user.requiresPasswordSetup),
+  platformRole: user.platformRole || "user",
 });
 
 const signup = async ({ name, email, password }) => {

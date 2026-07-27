@@ -1143,6 +1143,12 @@ are marked as complete; this section lists what's **left**.
 
 ## Change Log
 
+### Platform Super Admin Dashboard (2026-07-27)
+
+- Added the separate `/platform-admin` command center and protected global Super Admin role.
+- The one-time `npm run create:super-admin` script writes a bcrypt-hashed Super Admin account directly into MongoDB's `users` collection; public signup cannot grant this role.
+- Platform routes provide global analytics, organization inspection, organization suspension/reactivation, and an audit trail while all existing organizer routes remain tenant-scoped.
+
 ### Seat-map implementation (2026-07-22)
 
 - New events use `purchaseMode: "seatmap"`; legacy `ticketTypes` documents are retained for historical bookings.

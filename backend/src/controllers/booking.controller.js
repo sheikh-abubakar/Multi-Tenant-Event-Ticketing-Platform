@@ -1,5 +1,6 @@
 const stripe = require("../config/stripe");
 const bookingService = require("../services/booking.service");
+const { recordPlatformAudit } = require("../utils/platformAudit");
 
 const create = async (req, res) => {
   try {
@@ -37,6 +38,7 @@ const confirm = async (req, res) => {
     }
 
     const booking = await bookingService.confirmBooking(session_id);
+    await recordPlatformAudit({ organizationId: booking.organizationId, action: "booking.confirmed", targetType: "booking", targetId: booking._id, metadata: { totalAmount: booking.totalAmount, buyerEmail: booking.buyerEmail.replace(/(^.).*(@.*$)/, "$1***$2") } });
     return res.json({ booking });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

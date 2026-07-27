@@ -18,7 +18,7 @@ const Signup = () => {
     setError(""); setLoading(true);
     try {
       const result = await loginWithGoogle(credential);
-      navigate(result.user.requiresPasswordSetup ? "/set-password" : "/browse");
+      navigate(result.user.platformRole === "super_admin" ? "/platform-admin" : result.user.requiresPasswordSetup ? "/set-password" : "/browse");
     }
     catch (err) { setError(err.response?.data?.message || "Google sign-up failed. Please try again."); }
     finally { setLoading(false); }

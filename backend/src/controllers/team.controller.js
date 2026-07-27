@@ -1,5 +1,6 @@
 const teamService = require("../services/team.service");
 const Organization = require("../models/Organization");
+const { recordPlatformAudit } = require("../utils/platformAudit");
 
 /**
  * GET /api/o/:orgSlug/team
@@ -37,6 +38,8 @@ const inviteMember = async (req, res) => {
       orgSlug: req.params.orgSlug,
     });
 
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.member_invited", targetType: "organizationMember", targetId: result.member.id || result.member._id, metadata: { email, role } });
+
     return res.status(201).json({ member: result.member, message: result.message });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -73,6 +76,7 @@ const updateMemberRole = async (req, res) => {
       memberId: req.params.memberId,
       newRole: role,
     });
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.role_updated", targetType: "organizationMember", targetId: member.id || member._id, metadata: { role } });
     return res.json({ member });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -91,6 +95,7 @@ const updateMemberPermissions = async (req, res) => {
       memberId: req.params.memberId,
       permissions,
     });
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.permissions_updated", targetType: "organizationMember", targetId: member.id || member._id, metadata: { permissionCount: permissions?.length || 0 } });
     return res.json({ member });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -107,6 +112,7 @@ const removeMember = async (req, res) => {
       organizationId: req.organizationId,
       memberId: req.params.memberId,
     });
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.member_removed", targetType: "organizationMember", targetId: req.params.memberId });
     return res.status(204).send();
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -125,6 +131,7 @@ const assignVenues = async (req, res) => {
       memberId: req.params.memberId,
       venueIds: venueIds || [],
     });
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.venues_assigned", targetType: "organizationMember", targetId: member.id || member._id, metadata: { venueCount: venueIds?.length || 0 } });
     return res.json({ member });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

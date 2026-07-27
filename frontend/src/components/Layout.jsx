@@ -16,6 +16,8 @@ const Layout = ({ children }) => {
     navigate("/login");
   };
 
+  if (location.pathname.startsWith("/platform-admin")) return children;
+
   if (orgSlug && user) {
     const organizationLinks = [
       ["Overview", `/o/${orgSlug}/dashboard`],

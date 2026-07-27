@@ -38,6 +38,14 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Global platform access is deliberately separate from tenant roles.
+    // This field is set only by scripts/createSuperAdmin.js, never by signup.
+    platformRole: {
+      type: String,
+      enum: ["user", "super_admin"],
+      default: "user",
+      index: true,
+    },
     referralCode: {
       type: String,
       unique: true,

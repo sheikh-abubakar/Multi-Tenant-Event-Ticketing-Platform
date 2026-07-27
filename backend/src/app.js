@@ -23,6 +23,7 @@ const refundRoutes = require("./routes/refund.routes");
 const seatmapRoutes = require("./routes/seatmap.routes");
 const referralRoutes = require("./routes/referral.routes");
 const couponRoutes = require("./routes/coupon.routes");
+const platformAdminRoutes = require("./routes/platformAdmin.routes");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -99,6 +100,7 @@ app.get("/api/health", (req, res) => {
 app.use("/api", apiLimiter);
 app.use("/api/auth", authLimiter);
 app.use("/api/auth", authRoutes);
+app.use("/api/platform-admin", platformAdminRoutes);
 app.use("/api/organizations", organizationRoutes);
 app.use("/api/o/:orgSlug", tenantRoutes);
 app.use("/api/o/:orgSlug/venues", venueRoutes);

@@ -1,5 +1,7 @@
 const refundService = require("../services/refund.service");
 const walletService = require("../services/wallet.service");
+const Booking = require("../models/Booking");
+const { recordPlatformAudit } = require("../utils/platformAudit");
 
 /**
  * GET /api/bookings/mine
@@ -31,6 +33,8 @@ const requestRefund = async (req, res) => {
     }
 
     const result = await refundService.requestRefund(bookingId, userEmail, userId, method);
+    const booking = await Booking.findById(bookingId).select("organizationId totalAmount").lean();
+    if (booking) await recordPlatformAudit({ actorUserId: userId, organizationId: booking.organizationId, action: "booking.refunded", targetType: "booking", targetId: bookingId, metadata: { method, totalAmount: booking.totalAmount } });
     return res.json({ 
       message: result.method === "wallet" 
         ? "Refund processed! Amount credited to your wallet."

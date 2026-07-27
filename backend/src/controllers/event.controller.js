@@ -1,5 +1,6 @@
 const eventService = require("../services/event.service");
 const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
+const { recordPlatformAudit } = require("../utils/platformAudit");
 
 // If a file was uploaded (req.file.buffer, set by multer's
 // memoryStorage), streams it to Cloudinary and returns the hosted
@@ -15,6 +16,7 @@ const create = async (req, res) => {
   try {
     const bannerImageUrl = await buildBannerUrl(req);
     const event = await eventService.createEvent(req.body, req.organizationId, bannerImageUrl);
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "event.created", targetType: "event", targetId: event._id, metadata: { eventName: event.name } });
     return res.status(201).json({ event });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -59,6 +61,7 @@ const update = async (req, res) => {
       req.body,
       bannerImageUrl
     );
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "event.updated", targetType: "event", targetId: event._id, metadata: { eventName: event.name } });
     return res.json({ event });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -68,6 +71,7 @@ const update = async (req, res) => {
 const remove = async (req, res) => {
   try {
     await eventService.deleteEvent(req.params.eventId, req.organizationId);
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "event.deleted", targetType: "event", targetId: req.params.eventId });
     return res.status(204).send();
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

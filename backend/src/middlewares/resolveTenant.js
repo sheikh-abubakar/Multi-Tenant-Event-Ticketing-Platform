@@ -36,7 +36,7 @@ const resolveTenant = async (req, res, next) => {
       return res.status(400).json({ message: "Organization slug is missing from the URL" });
     }
 
-    const organization = await Organization.findOne({ slug: orgSlug, isDeleted: false });
+    const organization = await Organization.findOne({ slug: orgSlug, isDeleted: { $ne: true }, isSuspended: { $ne: true } });
 
     if (!organization) {
       return res.status(404).json({ message: `No organization found for slug "${orgSlug}"` });

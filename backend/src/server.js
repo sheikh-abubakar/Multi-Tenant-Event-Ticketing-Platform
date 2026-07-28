@@ -9,7 +9,18 @@ const PORT = process.env.PORT || 5000;
 const validateProductionEnvironment = () => {
   if (process.env.NODE_ENV !== "production") return;
 
-  const required = ["MONGO_URI", "JWT_SECRET", "SESSION_SECRET", "FRONTEND_URL", "CORS_ALLOWED_ORIGINS", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"];
+  const required = [
+    "MONGO_URI",
+    "JWT_SECRET",
+    "SESSION_SECRET",
+    "FRONTEND_URL",
+    "CORS_ALLOWED_ORIGINS",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "AWS_REGION",
+    "S3_BUCKET_NAME",
+    "S3_PUBLIC_BASE_URL"
+  ];
   const missing = required.filter((name) => !process.env[name]);
   if (missing.length) throw new Error(`Missing production environment variables: ${missing.join(", ")}`);
   if (process.env.JWT_SECRET.length < 32 || process.env.SESSION_SECRET.length < 32) {

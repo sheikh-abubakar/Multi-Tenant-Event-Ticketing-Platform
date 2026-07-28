@@ -1,5 +1,5 @@
 const eventService = require("../services/event.service");
-const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
+const { uploadBufferToS3 } = require("../utils/s3Upload");
 const { recordPlatformAudit } = require("../utils/platformAudit");
 
 // If a file was uploaded (req.file.buffer, set by multer's
@@ -8,8 +8,8 @@ const { recordPlatformAudit } = require("../utils/platformAudit");
 // request (e.g. an update that doesn't change the banner).
 const buildBannerUrl = async (req) => {
   if (!req.file) return undefined;
-  const result = await uploadBufferToCloudinary(req.file.buffer, "event-banners");
-  return result.secure_url;
+  const result = await uploadBufferToS3({ buffer: req.file.buffer, mimetype: req.file.mimetype, folder: "event-banners" });
+  return result.url;
 };
 
 const create = async (req, res) => {

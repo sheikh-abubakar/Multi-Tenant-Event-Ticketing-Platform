@@ -56,7 +56,7 @@ even though everything lives in shared MongoDB collections.
 | Database | MongoDB Atlas (cloud-hosted) |
 | ODM | Mongoose |
 | Authentication | JWT (jsonwebtoken), bcryptjs for password hashing, Google Identity Services |
-| File uploads | Multer (in-memory) → Cloudinary (hosted image storage) |
+| File uploads | Multer (in-memory) → private Amazon S3, delivered through CloudFront |
 | Payment processing | Stripe (test mode) |
 | Email | Nodemailer (Gmail SMTP / App Password) |
 | QR Code generation | `qrcode` npm package (data URL format) |
@@ -78,13 +78,13 @@ even though everything lives in shared MongoDB collections.
 ticketing-platform/
 ├── backend/
 │   ├── src/
-│   │   ├── config/       # DB connection setup, Stripe init, Cloudinary init, email transporter
+│   │   ├── config/       # DB connection setup, Stripe init, S3 client, email transporter
 │   │   ├── models/       # Mongoose schemas (User, Organization, OrganizationMember, Venue, Event, Booking)
 │   │   ├── controllers/  # HTTP request/response handlers (thin layer)
 │   │   ├── services/     # Business logic (all DB queries live here)
 │   │   ├── routes/       # Express routers
 │   │   ├── middlewares/  # auth, tenant resolution, role checks, uploads
-│   │   ├── utils/        # jwt helpers, slugify helper, cloudinaryUpload helper
+│   │   ├── utils/        # jwt helpers, slugify helper, S3 upload helper
 │   │   ├── app.js        # Express app assembly (mounts all routes)
 │   │   └── server.js     # Entry point — connects DB, starts server
 │   ├── uploads/          # Locally stored uploaded files (gitignored)
@@ -101,7 +101,7 @@ ticketing-platform/
 | File | Purpose | Key exports |
 |---|---|---|
 | `db.js` | MongoDB/Mongoose connection setup | (connects to MONGO_URI) |
-| `cloudinary.js` | Cloudinary SDK config from env vars | configured cloudinary instance |
+| `s3.js` | Amazon S3 SDK client using the AWS credential-provider chain | configured S3 client |
 | `stripe.js` | Stripe SDK initialization | configured Stripe instance |
 | `email.js` | Nodemailer transporter + HTML email template | `sendBookingConfirmation(booking, event, qrCodeUrl)` |
 
@@ -589,10 +589,11 @@ frontend then calls these API endpoints:
 
 ### 7.10 Image Hosting
 
-Uploaded event banner images are streamed directly to **Cloudinary** (no
-local disk storage). The `bannerImageUrl` field on an `Event` stores the
-Cloudinary-hosted `secure_url` directly — the frontend loads images straight
-from Cloudinary's CDN, not from this backend.
+New event banners and organization logos are streamed directly to a **private
+Amazon S3 bucket** (no local disk storage). The backend stores a CloudFront
+URL in `bannerImageUrl` / `logoUrl`; the frontend loads images directly from
+CloudFront while S3 Block Public Access remains enabled. Existing Cloudinary
+URLs remain valid historical values until migrated separately.
 
 ### 7.11 Planned / Not Yet Built
 
@@ -709,9 +710,11 @@ Full list of all environment variables used by the backend:
 | `SESSION_SECRET` | No | Secret for express-session (default: `"stagepass-cart-secret"`) |
 | `STRIPE_SECRET_KEY` | Yes | Stripe secret key starting with `sk_test_` |
 | `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret starting with `whsec_` — **not needed for local dev** (booking confirmation works via frontend callback) |
-| `CLOUDINARY_CLOUD_NAME` | Yes | Cloudinary cloud name (from dashboard) |
-| `CLOUDINARY_API_KEY` | Yes | Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | Yes | Cloudinary API secret |
+| `AWS_REGION` | Yes for S3 uploads | AWS region containing the S3 bucket (currently `ap-south-1`) |
+| `AWS_ACCESS_KEY_ID` | Yes locally | Least-privilege IAM access key for backend uploads; use an IAM role after AWS deployment |
+| `AWS_SECRET_ACCESS_KEY` | Yes locally | Secret for the IAM access key; never expose to the frontend or commit it |
+| `S3_BUCKET_NAME` | Yes for S3 uploads | Private S3 bucket receiving event-banner and organization-logo objects |
+| `S3_PUBLIC_BASE_URL` | Yes for S3 uploads | HTTPS CloudFront distribution URL used to build image URLs |
 | `EMAIL_HOST` | No | SMTP host (default: `smtp.gmail.com`) |
 | `EMAIL_PORT` | No | SMTP port (default: `587`) |
 | `EMAIL_USER` | Conditional* | Gmail address for sending confirmation emails |
@@ -1107,7 +1110,7 @@ are marked as complete; this section lists what's **left**.
 - [ ] Integration tests (tenant isolation)
 - [ ] Code review + bug fixes
 - [ ] README + API docs finalization
-- [ ] Move uploaded file storage to cloud (S3/Cloudinary) before deploy
+- [x] Move new uploaded image storage to private Amazon S3 + CloudFront (existing Cloudinary URLs retained as historical assets)
 - [ ] Deploy to staging
 - [ ] Demo: two organizations, proving full data isolation
 

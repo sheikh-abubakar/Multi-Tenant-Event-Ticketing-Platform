@@ -1,5 +1,5 @@
 const organizationService = require("../services/organization.service");
-const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
+const { uploadBufferToS3 } = require("../utils/s3Upload");
 
 const getSettings = async (req, res) => {
   try {
@@ -14,8 +14,8 @@ const updateSettings = async (req, res) => {
   try {
     let logoUrl;
     if (req.file) {
-      const result = await uploadBufferToCloudinary(req.file.buffer, "org-logos");
-      logoUrl = result.secure_url;
+      const result = await uploadBufferToS3({ buffer: req.file.buffer, mimetype: req.file.mimetype, folder: "org-logos" });
+      logoUrl = result.url;
     }
 
     const organization = await organizationService.updateOrganizationSettings(

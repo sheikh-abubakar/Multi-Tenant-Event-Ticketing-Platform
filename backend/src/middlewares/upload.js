@@ -4,7 +4,7 @@ const multer = require("multer");
  * memoryStorage: the uploaded file is kept in RAM as a Buffer
  * (available at req.file.buffer) instead of being written to local
  * disk. The controller then streams that buffer straight to
- * Cloudinary (see utils/cloudinaryUpload.js) — the file never
+ * S3 (see utils/s3Upload.js) — the file never
  * touches this server's filesystem at all.
  */
 const storage = multer.memoryStorage();

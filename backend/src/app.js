@@ -94,7 +94,7 @@ app.use(
 );
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "Ticketing platform API is running" });
+  res.json({ status: "ok", message: "Ticketing platform API is running-AUTO DEPLOYED SUCCESS!" });
 });
 
 app.use("/api", apiLimiter);

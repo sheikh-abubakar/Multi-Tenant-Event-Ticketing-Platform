@@ -165,7 +165,7 @@ const BookingConfirmation = () => {
                 color: "var(--gold)",
               }}
             >
-              Rs. {booking.totalAmount}
+              $ {booking.totalAmount}
             </p>
           </div>
           <div>
@@ -235,7 +235,7 @@ const BookingConfirmation = () => {
                     color: "var(--text)",
                   }}
                 >
-                  Rs. {item.lineTotal}
+                  $ {item.lineTotal}
                 </td>
               </tr>
             ))}

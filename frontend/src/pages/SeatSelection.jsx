@@ -106,7 +106,7 @@ export default function SeatSelection() {
             const quantity = cart.items.filter((item) => item.blockId === block.id).length;
             return (
               <div key={block.id} className="seat-selection-summary__ga">
-                <span>{block.name} &middot; Rs. {block.price || 0}</span>
+                <span>{block.name} &middot; $ {block.price || 0}</span>
                 <span className="seat-selection-summary__quantity">
                   <button type="button" onClick={() => changeGaQuantity(block, false)} disabled={!quantity || busy} aria-label={`Remove one ${block.name}`}>−</button>
                   <b>{quantity}</b>
@@ -118,12 +118,12 @@ export default function SeatSelection() {
           <div className="seat-selection-summary__items">
             {individualItems.map((item) => (
               <div key={seatKey(item.blockId, item.seatId)}>
-                <span>{item.sectionName} &middot; {item.seatName}</span><strong>Rs. {item.unitPrice}</strong>
+                <span>{item.sectionName} &middot; {item.seatName}</span><strong>$ {item.unitPrice}</strong>
               </div>
             ))}
             {!cart.items.length && <p className="seat-selection-summary__empty">Select seats directly on the map.</p>}
           </div>
-          <div className="seat-selection-summary__total"><span>Total</span><strong>Rs. {total}</strong></div>
+          <div className="seat-selection-summary__total"><span>Total</span><strong>$ {total}</strong></div>
           <div className="seat-selection-actions">
             <button type="button" disabled={!cart.items.length || busy} onClick={() => navigate("/cart")} className="seat-selection-actions__cart">Add to cart</button>
             <button type="button" disabled={!cart.items.length || busy} onClick={() => navigate(`/o/${orgSlug}/checkout/${eventId}`)} className="seat-selection-actions__pay">Proceed to payment</button>

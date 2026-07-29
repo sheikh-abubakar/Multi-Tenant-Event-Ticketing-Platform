@@ -59,9 +59,9 @@ const BuyerDashboard = () => {
   };
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat("en-PK", {
+    return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "PKR",
+      currency: "USD",
       minimumFractionDigits: 0,
     }).format(Math.abs(amount));
   };
@@ -155,10 +155,10 @@ const BuyerDashboard = () => {
               margin: 0,
               fontFamily: "monospace",
             }}>
-              {wallet ? formatCurrency(wallet.balance) : "Rs. 0"}
+              {wallet ? formatCurrency(wallet.balance) : "$0.00"}
             </p>
             <p style={{ color: "#f7f2e7", opacity: 0.6, fontSize: 13, margin: "4px 0 0" }}>
-              {wallet?.currency || "PKR"} Available Balance
+              {wallet?.currency || "USD"} Available Balance
             </p>
           </div>
         </div>

@@ -202,7 +202,7 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
           discountAmount: discountRes.referralDiscountAmount,
           couponCode: discountRes.couponCode,
           couponDiscountAmount: discountRes.couponDiscountAmount,
-          currency: "PKR",
+          currency: "USD",
           status: "pending",
           paymentStatus: "pending",
           confirmationCode: generateConfirmationCode(),
@@ -217,7 +217,7 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
     const paymentRatio = totalAmount ? finalAmount / totalAmount : 1;
     const stripeItems = selectedSeats.map((seat) => ({
       price_data: {
-        currency: "pkr",
+        currency: "usd",
         product_data: { name: `${event.name} — ${seat.sectionName} ${seat.seatName}` },
         unit_amount: Math.max(1, Math.round(seat.unitPrice * 100 * paymentRatio)),
       },
@@ -318,7 +318,7 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           },
           line_items: existingPendingBooking.items.map((item) => ({
             price_data: {
-              currency: "pkr",
+              currency: "usd",
               product_data: {
                 name: `Ticket — ${item.ticketTypeName}`,
               },
@@ -419,7 +419,7 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
 
       stripeLineItems.push({
         price_data: {
-          currency: "pkr",
+          currency: "usd",
           product_data: {
             name: `${event.name} — ${ticketType.name}`,
             description: `${checkoutItem.quantity} x ${ticketType.name} ticket(s)`,
@@ -464,7 +464,7 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           discountAmount: discountRes.referralDiscountAmount,
           couponCode: discountRes.couponCode,
           couponDiscountAmount: discountRes.couponDiscountAmount,
-          currency: "PKR",
+          currency: "USD",
           status: "pending",
           paymentStatus: "pending",
           confirmationCode,
@@ -495,7 +495,7 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
       adjustedStripeLineItems = [
         {
           price_data: {
-            currency: "pkr",
+            currency: "usd",
             product_data: {
               name: `Discounted Payment - ${event.name}`,
             },

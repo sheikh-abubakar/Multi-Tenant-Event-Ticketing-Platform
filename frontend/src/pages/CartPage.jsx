@@ -153,7 +153,7 @@ const CartPage = () => {
                       {item.ticketTypeName}
                     </h4>
                     <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
-                      Rs. {Number(item.unitPrice || 0)} per ticket
+                      $ {Number(item.unitPrice || 0)} per ticket
                     </p>
                     <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
                       {remaining > 0 ? `${remaining} tickets available` : "Sold out"}
@@ -179,9 +179,9 @@ const CartPage = () => {
                       </button>
                     </div>
                     <div style={{ textAlign: "right", minWidth: 90 }}>
-                      <p style={styles.itemTotal}>Rs. {Number(item.unitPrice || 0) * Number(item.quantity || 0)}</p>
+                      <p style={styles.itemTotal}>$ {Number(item.unitPrice || 0) * Number(item.quantity || 0)}</p>
                       <p style={{ fontSize: 11, color: "var(--muted)", margin: 0 }}>
-                        {item.quantity} x Rs. {Number(item.unitPrice || 0)}
+                        {item.quantity} x $ {Number(item.unitPrice || 0)}
                       </p>
                     </div>
                     <button
@@ -204,7 +204,7 @@ const CartPage = () => {
                   Subtotal ({items.reduce((s, i) => s + Number(i.quantity || 0), 0)} tickets)
                 </span>
               </div>
-              <span style={{ fontWeight: 700, fontSize: 20, color: "var(--paper)" }}>Rs. {cartTotal}</span>
+              <span style={{ fontWeight: 700, fontSize: 20, color: "var(--paper)" }}>$ {cartTotal}</span>
             </div>
 
             {/* Wallet Payment Option */}
@@ -231,17 +231,17 @@ const CartPage = () => {
                     <strong>Pay with Wallet</strong>
                     <br />
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                      Balance: Rs. {walletBalance}
+                      Balance: $ {walletBalance}
                     </span>
                   </label>
                 </div>
                 {useWallet && (
                   <div style={{ textAlign: "right" }}>
                     <p style={{ margin: 0, fontSize: 13, color: "#4ade80", fontWeight: 600 }}>
-                      -Rs. {walletDeduction}
+                      -$ {walletDeduction}
                     </p>
                     <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--muted)" }}>
-                      Remaining: Rs. {remainingAfterWallet}
+                      Remaining: $ {remainingAfterWallet}
                     </p>
                   </div>
                 )}
@@ -262,12 +262,12 @@ const CartPage = () => {
               }
             >
               {useWallet && walletDeduction > 0
-                ? `Pay Rs. ${remainingAfterWallet} with Card`
+                ? `Pay $ ${remainingAfterWallet} with Card`
                 : "Proceed to Checkout"}
             </button>
             {useWallet && walletDeduction > 0 && (
               <p style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
-                Rs. {walletDeduction} will be deducted from your wallet
+                $ {walletDeduction} will be deducted from your wallet
               </p>
             )}
           </div>

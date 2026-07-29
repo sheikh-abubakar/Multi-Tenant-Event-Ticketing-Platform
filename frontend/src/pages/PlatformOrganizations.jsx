@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import apiClient from "../api/client";
 import "../components/PlatformAdmin.css";
 
-const money = (value) => new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR", maximumFractionDigits: 0 }).format(value || 0);
+const money = (value) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value || 0);
 const PlatformOrganizations = () => {
   const [search, setSearch] = useState(""); const [status, setStatus] = useState("all"); const [page, setPage] = useState(1); const [data, setData] = useState(null); const [error, setError] = useState("");
   useEffect(() => { let cancelled = false; const params = new URLSearchParams({ search, status, page: String(page) }); apiClient.get(`/platform-admin/organizations?${params}`).then(({ data }) => !cancelled && setData(data)).catch((err) => !cancelled && setError(err.response?.data?.message || "Could not load organizations.")); return () => { cancelled = true; }; }, [search, status, page]);

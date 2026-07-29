@@ -18,7 +18,7 @@ const WalletTransaction = require("../models/WalletTransaction");
 const getWallet = async (userId) => {
   let wallet = await Wallet.findOne({ userId });
   if (!wallet) {
-    wallet = await Wallet.create({ userId, balance: 0, currency: "PKR" });
+    wallet = await Wallet.create({ userId, balance: 0, currency: "USD" });
   }
   return wallet;
 };

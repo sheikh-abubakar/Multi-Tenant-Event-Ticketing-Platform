@@ -16,17 +16,17 @@ import {
   Legend,
 } from "recharts";
 
-const formatPKR = (value) =>
-  new Intl.NumberFormat("en-PK", {
+const formatUSD = (value) =>
+  new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "PKR",
-    maximumFractionDigits: 0,
+    currency: "USD",
+    maximumFractionDigits: 2,
   }).format(value || 0);
 
 const formatDate = (dateStr) => {
   if (!dateStr) return "—";
   const d = new Date(dateStr);
-  return d.toLocaleDateString("en-PK", { month: "short", day: "numeric" });
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
 const Analytics = () => {
@@ -121,14 +121,14 @@ const Analytics = () => {
         }}
       >
         <StatCard label="Total Bookings" value={metrics.totalBookings} />
-        <StatCard label="Ticket Sales Revenue" value={formatPKR(metrics.totalRevenue)} />
-        <StatCard label="Refund Revenue (10%)" value={formatPKR(metrics.totalOrgRevenue)} />
-        <StatCard label="Net Revenue" value={formatPKR(metrics.netRevenue)} />
+        <StatCard label="Ticket Sales Revenue" value={formatUSD(metrics.totalRevenue)} />
+        <StatCard label="Refund Revenue (10%)" value={formatUSD(metrics.totalOrgRevenue)} />
+        <StatCard label="Net Revenue" value={formatUSD(metrics.netRevenue)} />
         <StatCard label="Tickets Sold" value={metrics.totalTicketsSold} />
         <StatCard label="Events" value={metrics.totalEvents} />
         <StatCard label="Venues" value={metrics.totalVenues} />
         <StatCard label="Refunds Issued" value={metrics.totalRefunds} />
-        <StatCard label="Refunded Amount" value={formatPKR(metrics.totalRefundedAmount)} />
+        <StatCard label="Refunded Amount" value={formatUSD(metrics.totalRefundedAmount)} />
       </div>
 
       {/* ── Revenue over time ─────────────────────────────────── */}
@@ -145,7 +145,7 @@ const Analytics = () => {
                 tick={{ fontSize: 11, fill: "#8a8070" }}
                 tickFormatter={(v) => {
                   const d = new Date(v);
-                  return d.toLocaleDateString("en-PK", { month: "short", day: "numeric" });
+                  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
                 }}
                 interval={4}
               />
@@ -154,7 +154,7 @@ const Analytics = () => {
                 tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : v)}
               />
               <Tooltip
-                formatter={(value) => [formatPKR(value), "Revenue"]}
+                formatter={(value) => [formatUSD(value), "Revenue"]}
                 labelFormatter={(label) => formatDate(label)}
                 contentStyle={{
                   background: "#fffdf8",
@@ -294,7 +294,7 @@ const Analytics = () => {
                       </div>
                     </td>
                     <td style={{ padding: "10px 6px", textAlign: "right", fontWeight: 600 }}>
-                      {formatPKR(b.totalAmount)}
+                      {formatUSD(b.totalAmount)}
                     </td>
                     <td style={{ padding: "10px 6px" }}>
                       <span

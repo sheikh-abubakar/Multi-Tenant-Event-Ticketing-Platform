@@ -273,7 +273,7 @@ const CheckoutPage = () => {
 
           {rewardsToApply > 0 && (
             <p style={{ margin: "12px 0 0", fontSize: 13, color: "#4ade80", fontWeight: 600 }}>
-              🎉 {rewardsToApply * 10}% discount applied → saving Rs. {referralDiscountAmount}
+              🎉 {rewardsToApply * 10}% discount applied → saving $ {referralDiscountAmount}
             </p>
           )}
         </div>
@@ -294,7 +294,7 @@ const CheckoutPage = () => {
               <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(247,242,231,0.6)" }}>
                 {appliedCoupon.discountType === "percentage" 
                   ? `${appliedCoupon.discountValue}% discount applied` 
-                  : `Rs. ${appliedCoupon.discountValue} discount applied`}
+                  : `$ ${appliedCoupon.discountValue} discount applied`}
               </p>
             </div>
             <button
@@ -368,7 +368,7 @@ const CheckoutPage = () => {
                 <td style={{ padding: "10px 4px" }}>{item.ticketTypeName || `${item.sectionName} — ${item.seatName}`}</td>
                 <td style={{ padding: "10px 4px", textAlign: "center" }}>{item.quantity}</td>
                 <td style={{ padding: "10px 4px", textAlign: "right", fontWeight: 700 }}>
-                  Rs. {Number(item.unitPrice || 0) * Number(item.quantity || 0)}
+                  $ {Number(item.unitPrice || 0) * Number(item.quantity || 0)}
                 </td>
               </tr>
             ))}
@@ -380,7 +380,7 @@ const CheckoutPage = () => {
                 Subtotal ({cart.items.reduce((s, i) => s + Number(i.quantity || 0), 0)} tickets)
               </td>
               <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "var(--muted)" }}>
-                Rs. {cartTotal}
+                $ {cartTotal}
               </td>
             </tr>
 
@@ -391,7 +391,7 @@ const CheckoutPage = () => {
                   🏆 Referral Rewards ({rewardsToApply * 10}% off)
                 </td>
                 <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "#4ade80", fontWeight: 600 }}>
-                  -Rs. {referralDiscountAmount}
+                  -$ {referralDiscountAmount}
                 </td>
               </tr>
             )}
@@ -403,7 +403,7 @@ const CheckoutPage = () => {
                   🎟️ Coupon Discount ({appliedCoupon.code})
                 </td>
                 <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "#4ade80", fontWeight: 600 }}>
-                  -Rs. {couponDiscountAmount}
+                  -$ {couponDiscountAmount}
                 </td>
               </tr>
             )}
@@ -415,7 +415,7 @@ const CheckoutPage = () => {
                   💰 Wallet Payment
                 </td>
                 <td style={{ padding: "10px 4px", textAlign: "right", fontSize: 14, color: "#4ade80", fontWeight: 600 }}>
-                  -Rs. {walletDeduction}
+                  -$ {walletDeduction}
                 </td>
               </tr>
             )}
@@ -424,7 +424,7 @@ const CheckoutPage = () => {
             <tr style={{ borderTop: "2px solid #c99a3c" }}>
               <td colSpan={2} style={{ padding: "12px 4px", fontWeight: 700, fontSize: 16 }}>Amount to Pay</td>
               <td style={{ padding: "12px 4px", textAlign: "right", fontWeight: 700, color: "#c99a3c", fontSize: 20 }}>
-                Rs. {finalAmountDue}
+                $ {finalAmountDue}
               </td>
             </tr>
           </tfoot>
@@ -472,7 +472,7 @@ const CheckoutPage = () => {
           >
             {submitting
               ? "Processing…"
-              : `Pay Rs. ${finalAmountDue} with Card`}
+              : `Pay $ ${finalAmountDue} with Card`}
           </button>
 
           <p style={{ margin: "12px 0 0", fontSize: 13, color: "var(--muted)", textAlign: "center" }}>

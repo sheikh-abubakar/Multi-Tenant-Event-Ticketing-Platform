@@ -143,7 +143,7 @@ export default function CouponsTab({ orgSlug }) {
                 className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-ink-text"
               >
                 <option value="percentage">Percentage (%)</option>
-                <option value="fixed">Fixed Amount (Rs.)</option>
+                <option value="fixed">Fixed Amount ($)</option>
               </select>
             </div>
           </div>
@@ -151,7 +151,7 @@ export default function CouponsTab({ orgSlug }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-muted mb-1">
-                Discount Value {form.discountType === "percentage" ? "(%)" : "(Rs.)"}
+                Discount Value {form.discountType === "percentage" ? "(%)" : "($)"}
               </label>
               <input
                 type="number"
@@ -247,7 +247,7 @@ export default function CouponsTab({ orgSlug }) {
                       <td style={{ padding: "12px 8px" }}>
                         {coupon.discountType === "percentage"
                           ? `${coupon.discountValue}% Off`
-                          : `Rs. ${coupon.discountValue} Off`}
+                          : `$ ${coupon.discountValue} Off`}
                       </td>
                       <td style={{ padding: "12px 8px" }}>
                         {targetEvent ? `Event: ${targetEvent.name}` : "All Events"}

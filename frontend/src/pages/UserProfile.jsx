@@ -99,9 +99,9 @@ const UserProfile = () => {
   };
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat("en-PK", {
+    return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "PKR",
+      currency: "USD",
       minimumFractionDigits: 0,
     }).format(amount);
   };

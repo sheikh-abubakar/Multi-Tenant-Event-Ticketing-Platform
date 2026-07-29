@@ -50,7 +50,7 @@ const LandingPage = () => (
         </div>
         <div className="dashboard-mockup reveal reveal-delay" aria-label="Illustrative organizer analytics dashboard">
           <div className="mockup-top"><span>STAGEPASS / ANALYTICS</span><i /></div>
-          <div className="mockup-kpis"><b>Rs. 248K<small>REVENUE</small></b><b>1,840<small>SEATS SOLD</small></b></div>
+          <div className="mockup-kpis"><b>$248K<small>REVENUE</small></b><b>1,840<small>SEATS SOLD</small></b></div>
           <div className="mockup-chart"><span style={{ height: "28%" }} /><span style={{ height: "48%" }} /><span style={{ height: "36%" }} /><span style={{ height: "72%" }} /><span style={{ height: "57%" }} /><span style={{ height: "92%" }} /><span style={{ height: "78%" }} /></div>
           <div className="mockup-footer"><span>LIVE BOOKINGS</span><strong>+18.4%</strong></div>
         </div>

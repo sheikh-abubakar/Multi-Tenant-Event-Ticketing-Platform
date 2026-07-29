@@ -53,7 +53,7 @@ const GlobalCart = () => {
         <Link to="/browse" className="global-cart-page__back">← Back to browse</Link>
         <p>PERSONAL TICKET CART</p>
         <h1>YOUR <em>SELECTIONS.</em></h1>
-        <span>{carts.length} event{carts.length === 1 ? "" : "s"} · Rs. {total}</span>
+        <span>{carts.length} event{carts.length === 1 ? "" : "s"} · $ {total}</span>
       </header>
 
       {error && <div className="error-banner">{error}</div>}
@@ -76,7 +76,7 @@ const GlobalCart = () => {
                 <h2>{cart.event.name}</h2>
                 <span>{new Date(cart.event.dateTime).toLocaleString()} · {cart.event.venueId?.name || "Venue TBA"}</span>
               </div>
-              <strong>Rs. {cart.total}</strong>
+              <strong>$ {cart.total}</strong>
             </div>
             <div className="global-cart-group__items">
               {cart.items.map((item) => {
@@ -85,10 +85,10 @@ const GlobalCart = () => {
                   <article key={itemKey}>
                     <div>
                       <h3>{item.ticketTypeName || `${item.sectionName || "Seat"} · ${item.seatName || "Selection"}`}</h3>
-                      <p>{item.quantity} × Rs. {item.unitPrice}</p>
+                      <p>{item.quantity} × $ {item.unitPrice}</p>
                     </div>
                     <div>
-                      <strong>Rs. {Number(item.unitPrice || 0) * Number(item.quantity || 0)}</strong>
+                      <strong>$ {Number(item.unitPrice || 0) * Number(item.quantity || 0)}</strong>
                       <button type="button" onClick={() => removeItem(cart, item)} disabled={busyKey === itemKey}>
                         {busyKey === itemKey ? "Removing…" : "Remove"}
                       </button>

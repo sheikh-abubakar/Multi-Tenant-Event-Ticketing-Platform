@@ -215,7 +215,7 @@ const EventDetail = () => {
                     </p>
                   </div>
                   <div style={{ textAlign: "right", minWidth: 120 }}>
-                    <div style={styles.price}>Rs. {Number(ticketType.price || 0)}</div>
+                    <div style={styles.price}>$ {Number(ticketType.price || 0)}</div>
                     <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 14 }}>
                       {remaining} left
                     </p>

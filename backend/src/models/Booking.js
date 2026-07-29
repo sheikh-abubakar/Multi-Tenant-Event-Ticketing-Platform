@@ -96,7 +96,7 @@ const bookingSchema = new mongoose.Schema(
     },
     currency: {
       type: String,
-      default: "PKR",
+      default: "USD",
       trim: true,
     },
     status: {

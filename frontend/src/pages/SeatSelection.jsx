@@ -7,22 +7,32 @@ import "./SeatSelection.css";
 
 const seatKey = (blockId, seatId) => `${blockId}:${seatId}`;
 
+const formatUSD = (value) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value || 0);
+
 export default function SeatSelection() {
   const { orgSlug, eventId } = useParams();
   const navigate = useNavigate();
   const [map, setMap] = useState(null);
+  const [event, setEvent] = useState(null);
   const [cart, setCart] = useState({ items: [] });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
     try {
-      const [mapResponse, cartResponse] = await Promise.all([
+      const [mapResponse, cartResponse, eventResponse] = await Promise.all([
         cachedGet(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000),
         apiClient.get(`/o/${orgSlug}/cart/${eventId}`),
+        cachedGet(`/o/${orgSlug}/events/${eventId}`, 10_000),
       ]);
       setMap(mapResponse.data.seatmap);
       setCart(cartResponse.data.cart);
+      setEvent(eventResponse.data.event);
     } catch (err) {
       setError(err.response?.data?.message || "Could not load this seating plan.");
     }
@@ -79,56 +89,176 @@ export default function SeatSelection() {
     }
   };
 
-  if (!map) return <p className="text-muted">Loading seating plan...</p>;
+  if (!map) {
+    return (
+      <div className="ss-loading">
+        <div className="ss-loading__spinner" />
+        <p>Loading seating plan…</p>
+      </div>
+    );
+  }
 
   const individualItems = cart.items.filter(
     (item) => !map.blocks.find((block) => block.id === item.blockId && block.type === "general-admission"),
   );
 
+  const gaBlocks = map.blocks.filter((block) => block.type === "general-admission");
+  const hasSelections = cart.items.length > 0;
+
   return (
-    <div className="seat-selection-page">
-      <Link to={`/o/${orgSlug}/events/${eventId}`} className="seat-selection-page__back">&larr; Back to event</Link>
-      <div className="seat-selection-page__layout">
-        <section>
-          <p className="seat-selection-page__eyebrow">SELECT YOUR PLACE</p>
-          <h1>CHOOSE YOUR SEATS</h1>
-          <div className="seat-selection-page__legend">
-            <span className="available">Available</span><span className="selected">Selected</span>
-            <span className="held">Temporarily held</span><span className="sold">Sold</span><span className="organizer">Organizer hold</span>
+    <div className="ss-page">
+      {/* ── Back link ── */}
+      <Link to={`/o/${orgSlug}/events/${eventId}`} className="ss-back">
+        ← Back to event
+      </Link>
+
+      <div className="ss-layout">
+        {/* ── Left: map area ── */}
+        <section className="ss-map-section">
+          <div className="ss-heading">
+            <p className="ss-eyebrow">SELECT YOUR PLACE</p>
+            <h1 className="ss-title">
+              {event?.name || "Choose Your Seats"}
+            </h1>
+            {event?.dateTime && (
+              <p className="ss-subtitle">
+                {new Date(event.dateTime).toLocaleDateString("en-US", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+                {event.venueId?.name && ` · ${event.venueId.name}`}
+              </p>
+            )}
           </div>
-          {error && <p className="seat-selection-page__error">{error}</p>}
-          <SeatMapCanvas map={map} selectedIds={selected} onSeatClick={toggle} onGaClick={(block) => changeGaQuantity(block, true)} className="seat-selection-page__canvas" />
+
+          {/* Legend */}
+          <div className="ss-legend">
+            <span className="ss-legend__dot ss-legend__dot--available" /> Available
+            <span className="ss-legend__dot ss-legend__dot--selected" /> Selected
+            <span className="ss-legend__dot ss-legend__dot--held" /> Temporarily held
+            <span className="ss-legend__dot ss-legend__dot--sold" /> Sold
+            <span className="ss-legend__dot ss-legend__dot--organizer" /> Organizer hold
+          </div>
+
+          {error && (
+            <div className="ss-error">
+              <span>⚠</span> {error}
+            </div>
+          )}
+
+          <div className="ss-canvas-wrap">
+            <SeatMapCanvas
+              map={map}
+              selectedIds={selected}
+              onSeatClick={toggle}
+              onGaClick={(block) => changeGaQuantity(block, true)}
+              className="ss-canvas"
+            />
+          </div>
         </section>
 
-        <aside className="seat-selection-summary">
-          <p>YOUR SELECTION</p>
-          {map.blocks.filter((block) => block.type === "general-admission").map((block) => {
-            const quantity = cart.items.filter((item) => item.blockId === block.id).length;
-            return (
-              <div key={block.id} className="seat-selection-summary__ga">
-                <span>{block.name} &middot; $ {block.price || 0}</span>
-                <span className="seat-selection-summary__quantity">
-                  <button type="button" onClick={() => changeGaQuantity(block, false)} disabled={!quantity || busy} aria-label={`Remove one ${block.name}`}>−</button>
-                  <b>{quantity}</b>
-                  <button type="button" onClick={() => changeGaQuantity(block, true)} disabled={busy} aria-label={`Add one ${block.name}`}>+</button>
-                </span>
+        {/* ── Right: order summary sidebar ── */}
+        <aside className="ss-sidebar">
+          <div className="ss-sidebar__inner">
+            <div className="ss-sidebar__header">
+              <p className="ss-sidebar__label">YOUR ORDER</p>
+              {hasSelections && (
+                <span className="ss-sidebar__badge">{cart.items.length} seat{cart.items.length !== 1 ? "s" : ""}</span>
+              )}
+            </div>
+
+            {/* GA blocks */}
+            {gaBlocks.length > 0 && (
+              <div className="ss-ga-blocks">
+                {gaBlocks.map((block) => {
+                  const quantity = cart.items.filter((item) => item.blockId === block.id).length;
+                  return (
+                    <div key={block.id} className="ss-ga-row">
+                      <div className="ss-ga-row__info">
+                        <p className="ss-ga-row__name">{block.name}</p>
+                        <p className="ss-ga-row__price">{formatUSD(block.price || 0)} each</p>
+                      </div>
+                      <div className="ss-ga-row__counter">
+                        <button
+                          type="button"
+                          onClick={() => changeGaQuantity(block, false)}
+                          disabled={!quantity || busy}
+                          aria-label={`Remove one ${block.name}`}
+                          className="ss-ga-row__btn"
+                        >
+                          −
+                        </button>
+                        <span className="ss-ga-row__qty">{quantity}</span>
+                        <button
+                          type="button"
+                          onClick={() => changeGaQuantity(block, true)}
+                          disabled={busy}
+                          aria-label={`Add one ${block.name}`}
+                          className="ss-ga-row__btn"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-          <div className="seat-selection-summary__items">
-            {individualItems.map((item) => (
-              <div key={seatKey(item.blockId, item.seatId)}>
-                <span>{item.sectionName} &middot; {item.seatName}</span><strong>$ {item.unitPrice}</strong>
-              </div>
-            ))}
-            {!cart.items.length && <p className="seat-selection-summary__empty">Select seats directly on the map.</p>}
+            )}
+
+            {/* Individual seat list */}
+            <div className="ss-seat-list">
+              {!hasSelections ? (
+                <div className="ss-empty-state">
+                  <div className="ss-empty-state__icon">🎟</div>
+                  <p>Click seats on the map to add them here.</p>
+                </div>
+              ) : (
+                <>
+                  {individualItems.map((item) => (
+                    <div key={seatKey(item.blockId, item.seatId)} className="ss-seat-row">
+                      <div className="ss-seat-row__info">
+                        <span className="ss-seat-row__name">{item.seatName}</span>
+                        <span className="ss-seat-row__section">{item.sectionName}</span>
+                      </div>
+                      <strong className="ss-seat-row__price">{formatUSD(item.unitPrice)}</strong>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* Total */}
+            <div className="ss-total">
+              <span>Total</span>
+              <strong>{formatUSD(total)}</strong>
+            </div>
+
+            {/* Actions */}
+            <div className="ss-actions">
+              <button
+                type="button"
+                disabled={!hasSelections || busy}
+                onClick={() => navigate("/cart")}
+                className="ss-btn ss-btn--secondary"
+              >
+                Save to Cart
+              </button>
+              <button
+                type="button"
+                disabled={!hasSelections || busy}
+                onClick={() => navigate(`/o/${orgSlug}/checkout/${eventId}`)}
+                className="ss-btn ss-btn--primary"
+              >
+                {busy ? "Processing…" : "Proceed to Payment →"}
+              </button>
+            </div>
+
+            <p className="ss-sidebar__note">
+              🔒 Selections are held in your cart and expire after a short time.
+            </p>
           </div>
-          <div className="seat-selection-summary__total"><span>Total</span><strong>$ {total}</strong></div>
-          <div className="seat-selection-actions">
-            <button type="button" disabled={!cart.items.length || busy} onClick={() => navigate("/cart")} className="seat-selection-actions__cart">Add to cart</button>
-            <button type="button" disabled={!cart.items.length || busy} onClick={() => navigate(`/o/${orgSlug}/checkout/${eventId}`)} className="seat-selection-actions__pay">Proceed to payment</button>
-          </div>
-          <small>Selections are saved in your cart until you are ready to check out.</small>
         </aside>
       </div>
     </div>

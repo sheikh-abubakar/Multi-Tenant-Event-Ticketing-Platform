@@ -47,7 +47,8 @@ app.post(
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ""))) return callback(null, true);
+      const cleanOrigin = origin ? origin.replace(/\/$/, "") : "";
+      if (!origin || allowedOrigins.includes(cleanOrigin)) return callback(null, true);
       return callback(new Error("Origin is not allowed by CORS"));
     },
     credentials: true,

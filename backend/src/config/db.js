@@ -11,6 +11,15 @@ const connectDB = async () => {
       serverSelectionTimeoutMS: 10_000,
     });
     console.log(`MongoDB connected: ${conn.connection.host}`);
+    
+    // Auto-cleanup: Unset/remove googleId from users where it is null to resolve index collision.
+    const result = await mongoose.connection.collection("users").updateMany(
+      { googleId: null },
+      { $unset: { googleId: "" } }
+    );
+    if (result.modifiedCount > 0) {
+      console.log(`[Database Cleanup] Cleaned up ${result.modifiedCount} users with null googleId`);
+    }
   } catch (error) {
     console.error(`MongoDB connection error: ${error.message}`);
     process.exit(1);

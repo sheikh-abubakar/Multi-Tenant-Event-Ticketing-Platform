@@ -1,6 +1,7 @@
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { ShoppingCart, WalletCards, User } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import Logo from "./Logo";
 import "./Layout.css";
 import "./PageVisuals.css";
 
@@ -31,7 +32,7 @@ const Layout = ({ children }) => {
     return (
       <div className="organizer-shell">
         <aside className="organizer-sidebar">
-          <Link to="/" className="display sidebar-brand">Stagepass</Link>
+          <Link to="/" className="display sidebar-brand"><Logo width="130" height="36" /></Link>
           <p className="sidebar-caption">ORGANIZER CONSOLE</p>
           <nav className="sidebar-nav" aria-label="Organization navigation">
             <NavLink to="/browse" className="sidebar-link sidebar-link--global">My Organizations</NavLink>
@@ -61,7 +62,7 @@ const Layout = ({ children }) => {
       <header className="app-header" style={{ padding: "24px 0 18px" }}>
         <div className="container" style={styles.headerRow}>
           <Link to="/" className="display" style={styles.logo}>
-            Stagepass
+            <Logo width="130" height="36" />
           </Link>
           <nav className="layout-nav" style={styles.nav}>
             {user ? (

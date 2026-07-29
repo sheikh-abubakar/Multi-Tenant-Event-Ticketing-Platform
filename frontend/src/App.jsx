@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Routes, Route, useSearchParams } from "react-router-dom";
+import LoadingScreen from "./components/LoadingScreen";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Home from "./pages/Home";
@@ -38,6 +39,15 @@ import PlatformActivity from "./pages/PlatformActivity";
 
 function App() {
   const [searchParams] = useSearchParams();
+  const [appReady, setAppReady] = useState(false);
+  const [fadeOut, setFadeOut] = useState(false);
+
+  useEffect(() => {
+    // Show splash for 1.5s, then fade out over 400ms
+    const fadeTimer = setTimeout(() => setFadeOut(true), 1500);
+    const readyTimer = setTimeout(() => setAppReady(true), 1900);
+    return () => { clearTimeout(fadeTimer); clearTimeout(readyTimer); };
+  }, []);
 
   useEffect(() => {
     const refCode = searchParams.get("ref");
@@ -46,6 +56,20 @@ function App() {
       console.log("Globally captured referralCode in sessionStorage:", refCode);
     }
   }, [searchParams]);
+
+  if (!appReady) {
+    return (
+      <div
+        style={{
+          opacity: fadeOut ? 0 : 1,
+          transition: "opacity 0.4s ease-in-out",
+          pointerEvents: "none",
+        }}
+      >
+        <LoadingScreen />
+      </div>
+    );
+  }
 
   return (
     <Layout>

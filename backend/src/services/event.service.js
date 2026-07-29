@@ -10,6 +10,12 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     throw error;
   }
 
+  if (new Date(dateTime) < new Date()) {
+    const error = new Error("Event date and time cannot be in the past");
+    error.statusCode = 400;
+    throw error;
+  }
+
   // Cross-check: the venue being attached to this event must belong
   // to THE SAME org as the event. Without this check, someone could
   // create an event in Org A that points at a venueId belonging to
@@ -64,9 +70,6 @@ const getEventById = async (eventId, organizationId) => {
 };
 
 const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => {
-  // Ticket types are intentionally absent: all new events are seat-map
-  // events. Legacy documents remain readable because their old values are
-  // never overwritten by this metadata editor.
   const allowedFields = ["name", "description", "dateTime", "venueId"];
   const safeUpdates = {};
 
@@ -74,6 +77,12 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
     if (updates[field] !== undefined) {
       safeUpdates[field] = updates[field];
     }
+  }
+
+  if (safeUpdates.dateTime && new Date(safeUpdates.dateTime) < new Date()) {
+    const error = new Error("Event date and time cannot be in the past");
+    error.statusCode = 400;
+    throw error;
   }
 
   // If venueId is being changed, re-validate it belongs to this org.

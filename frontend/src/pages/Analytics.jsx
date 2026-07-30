@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
+import { Html5QrcodeScanner } from "html5-qrcode";
 import apiClient from "../api/client";
 import {
   BarChart,
@@ -9,11 +10,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
   AreaChart,
   Area,
-  Legend,
 } from "recharts";
 
 const formatUSD = (value) =>
@@ -34,6 +32,25 @@ const Analytics = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Scan modal & action states
+  const [isScanOpen, setIsScanOpen] = useState(false);
+  const [scanResult, setScanResult] = useState(null);
+  const [scanError, setScanError] = useState("");
+  const [verifying, setVerifying] = useState(false);
+
+  const scannerRef = useRef(null);
+
+  const fetchAnalytics = () => {
+    apiClient
+      .get(`/o/${orgSlug}/analytics`)
+      .then(({ data }) => {
+        setData(data);
+      })
+      .catch((err) => {
+        setError(err.response?.data?.message || "Could not load analytics.");
+      });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +75,102 @@ const Analytics = () => {
       cancelled = true;
     };
   }, [orgSlug]);
+
+  // Initialise/Clean up scanner when modal opens/closes
+  useEffect(() => {
+    if (isScanOpen) {
+      setScanResult(null);
+      setScanError("");
+
+      // Delay briefly to allow modal DOM rendering
+      const timer = setTimeout(() => {
+        const scanner = new Html5QrcodeScanner(
+          "qr-reader",
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            rememberLastUsedCamera: true,
+          },
+          /* verbose= */ false
+        );
+
+        scanner.render(
+          async (decodedText) => {
+            // Success handler: parse the text (which could be the confirmationCode or the booking ID)
+            scanner.clear();
+            handleScannedCode(decodedText);
+          },
+          (errorMessage) => {
+            // Verbose logging handler (ignored to avoid flood)
+          }
+        );
+
+        scannerRef.current = scanner;
+      }, 300);
+
+      return () => {
+        clearTimeout(timer);
+        if (scannerRef.current) {
+          try {
+            scannerRef.current.clear();
+          } catch (e) {
+            console.error("Error clearing scanner:", e);
+          }
+        }
+      };
+    }
+  }, [isScanOpen]);
+
+  const handleScannedCode = async (code) => {
+    setVerifying(true);
+    setScanError("");
+    setScanResult(null);
+
+    try {
+      // Determine if code is Mongo ID or URL containing it or JSON object
+      let bookingId = code.trim();
+      try {
+        const parsed = JSON.parse(bookingId);
+        if (parsed && parsed.bookingId) {
+          bookingId = parsed.bookingId;
+        }
+      } catch (e) {
+        // Not a JSON string, continue with other patterns
+        if (bookingId.includes("/bookings/")) {
+          const parts = bookingId.split("/bookings/");
+          bookingId = parts[parts.length - 1].split(/[?#]/)[0];
+        }
+      }
+
+      // Call verification API
+      const response = await apiClient.post(`/o/${orgSlug}/bookings/${bookingId}/verify`);
+      setScanResult({
+        success: true,
+        message: response.data.message || "Ticket verified successfully!",
+        booking: response.data.booking,
+      });
+
+      // Refresh recent bookings to show updated status
+      fetchAnalytics();
+    } catch (err) {
+      setScanResult({
+        success: false,
+        message: err.response?.data?.message || "Verification failed. Invalid or expired ticket.",
+      });
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // Inline simulation handler (no camera required)
+  const handleManualVerify = async (bookingId) => {
+    try {
+      await apiClient.post(`/o/${orgSlug}/bookings/${bookingId}/verify`);
+      fetchAnalytics();
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to verify booking");
+    }
+  };
 
   if (loading) {
     return (
@@ -93,20 +206,44 @@ const Analytics = () => {
         </Link>
       </p>
 
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
-        <h1
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+          <h1
+            style={{
+              color: "var(--paper)",
+              margin: 0,
+              fontFamily: "var(--font-display)",
+              fontSize: 40,
+              fontWeight: 400,
+            }}
+          >
+            Analytics
+          </h1>
+          <span className="badge">Last 30 days</span>
+        </div>
+
+        {/* Scan Barcode Button */}
+        <button
+          onClick={() => setIsScanOpen(true)}
+          className="btn btn-primary"
           style={{
-            color: "var(--paper)",
-            margin: 0,
-            fontFamily: "var(--font-display)",
-            fontSize: 40,
-            fontWeight: 400,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            backgroundColor: "var(--gold)",
+            color: "var(--bg)",
+            fontWeight: 700,
+            padding: "10px 20px",
+            borderRadius: 8,
+            border: "none",
+            cursor: "pointer",
+            boxShadow: "0 4px 12px rgba(232, 191, 108, 0.2)",
           }}
         >
-          Analytics
-        </h1>
-        <span className="badge">Last 30 days</span>
+          📷 Scan Ticket Barcode
+        </button>
       </div>
+
       <p style={{ color: "var(--muted)", marginBottom: 32, marginTop: 0 }}>
         Performance overview for this organization.
       </p>
@@ -158,95 +295,19 @@ const Analytics = () => {
                 labelFormatter={(label) => formatDate(label)}
                 contentStyle={{
                   background: "#fffdf8",
-                  border: "1px solid #d8d0bd",
-                  borderRadius: 8,
-                  fontSize: 13,
+                  border: "1px solid #e8e0d0",
+                  borderRadius: 6,
+                  color: "#333",
                 }}
               />
-              <Legend />
-              <Area type="monotone" dataKey="revenue" name="Sales revenue" stroke="#c99a3c" fill="#c99a3c" fillOpacity={0.25} strokeWidth={3} />
-              <Area type="monotone" dataKey="refundedAmount" name="Refunded amount" stroke="#dc2626" fill="#dc2626" fillOpacity={0.1} strokeWidth={2} />
+              <Area type="monotone" dataKey="revenue" stroke="var(--gold)" fill="rgba(232, 191, 108, 0.15)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24 }}>
-        {/* ── Bookings per event ───────────────────────────────── */}
-        <div className="card">
-          <h3 style={{ marginTop: 0, marginBottom: 16, fontSize: 18 }}>
-            Bookings per event
-          </h3>
-          {bookingsPerEvent.length === 0 ? (
-            <p style={{ color: "var(--muted)", fontSize: 14 }}>No bookings yet.</p>
-          ) : (
-            <div style={{ width: "100%", height: 260 }}>
-              <ResponsiveContainer>
-                <BarChart data={bookingsPerEvent} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e8e0d0" />
-                  <XAxis type="number" tick={{ fontSize: 11, fill: "#8a8070" }} />
-                  <YAxis
-                    type="category"
-                    dataKey="eventName"
-                    tick={{ fontSize: 11, fill: "#8a8070" }}
-                    width={100}
-                    tickFormatter={(v) => (v.length > 14 ? v.slice(0, 12) + "…" : v)}
-                  />
-                  <Tooltip
-                    formatter={(value, name) => [value, "Bookings"]}
-                    contentStyle={{
-                      background: "#fffdf8",
-                      border: "1px solid #d8d0bd",
-                      borderRadius: 8,
-                      fontSize: 13,
-                    }}
-                  />
-                  <Bar dataKey="count" fill="#192436" radius={[0, 3, 3, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        {/* ── Ticket type breakdown ────────────────────────────── */}
-        <div className="card">
-          <h3 style={{ marginTop: 0, marginBottom: 16, fontSize: 18 }}>
-            Tickets sold per event
-          </h3>
-          {bookingsPerEvent.length === 0 ? (
-            <p style={{ color: "var(--muted)", fontSize: 14 }}>No tickets sold yet.</p>
-          ) : (
-            <div style={{ width: "100%", height: 260 }}>
-              <ResponsiveContainer>
-                <BarChart data={bookingsPerEvent} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e8e0d0" />
-                  <XAxis type="number" tick={{ fontSize: 11, fill: "#8a8070" }} />
-                  <YAxis
-                    type="category"
-                    dataKey="eventName"
-                    tick={{ fontSize: 11, fill: "#8a8070" }}
-                    width={100}
-                    tickFormatter={(v) => (v.length > 14 ? v.slice(0, 12) + "…" : v)}
-                  />
-                  <Tooltip
-                    formatter={(value) => [value, "Tickets"]}
-                    contentStyle={{
-                      background: "#fffdf8",
-                      border: "1px solid #d8d0bd",
-                      borderRadius: 8,
-                      fontSize: 13,
-                    }}
-                  />
-                  <Bar dataKey="revenue" fill="#c99a3c" radius={[0, 3, 3, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Recent bookings table ─────────────────────────────── */}
-      <div className="card">
+      {/* ── Recent bookings ───────────────────────────────────── */}
+      <div className="card" style={{ marginBottom: 24 }}>
         <h3 style={{ marginTop: 0, marginBottom: 16, fontSize: 18 }}>
           Recent bookings
         </h3>
@@ -274,6 +335,9 @@ const Analytics = () => {
                   </th>
                   <th style={{ textAlign: "left", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                     Status
+                  </th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Ticket Status
                   </th>
                   <th style={{ textAlign: "left", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                     Date
@@ -317,6 +381,40 @@ const Analytics = () => {
                         {b.status}
                       </span>
                     </td>
+                    <td style={{ padding: "10px 6px" }}>
+                      {b.verified ? (
+                        <span
+                          className="badge"
+                          style={{ background: "#e6f4ea", color: "#1e7e34" }}
+                          title={`Verified at ${new Date(b.verifiedAt).toLocaleString()}`}
+                        >
+                          ✓ Verified
+                        </span>
+                      ) : b.status === "confirmed" ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span className="badge" style={{ background: "#fff8e1", color: "#b45309" }}>
+                            Unverified
+                          </span>
+                          <button
+                            onClick={() => handleManualVerify(b.id)}
+                            style={{
+                              border: "none",
+                              background: "rgba(22, 163, 74, 0.1)",
+                              color: "#16a34a",
+                              cursor: "pointer",
+                              padding: "4px 8px",
+                              borderRadius: 4,
+                              fontSize: 11,
+                              fontWeight: 600,
+                            }}
+                          >
+                            Verify
+                          </button>
+                        </div>
+                      ) : (
+                        <span style={{ color: "var(--muted)" }}>—</span>
+                      )}
+                    </td>
                     <td style={{ padding: "10px 6px", color: "var(--muted)", fontSize: 13 }}>
                       {formatDate(b.createdAt)}
                     </td>
@@ -327,6 +425,147 @@ const Analytics = () => {
           </div>
         )}
       </div>
+
+      {/* ── Scan Ticket Modal ── */}
+      {isScanOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.8)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16,
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: "100%",
+              maxWidth: 500,
+              backgroundColor: "var(--card-bg, #fffdf8)",
+              borderRadius: 12,
+              overflow: "hidden",
+              padding: 24,
+              boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+              color: "#333",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h3 style={{ margin: 0, color: "var(--text)" }}>Ticket Scanner</h3>
+              <button
+                onClick={() => setIsScanOpen(false)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  fontSize: 24,
+                  cursor: "pointer",
+                  color: "#999",
+                }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* QR Scanner Container */}
+            {!scanResult && !verifying && (
+              <div
+                id="qr-reader"
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  overflow: "hidden",
+                  border: "1px solid #e8e0d0",
+                }}
+              />
+            )}
+
+            {/* Verifying Spinner */}
+            {verifying && (
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <p>Verifying ticket authenticity...</p>
+              </div>
+            )}
+
+            {/* Scanning Results */}
+            {scanResult && (
+              <div
+                style={{
+                  padding: 20,
+                  borderRadius: 8,
+                  textAlign: "center",
+                  backgroundColor: scanResult.success ? "rgba(22, 163, 74, 0.1)" : "rgba(220, 38, 38, 0.1)",
+                  color: scanResult.success ? "#16a34a" : "#dc2626",
+                  marginBottom: 20,
+                }}
+              >
+                <div style={{ fontSize: 40, marginBottom: 12 }}>
+                  {scanResult.success ? "✅" : "❌"}
+                </div>
+                <h4 style={{ margin: "0 0 8px", fontWeight: 700 }}>
+                  {scanResult.success ? "Verified!" : "Invalid Ticket"}
+                </h4>
+                <p style={{ margin: 0, fontSize: 14 }}>{scanResult.message}</p>
+
+                {scanResult.success && scanResult.booking && (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      textAlign: "left",
+                      borderTop: "1px solid rgba(22, 163, 74, 0.2)",
+                      paddingTop: 12,
+                      fontSize: 13,
+                      color: "#444",
+                    }}
+                  >
+                    <div><strong>Buyer:</strong> {scanResult.booking.buyerName}</div>
+                    <div><strong>Email:</strong> {scanResult.booking.buyerEmail}</div>
+                    <div><strong>Code:</strong> {scanResult.booking.confirmationCode}</div>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setScanResult(null)}
+                  className="btn btn-secondary"
+                  style={{
+                    marginTop: 20,
+                    backgroundColor: "#e8e0d0",
+                    border: "none",
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  Scan Next Ticket
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+              <button
+                onClick={() => setIsScanOpen(false)}
+                className="btn btn-secondary"
+                style={{
+                  backgroundColor: "#e8e0d0",
+                  border: "none",
+                  padding: "10px 20px",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                Close Scanner
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

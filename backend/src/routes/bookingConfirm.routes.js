@@ -14,4 +14,18 @@ router.post("/:bookingId/confirm", resolveTenant, bookingController.confirm);
 // Get a single booking by ID
 router.get("/:bookingId", resolveTenant, bookingController.getOne);
 
+// Organizer-protected: verify a ticket directly
+const authenticate = require("../middlewares/authenticate");
+const loadMembership = require("../middlewares/loadMembership");
+const checkPermission = require("../middlewares/checkPermission");
+
+router.post(
+  "/:bookingId/verify",
+  authenticate,
+  resolveTenant,
+  loadMembership,
+  checkPermission("events:update"),
+  bookingController.verify
+);
+
 module.exports = router;

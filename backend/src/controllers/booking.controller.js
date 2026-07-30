@@ -38,7 +38,16 @@ const confirm = async (req, res) => {
     }
 
     const booking = await bookingService.confirmBooking(session_id);
-    await recordPlatformAudit({ organizationId: booking.organizationId, action: "booking.confirmed", targetType: "booking", targetId: booking._id, metadata: { totalAmount: booking.totalAmount, buyerEmail: booking.buyerEmail.replace(/(^.).*(@.*$)/, "$1***$2") } });
+    await recordPlatformAudit({
+      organizationId: booking.organizationId,
+      action: "booking.confirmed",
+      targetType: "booking",
+      targetId: booking._id,
+      metadata: {
+        totalAmount: booking.totalAmount,
+        buyerEmail: booking.buyerEmail.replace(/(^.).*(@.*$)/, "$1***$2"),
+      },
+    });
     return res.json({ booking });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -86,6 +95,25 @@ const handleWebhook = async (req, res) => {
   }
 };
 
+const verify = async (req, res) => {
+  try {
+    const booking = await bookingService.verifyTicket(
+      req.params.bookingId,
+      req.organizationId,
+    );
+    await recordPlatformAudit({
+      organizationId: booking.organizationId,
+      action: "booking.verified",
+      targetType: "booking",
+      targetId: booking._id,
+      metadata: { buyerEmail: booking.buyerEmail },
+    });
+    return res.json({ message: "Ticket verified successfully", booking });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   create,
   createCheckout,
@@ -93,4 +121,5 @@ module.exports = {
   getOne,
   getByEvent,
   handleWebhook,
+  verify,
 };

@@ -23,6 +23,18 @@ router.get("/:bookingId", resolveTenant, bookingController.getOne);
 // Organizer-protected: get all bookings for an event
 const authenticate = require("../middlewares/authenticate");
 const loadMembership = require("../middlewares/loadMembership");
+const checkPermission = require("../middlewares/checkPermission");
+
 router.get("/", authenticate, resolveTenant, loadMembership, bookingController.getByEvent);
+
+// Ticket verification route
+router.post(
+  "/:bookingId/verify",
+  authenticate,
+  resolveTenant,
+  loadMembership,
+  checkPermission("events:update"),
+  bookingController.verify
+);
 
 module.exports = router;

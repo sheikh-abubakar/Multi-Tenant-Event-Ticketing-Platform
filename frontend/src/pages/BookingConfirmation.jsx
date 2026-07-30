@@ -99,6 +99,7 @@ const BookingConfirmation = () => {
 
   return (
     <div className="confirmation-page" style={{ maxWidth: 740, margin: "0 auto" }}>
+      {/* ── Header ── */}
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <div
           style={{
@@ -117,9 +118,7 @@ const BookingConfirmation = () => {
         >
           {isConfirmed ? "✅" : "⏳"}
         </div>
-        {/* This h1 is on the dark page background (not inside a .card),
-            so var(--paper) — light text for dark backgrounds — is
-            correct here. Left unchanged. */}
+        {/* On dark page background — var(--paper) is correct here */}
         <h1 style={{ color: "var(--paper)", margin: 0 }}>
           {isConfirmed ? "Booking Confirmed!" : "Payment Pending"}
         </h1>
@@ -130,9 +129,9 @@ const BookingConfirmation = () => {
         </p>
       </div>
 
+      {/* ── Booking Details ── */}
       <div className="card confirmation-details-card" style={{ marginBottom: 16 }}>
-        {/* Inside a .card (light background) — must use var(--text),
-            not var(--paper), or the heading is invisible. */}
+        {/* Inside a .card (light background) — var(--text) is correct here */}
         <h3 style={{ marginTop: 0, color: "var(--text)" }}>Booking Details</h3>
 
         <div style={styles.detailGrid}>
@@ -175,15 +174,12 @@ const BookingConfirmation = () => {
         </div>
       </div>
 
+      {/* ── Ticket Summary ── */}
       <div className="card confirmation-tickets-card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0, color: "var(--text)" }}>Ticket Summary</h3>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr
-              style={{
-                borderBottom: "1px solid rgba(247, 242, 231, 0.1)",
-              }}
-            >
+            <tr style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.1)" }}>
               <th
                 style={{
                   textAlign: "left",
@@ -217,14 +213,18 @@ const BookingConfirmation = () => {
             {(booking.items || []).map((item, idx) => (
               <tr
                 key={idx}
-                style={{
-                  borderBottom: "1px solid rgba(247, 242, 231, 0.06)",
-                }}
+                style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.06)" }}
               >
                 <td style={{ padding: "10px 4px", color: "var(--text)" }}>
                   {item.ticketTypeName}
                 </td>
-                <td style={{ padding: "10px 4px", textAlign: "center", color: "var(--text)" }}>
+                <td
+                  style={{
+                    padding: "10px 4px",
+                    textAlign: "center",
+                    color: "var(--text)",
+                  }}
+                >
                   {item.quantity}
                 </td>
                 <td
@@ -243,11 +243,13 @@ const BookingConfirmation = () => {
         </table>
       </div>
 
+      {/* ── QR Code ── */}
       {booking.qrCodeUrl && (
-        <div className="card confirmation-qr-card" style={{ textAlign: "center" }}>
-          <h3 style={{ marginTop: 0, color: "var(--text)" }}>
-            Your QR Code
-          </h3>
+        <div
+          className="card confirmation-qr-card"
+          style={{ marginBottom: 16, textAlign: "center" }}
+        >
+          <h3 style={{ marginTop: 0, color: "var(--text)" }}>Your QR Code</h3>
           <p style={{ color: "var(--muted)", fontSize: 14, marginBottom: 16 }}>
             Show this at the event entrance for scanning.
           </p>
@@ -255,6 +257,8 @@ const BookingConfirmation = () => {
             src={booking.qrCodeUrl}
             alt="Booking QR Code"
             style={{
+              display: "block",
+              margin: "0 auto",
               maxWidth: 220,
               border: "3px solid var(--gold)",
               borderRadius: 12,
@@ -265,6 +269,7 @@ const BookingConfirmation = () => {
         </div>
       )}
 
+      {/* ── Browse More ── */}
       <div style={{ textAlign: "center", margin: "24px 0" }}>
         <Link
           to={`/o/${orgSlug}/events`}
@@ -291,10 +296,9 @@ const styles = {
     textTransform: "uppercase",
     letterSpacing: "0.06em",
   },
-  // Was var(--paper) — light text meant for the dark page background —
-  // but this style is only ever used for values INSIDE a .card (light
-  // background), which made them invisible/unreadable except when
-  // selected with the mouse. See BookingConfirmation card values.
+  // Was var(--paper) — light text for dark backgrounds — but this style
+  // is only used for values INSIDE a .card (light background), so
+  // var(--text) is correct here to keep them readable.
   value: {
     margin: "4px 0 0",
     color: "var(--text)",

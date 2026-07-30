@@ -224,11 +224,14 @@ const getOwnerAnalytics = async (organizationId) => {
     // bookings made before this fix; new bookings will always have it.
     eventName: b.eventName || b.eventId?.name || "Unknown",
     eventDate: b.eventDateTime || b.eventId?.dateTime || null,
+    eventId: b.eventId?._id || b.eventId || null,
     totalAmount: b.totalAmount,
     originalAmount: b.originalAmount || b.totalAmount,
     status: b.status,
     paymentStatus: b.paymentStatus,
     refundInfo: b.refundInfo || null,
+    verified: b.verified || false,
+    verifiedAt: b.verifiedAt || null,
     createdAt: b.createdAt,
   }));
 

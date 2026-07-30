@@ -229,6 +229,15 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Ticket verification fields
+    verified: {
+      type: Boolean,
+      default: false,
+    },
+    verifiedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true },
 );

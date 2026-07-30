@@ -750,6 +750,32 @@ const handleStripeWebhook = async (event) => {
   }
 };
 
+const verifyTicket = async (bookingId, organizationId) => {
+  const booking = await Booking.findOne({ _id: bookingId, organizationId });
+  if (!booking) {
+    const error = new Error("Booking not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (booking.status !== "confirmed") {
+    const error = new Error("Only confirmed bookings can be verified");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (booking.verified) {
+    const timeStr = booking.verifiedAt ? new Date(booking.verifiedAt).toLocaleTimeString() : "an earlier time";
+    const dateStr = booking.verifiedAt ? new Date(booking.verifiedAt).toLocaleDateString() : "";
+    const error = new Error(`Ticket already verified at ${timeStr} on ${dateStr}`);
+    error.statusCode = 409;
+    throw error;
+  }
+
+  booking.verified = true;
+  booking.verifiedAt = new Date();
+  await booking.save();
+  return booking;
+};
+
 module.exports = {
   createCheckoutSession,
   confirmBooking,
@@ -757,4 +783,5 @@ module.exports = {
   getBooking,
   getEventBookings,
   handleStripeWebhook,
+  verifyTicket,
 };

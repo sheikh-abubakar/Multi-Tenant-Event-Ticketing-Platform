@@ -1,10 +1,8 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Html5QrcodeScanner } from "html5-qrcode";
+import { Html5Qrcode } from "html5-qrcode";
 import apiClient from "../api/client";
 import {
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -36,10 +34,12 @@ const Analytics = () => {
   // Scan modal & action states
   const [isScanOpen, setIsScanOpen] = useState(false);
   const [scanResult, setScanResult] = useState(null);
-  const [scanError, setScanError] = useState("");
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const [scanTab, setScanTab] = useState("camera"); // "camera" | "image"
 
-  const scannerRef = useRef(null);
+  const html5QrcodeRef = useRef(null);
 
   const fetchAnalytics = () => {
     apiClient
@@ -76,54 +76,86 @@ const Analytics = () => {
     };
   }, [orgSlug]);
 
-  // Initialise/Clean up scanner when modal opens/closes
-  useEffect(() => {
-    if (isScanOpen) {
-      setScanResult(null);
-      setScanError("");
+  // ── Camera helpers ────────────────────────────────────────────
+  const startCamera = useCallback(async () => {
+    setCameraError("");
+    setScanResult(null);
+    setCameraActive(false);
 
-      // Delay briefly to allow modal DOM rendering
-      const timer = setTimeout(() => {
-        const scanner = new Html5QrcodeScanner(
-          "qr-reader",
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-            rememberLastUsedCamera: true,
-          },
-          /* verbose= */ false
-        );
+    try {
+      const qrCode = new Html5Qrcode("qr-reader-element");
+      html5QrcodeRef.current = qrCode;
 
-        scanner.render(
-          async (decodedText) => {
-            // Success handler: parse the text (which could be the confirmationCode or the booking ID)
-            scanner.clear();
-            handleScannedCode(decodedText);
-          },
-          (errorMessage) => {
-            // Verbose logging handler (ignored to avoid flood)
-          }
-        );
+      await qrCode.start(
+        { facingMode: "environment" }, // rear camera on mobile, default on desktop
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          // Stop scanning after first successful read
+          qrCode.stop().catch(() => {});
+          setCameraActive(false);
+          handleScannedCode(decodedText);
+        },
+        () => {} // frame error – ignored
+      );
+      setCameraActive(true);
+    } catch (err) {
+      const msg = err?.message || "";
+      if (msg.toLowerCase().includes("permission") || msg.toLowerCase().includes("denied")) {
+        setCameraError("Camera permission denied. Please allow camera access in your browser settings and try again.");
+      } else if (msg.toLowerCase().includes("https") || msg.toLowerCase().includes("insecure")) {
+        setCameraError("Camera access requires a secure connection (HTTPS). Try the image upload option instead.");
+      } else {
+        setCameraError("Could not start camera: " + msg + ". Try the image upload option instead.");
+      }
+      console.error("Camera start error:", err);
+    }
+  }, [orgSlug]);
 
-        scannerRef.current = scanner;
-      }, 300);
-
-      return () => {
-        clearTimeout(timer);
-        if (scannerRef.current) {
-          try {
-            scannerRef.current.clear();
-          } catch (e) {
-            console.error("Error clearing scanner:", e);
-          }
+  const stopCamera = useCallback(async () => {
+    if (html5QrcodeRef.current) {
+      try {
+        const state = html5QrcodeRef.current.getState();
+        // State 2 = SCANNING, state 3 = PAUSED
+        if (state === 2 || state === 3) {
+          await html5QrcodeRef.current.stop();
         }
+        html5QrcodeRef.current.clear();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      html5QrcodeRef.current = null;
+    }
+    setCameraActive(false);
+  }, []);
+
+  // Clean up camera when modal closes
+  useEffect(() => {
+    if (!isScanOpen) {
+      stopCamera();
+      setScanResult(null);
+      setCameraError("");
+      setScanTab("camera");
+    }
+  }, [isScanOpen, stopCamera]);
+
+  // Auto-start camera when camera tab becomes active inside open modal
+  useEffect(() => {
+    if (isScanOpen && scanTab === "camera" && !scanResult) {
+      // small delay to let the DOM element render first
+      const t = setTimeout(() => startCamera(), 400);
+      return () => {
+        clearTimeout(t);
+        stopCamera();
       };
     }
-  }, [isScanOpen]);
+    if (scanTab === "image") {
+      stopCamera();
+    }
+  }, [isScanOpen, scanTab, scanResult]);
 
   const handleScannedCode = async (code) => {
     setVerifying(true);
-    setScanError("");
+    setCameraError("");
     setScanResult(null);
 
     try {
@@ -435,7 +467,7 @@ const Analytics = () => {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.8)",
+            backgroundColor: "rgba(0, 0, 0, 0.85)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -447,122 +479,251 @@ const Analytics = () => {
             className="card"
             style={{
               width: "100%",
-              maxWidth: 500,
-              backgroundColor: "var(--card-bg, #fffdf8)",
-              borderRadius: 12,
-              overflow: "hidden",
+              maxWidth: 480,
+              backgroundColor: "#fffdf8",
+              borderRadius: 16,
               padding: 24,
-              boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
               color: "#333",
             }}
           >
+            {/* Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <h3 style={{ margin: 0, color: "var(--text)" }}>Ticket Scanner</h3>
+              <h3 style={{ margin: 0, color: "#1a1a1a", fontSize: 18, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                🎟️ Ticket Scanner
+              </h3>
               <button
                 onClick={() => setIsScanOpen(false)}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  fontSize: 24,
-                  cursor: "pointer",
-                  color: "#999",
-                }}
+                style={{ border: "none", background: "transparent", fontSize: 24, cursor: "pointer", color: "#999", lineHeight: 1 }}
               >
                 &times;
               </button>
             </div>
 
-            {/* QR Scanner Container */}
+            {/* Tabs */}
             {!scanResult && !verifying && (
-              <div
-                id="qr-reader"
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  overflow: "hidden",
-                  border: "1px solid #e8e0d0",
-                }}
-              />
+              <div style={{ display: "flex", borderBottom: "2px solid #e8e0d0", marginBottom: 20 }}>
+                {["camera", "image"].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setScanTab(tab)}
+                    style={{
+                      flex: 1,
+                      padding: "10px 0",
+                      border: "none",
+                      background: "transparent",
+                      fontWeight: 700,
+                      fontSize: 14,
+                      cursor: "pointer",
+                      color: scanTab === tab ? "var(--gold, #c99a3c)" : "#888",
+                      borderBottom: scanTab === tab ? "2px solid var(--gold, #c99a3c)" : "2px solid transparent",
+                      marginBottom: -2,
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    {tab === "camera" ? "📷 Use Camera" : "🖼️ Upload Image"}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Camera Tab */}
+            {scanTab === "camera" && !scanResult && !verifying && (
+              <div>
+                {/* The video preview renders inside this div */}
+                <div
+                  id="qr-reader-element"
+                  style={{
+                    width: "100%",
+                    minHeight: 260,
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    background: "#111",
+                    border: "2px solid #e8e0d0",
+                  }}
+                />
+
+                {cameraError && (
+                  <div style={{ marginTop: 12, padding: "10px 14px", background: "#fce8e6", borderRadius: 8, fontSize: 13, color: "#c01e1e" }}>
+                    ⚠️ {cameraError}
+                  </div>
+                )}
+
+                {!cameraActive && !cameraError && (
+                  <p style={{ textAlign: "center", color: "#888", fontSize: 13, margin: "12px 0 0" }}>
+                    Starting camera…
+                  </p>
+                )}
+
+                {cameraActive && (
+                  <p style={{ textAlign: "center", color: "#888", fontSize: 13, margin: "12px 0 0" }}>
+                    📷 Point your camera at the QR code on the ticket
+                  </p>
+                )}
+
+                <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                  {!cameraActive && (
+                    <button
+                      onClick={startCamera}
+                      style={{
+                        flex: 1,
+                        padding: "10px 0",
+                        background: "var(--gold, #c99a3c)",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        fontSize: 14,
+                      }}
+                    >
+                      Start Camera
+                    </button>
+                  )}
+                  {cameraActive && (
+                    <button
+                      onClick={stopCamera}
+                      style={{
+                        flex: 1,
+                        padding: "10px 0",
+                        background: "#fce8e6",
+                        color: "#c01e1e",
+                        border: "none",
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        fontSize: 14,
+                      }}
+                    >
+                      Stop Camera
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsScanOpen(false)}
+                    style={{ padding: "10px 18px", background: "#e8e0d0", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: 14 }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Image Upload Tab */}
+            {scanTab === "image" && !scanResult && !verifying && (
+              <div style={{ textAlign: "center" }}>
+                <div
+                  style={{
+                    border: "2px dashed #c8b87a",
+                    borderRadius: 10,
+                    padding: "30px 20px",
+                    background: "rgba(232,191,108,0.05)",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div style={{ fontSize: 40, marginBottom: 8 }}>📁</div>
+                  <p style={{ color: "#666", fontSize: 14, margin: 0 }}>
+                    Select an image containing the QR code
+                  </p>
+                </div>
+                <label
+                  htmlFor="qr-image-upload"
+                  style={{
+                    display: "inline-block",
+                    padding: "12px 24px",
+                    background: "var(--gold, #c99a3c)",
+                    color: "#fff",
+                    borderRadius: 8,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: 14,
+                  }}
+                >
+                  Choose Image
+                </label>
+                <input
+                  id="qr-image-upload"
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setVerifying(true);
+                    setScanResult(null);
+                    try {
+                      const tempId = "qr-file-reader-" + Date.now();
+                      const div = document.createElement("div");
+                      div.id = tempId;
+                      div.style.display = "none";
+                      document.body.appendChild(div);
+                      const scanner = new Html5Qrcode(tempId);
+                      try {
+                        const result = await scanner.scanFile(file, true);
+                        handleScannedCode(result);
+                      } finally {
+                        scanner.clear();
+                        document.body.removeChild(div);
+                      }
+                    } catch (err) {
+                      setScanResult({ success: false, message: "Could not read QR code from this image. Make sure the QR code is clearly visible." });
+                    } finally {
+                      setVerifying(false);
+                      e.target.value = "";
+                    }
+                  }}
+                />
+              </div>
             )}
 
             {/* Verifying Spinner */}
             {verifying && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <p>Verifying ticket authenticity...</p>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>⏳</div>
+                <p style={{ color: "#666", fontWeight: 600 }}>Verifying ticket authenticity…</p>
               </div>
             )}
 
-            {/* Scanning Results */}
+            {/* Result */}
             {scanResult && (
               <div
                 style={{
-                  padding: 20,
-                  borderRadius: 8,
+                  padding: 24,
+                  borderRadius: 12,
                   textAlign: "center",
-                  backgroundColor: scanResult.success ? "rgba(22, 163, 74, 0.1)" : "rgba(220, 38, 38, 0.1)",
-                  color: scanResult.success ? "#16a34a" : "#dc2626",
-                  marginBottom: 20,
+                  background: scanResult.success ? "rgba(22,163,74,0.08)" : "rgba(220,38,38,0.08)",
+                  border: `1px solid ${scanResult.success ? "rgba(22,163,74,0.3)" : "rgba(220,38,38,0.3)"}`,
                 }}
               >
-                <div style={{ fontSize: 40, marginBottom: 12 }}>
-                  {scanResult.success ? "✅" : "❌"}
-                </div>
-                <h4 style={{ margin: "0 0 8px", fontWeight: 700 }}>
-                  {scanResult.success ? "Verified!" : "Invalid Ticket"}
+                <div style={{ fontSize: 48, marginBottom: 12 }}>{scanResult.success ? "✅" : "❌"}</div>
+                <h4 style={{ margin: "0 0 8px", color: scanResult.success ? "#16a34a" : "#dc2626", fontWeight: 700 }}>
+                  {scanResult.success ? "Ticket Verified!" : "Invalid Ticket"}
                 </h4>
-                <p style={{ margin: 0, fontSize: 14 }}>{scanResult.message}</p>
+                <p style={{ margin: 0, fontSize: 14, color: scanResult.success ? "#16a34a" : "#dc2626" }}>{scanResult.message}</p>
 
                 {scanResult.success && scanResult.booking && (
-                  <div
-                    style={{
-                      marginTop: 16,
-                      textAlign: "left",
-                      borderTop: "1px solid rgba(22, 163, 74, 0.2)",
-                      paddingTop: 12,
-                      fontSize: 13,
-                      color: "#444",
-                    }}
-                  >
-                    <div><strong>Buyer:</strong> {scanResult.booking.buyerName}</div>
-                    <div><strong>Email:</strong> {scanResult.booking.buyerEmail}</div>
-                    <div><strong>Code:</strong> {scanResult.booking.confirmationCode}</div>
+                  <div style={{ marginTop: 16, textAlign: "left", borderTop: "1px solid rgba(22,163,74,0.2)", paddingTop: 12, fontSize: 13, color: "#444" }}>
+                    <div style={{ marginBottom: 4 }}><strong>Buyer:</strong> {scanResult.booking.buyerName}</div>
+                    <div style={{ marginBottom: 4 }}><strong>Email:</strong> {scanResult.booking.buyerEmail}</div>
+                    <div><strong>Confirmation:</strong> {scanResult.booking.confirmationCode}</div>
                   </div>
                 )}
 
-                <button
-                  onClick={() => setScanResult(null)}
-                  className="btn btn-secondary"
-                  style={{
-                    marginTop: 20,
-                    backgroundColor: "#e8e0d0",
-                    border: "none",
-                    padding: "8px 16px",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    fontWeight: 600,
-                  }}
-                >
-                  Scan Next Ticket
-                </button>
+                <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 20 }}>
+                  <button
+                    onClick={() => { setScanResult(null); setCameraError(""); }}
+                    style={{ padding: "10px 20px", background: "var(--gold, #c99a3c)", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Scan Next
+                  </button>
+                  <button
+                    onClick={() => setIsScanOpen(false)}
+                    style={{ padding: "10px 20px", background: "#e8e0d0", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 600 }}
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             )}
-
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
-              <button
-                onClick={() => setIsScanOpen(false)}
-                className="btn btn-secondary"
-                style={{
-                  backgroundColor: "#e8e0d0",
-                  border: "none",
-                  padding: "10px 20px",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  fontWeight: 600,
-                }}
-              >
-                Close Scanner
-              </button>
-            </div>
           </div>
         </div>
       )}

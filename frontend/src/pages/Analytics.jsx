@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 import apiClient from "../api/client";
 import {
   XAxis,
@@ -28,6 +30,7 @@ const formatDate = (dateStr) => {
 const Analytics = () => {
   const { orgSlug } = useParams();
   const [data, setData] = useState(null);
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -38,6 +41,13 @@ const Analytics = () => {
   const [cameraError, setCameraError] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [scanTab, setScanTab] = useState("camera"); // "camera" | "image"
+
+  // Event specific analytics states
+  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [eventAnalyticsData, setEventAnalyticsData] = useState(null);
+  const [loadingEventAnalytics, setLoadingEventAnalytics] = useState(false);
+  const [eventAnalyticsError, setEventAnalyticsError] = useState("");
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
 
   const html5QrcodeRef = useRef(null);
 
@@ -57,10 +67,16 @@ const Analytics = () => {
     setLoading(true);
     setError("");
 
-    apiClient
-      .get(`/o/${orgSlug}/analytics`)
-      .then(({ data }) => {
-        if (!cancelled) setData(data);
+    // Fetch org wide analytics and org events list
+    Promise.all([
+      apiClient.get(`/o/${orgSlug}/analytics`),
+      apiClient.get(`/o/${orgSlug}/events`),
+    ])
+      .then(([analyticsRes, eventsRes]) => {
+        if (!cancelled) {
+          setData(analyticsRes.data);
+          setEvents(eventsRes.data.events || []);
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -76,6 +92,74 @@ const Analytics = () => {
     };
   }, [orgSlug]);
 
+  // Fetch event specific analytics
+  const fetchEventAnalytics = (eventId) => {
+    setLoadingEventAnalytics(true);
+    setEventAnalyticsError("");
+    setEventAnalyticsData(null);
+
+    apiClient
+      .get(`/o/${orgSlug}/analytics/events/${eventId}`)
+      .then(({ data }) => {
+        setEventAnalyticsData(data);
+      })
+      .catch((err) => {
+        setEventAnalyticsError(err.response?.data?.message || "Could not load event analytics.");
+      })
+      .finally(() => {
+        setLoadingEventAnalytics(false);
+      });
+  };
+
+  useEffect(() => {
+    if (selectedEventId) {
+      fetchEventAnalytics(selectedEventId);
+    } else {
+      setEventAnalyticsData(null);
+    }
+  }, [selectedEventId]);
+
+  // PDF report downloader
+  const downloadEventReport = async () => {
+    const element = document.getElementById("event-report-content");
+    if (!element || !eventAnalyticsData) return;
+
+    setIsPdfGenerating(true);
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2, // high resolution
+        useCORS: true,
+        backgroundColor: "#fffdf8",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 297; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`${eventAnalyticsData.event.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_analytics_report.pdf`);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("Failed to generate PDF report.");
+    } finally {
+      setIsPdfGenerating(false);
+    }
+  };
+
   // ── Camera helpers ────────────────────────────────────────────
   const startCamera = useCallback(async () => {
     setCameraError("");
@@ -87,15 +171,14 @@ const Analytics = () => {
       html5QrcodeRef.current = qrCode;
 
       await qrCode.start(
-        { facingMode: "environment" }, // rear camera on mobile, default on desktop
+        { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
-          // Stop scanning after first successful read
           qrCode.stop().catch(() => {});
           setCameraActive(false);
           handleScannedCode(decodedText);
         },
-        () => {} // frame error – ignored
+        () => {}
       );
       setCameraActive(true);
     } catch (err) {
@@ -115,7 +198,6 @@ const Analytics = () => {
     if (html5QrcodeRef.current) {
       try {
         const state = html5QrcodeRef.current.getState();
-        // State 2 = SCANNING, state 3 = PAUSED
         if (state === 2 || state === 3) {
           await html5QrcodeRef.current.stop();
         }
@@ -138,10 +220,9 @@ const Analytics = () => {
     }
   }, [isScanOpen, stopCamera]);
 
-  // Auto-start camera when camera tab becomes active inside open modal
+  // Auto-start camera when camera tab becomes active
   useEffect(() => {
     if (isScanOpen && scanTab === "camera" && !scanResult) {
-      // small delay to let the DOM element render first
       const t = setTimeout(() => startCamera(), 400);
       return () => {
         clearTimeout(t);
@@ -159,7 +240,6 @@ const Analytics = () => {
     setScanResult(null);
 
     try {
-      // Determine if code is Mongo ID or URL containing it or JSON object
       let bookingId = code.trim();
       try {
         const parsed = JSON.parse(bookingId);
@@ -167,14 +247,12 @@ const Analytics = () => {
           bookingId = parsed.bookingId;
         }
       } catch (e) {
-        // Not a JSON string, continue with other patterns
         if (bookingId.includes("/bookings/")) {
           const parts = bookingId.split("/bookings/");
           bookingId = parts[parts.length - 1].split(/[?#]/)[0];
         }
       }
 
-      // Call verification API
       const response = await apiClient.post(`/o/${orgSlug}/bookings/${bookingId}/verify`);
       setScanResult({
         success: true,
@@ -182,8 +260,10 @@ const Analytics = () => {
         booking: response.data.booking,
       });
 
-      // Refresh recent bookings to show updated status
       fetchAnalytics();
+      if (selectedEventId) {
+        fetchEventAnalytics(selectedEventId);
+      }
     } catch (err) {
       setScanResult({
         success: false,
@@ -194,11 +274,13 @@ const Analytics = () => {
     }
   };
 
-  // Inline simulation handler (no camera required)
   const handleManualVerify = async (bookingId) => {
     try {
       await apiClient.post(`/o/${orgSlug}/bookings/${bookingId}/verify`);
       fetchAnalytics();
+      if (selectedEventId) {
+        fetchEventAnalytics(selectedEventId);
+      }
     } catch (err) {
       alert(err.response?.data?.message || "Failed to verify booking");
     }
@@ -298,6 +380,83 @@ const Analytics = () => {
         <StatCard label="Venues" value={metrics.totalVenues} />
         <StatCard label="Refunds Issued" value={metrics.totalRefunds} />
         <StatCard label="Refunded Amount" value={formatUSD(metrics.totalRefundedAmount)} />
+      </div>
+
+      {/* ── Event List section ── */}
+      <div className="card" style={{ marginBottom: 24, padding: "20px 24px" }}>
+        <h3 style={{ marginTop: 0, marginBottom: 16, fontSize: 18, color: "var(--text)" }}>
+          🗓️ Event Analytics Reports
+        </h3>
+        <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>
+          Select an event to view detailed statistics, check-in statuses, and download a professional PDF analytics report.
+        </p>
+
+        {events.length === 0 ? (
+          <p style={{ color: "var(--muted)" }}>No events found.</p>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+              gap: 16,
+            }}
+          >
+            {events.map((evt) => {
+              const bookingStats = bookingsPerEvent.find((b) => b.eventId === evt._id) || { count: 0, revenue: 0 };
+              return (
+                <div
+                  key={evt._id}
+                  style={{
+                    backgroundColor: "rgba(255, 255, 255, 0.03)",
+                    border: "1px solid rgba(255, 255, 255, 0.06)",
+                    borderRadius: 12,
+                    padding: 16,
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    transition: "transform 0.2s, border-color 0.2s",
+                  }}
+                  className="event-card-hover"
+                >
+                  <div>
+                    <h4 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+                      {evt.name}
+                    </h4>
+                    <p style={{ color: "var(--muted)", fontSize: 12, margin: "0 0 12px" }}>
+                      📅 {new Date(evt.dateTime).toLocaleDateString()} at {evt.venueId?.name || "Venue"}
+                    </p>
+                    <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
+                      <div>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Sales</span>
+                        <div style={{ fontWeight: 700, color: "var(--text)" }}>{bookingStats.count} ticket(s)</div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Revenue</span>
+                        <div style={{ fontWeight: 700, color: "var(--gold-soft)" }}>{formatUSD(bookingStats.revenue)}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedEventId(evt._id)}
+                    className="btn btn-secondary"
+                    style={{
+                      width: "100%",
+                      backgroundColor: "rgba(232, 191, 108, 0.1)",
+                      border: "1px solid rgba(232, 191, 108, 0.2)",
+                      color: "var(--gold-soft)",
+                      fontWeight: 600,
+                      padding: "8px 0",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                    }}
+                  >
+                    View Detailed Analytics
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Revenue over time ─────────────────────────────────── */}
@@ -458,6 +617,217 @@ const Analytics = () => {
         )}
       </div>
 
+      {/* ── Event Details Modal / Report view ── */}
+      {selectedEventId && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.8)",
+            zIndex: 9000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: "100%",
+              maxWidth: 900,
+              maxHeight: "90vh",
+              overflowY: "auto",
+              backgroundColor: "#fffdf8",
+              borderRadius: 16,
+              color: "#333",
+              padding: 24,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e8e0d0", paddingBottom: 16, marginBottom: 20 }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#1a1a1a" }}>
+                📊 Event Analytics Detail
+              </h2>
+              <div style={{ display: "flex", gap: 10 }}>
+                {eventAnalyticsData && (
+                  <button
+                    onClick={downloadEventReport}
+                    disabled={isPdfGenerating}
+                    style={{
+                      backgroundColor: "var(--gold, #c99a3c)",
+                      color: "#fff",
+                      border: "none",
+                      padding: "8px 16px",
+                      borderRadius: 6,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontSize: 13,
+                    }}
+                  >
+                    {isPdfGenerating ? "Generating PDF..." : "📥 Download Report (PDF)"}
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedEventId(null)}
+                  style={{
+                    backgroundColor: "#e8e0d0",
+                    border: "none",
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {loadingEventAnalytics && (
+              <div style={{ textAlign: "center", padding: "60px 0" }}>
+                <p>Loading event analytics details...</p>
+              </div>
+            )}
+
+            {eventAnalyticsError && (
+              <div style={{ padding: 20, color: "#dc2626", textAlign: "center" }}>
+                {eventAnalyticsError}
+              </div>
+            )}
+
+            {/* Printable Report Content */}
+            {eventAnalyticsData && (
+              <div id="event-report-content" style={{ padding: 20, backgroundColor: "#fffdf8", borderRadius: 8 }}>
+                {/* Event Summary Details */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: "2px solid var(--gold)", paddingBottom: 16, marginBottom: 24 }}>
+                  <div>
+                    <h1 style={{ margin: "0 0 6px", fontSize: 24, fontWeight: 800, color: "#1a1a1a" }}>
+                      {eventAnalyticsData.event.name}
+                    </h1>
+                    <p style={{ margin: 0, fontSize: 13, color: "#666" }}>
+                      📍 <strong>Venue:</strong> {eventAnalyticsData.event.venueName}
+                    </p>
+                    <p style={{ margin: "2px 0 0", fontSize: 13, color: "#666" }}>
+                      📅 <strong>Date:</strong> {new Date(eventAnalyticsData.event.dateTime).toLocaleString("en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: "#888", fontWeight: 700 }}>Generated On</span>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#333" }}>{new Date().toLocaleDateString()}</div>
+                  </div>
+                </div>
+
+                {/* Event Core Stats Grid */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                    gap: 16,
+                    marginBottom: 32,
+                  }}
+                >
+                  <div style={{ padding: "16px 12px", border: "1px solid #e8e0d0", borderRadius: 8, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Revenue</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "var(--gold)" }}>{formatUSD(eventAnalyticsData.metrics.totalRevenue)}</div>
+                  </div>
+                  <div style={{ padding: "16px 12px", border: "1px solid #e8e0d0", borderRadius: 8, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Bookings</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#333" }}>{eventAnalyticsData.metrics.totalBookings}</div>
+                  </div>
+                  <div style={{ padding: "16px 12px", border: "1px solid #e8e0d0", borderRadius: 8, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Tickets Sold</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#333" }}>{eventAnalyticsData.metrics.totalTicketsSold}</div>
+                  </div>
+                  <div style={{ padding: "16px 12px", border: "1px solid #e8e0d0", borderRadius: 8, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Verified</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#16a34a" }}>{eventAnalyticsData.metrics.verifiedTickets}</div>
+                  </div>
+                  <div style={{ padding: "16px 12px", border: "1px solid #e8e0d0", borderRadius: 8, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Unverified</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#b45309" }}>{eventAnalyticsData.metrics.unverifiedTickets}</div>
+                  </div>
+                </div>
+
+                {/* Event specific chart */}
+                <div style={{ border: "1px solid #e8e0d0", borderRadius: 10, padding: 18, marginBottom: 32 }}>
+                  <h4 style={{ margin: "0 0 16px", color: "#1a1a1a", fontSize: 15 }}>Sales Performance (Last 30 Days)</h4>
+                  <div style={{ width: "100%", height: 200 }}>
+                    <ResponsiveContainer>
+                      <AreaChart data={eventAnalyticsData.revenueByDay}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e8e0d0" />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fontSize: 10, fill: "#8a8070" }}
+                          tickFormatter={(v) => {
+                            const d = new Date(v);
+                            return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                          }}
+                          interval={4}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: "#8a8070" }}
+                        />
+                        <Area type="monotone" dataKey="revenue" stroke="var(--gold)" fill="rgba(232, 191, 108, 0.1)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Recent bookings of this event */}
+                <div>
+                  <h4 style={{ margin: "0 0 12px", color: "#1a1a1a", fontSize: 15 }}>Recent Event Attendees</h4>
+                  {eventAnalyticsData.recentBookings.length === 0 ? (
+                    <p style={{ color: "#666", fontSize: 13 }}>No bookings recorded for this event yet.</p>
+                  ) : (
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid #e8e0d0" }}>
+                          <th style={{ textAlign: "left", padding: "6px 4px", color: "#666" }}>Attendee</th>
+                          <th style={{ textAlign: "right", padding: "6px 4px", color: "#666" }}>Amount</th>
+                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#666" }}>Status</th>
+                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#666" }}>Check-in</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {eventAnalyticsData.recentBookings.map((b) => (
+                          <tr key={b.id} style={{ borderBottom: "1px solid #f0e8d8" }}>
+                            <td style={{ padding: "8px 4px" }}>
+                              <div style={{ fontWeight: 600, color: "#333" }}>{b.buyerName}</div>
+                              <div style={{ fontSize: 11, color: "#888" }}>{b.buyerEmail}</div>
+                            </td>
+                            <td style={{ padding: "8px 4px", textAlign: "right", fontWeight: 600, color: "#333" }}>
+                              {formatUSD(b.totalAmount)}
+                            </td>
+                            <td style={{ padding: "8px 4px", textAlign: "center" }}>
+                              <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: b.status === "confirmed" ? "#e6f4ea" : "#fce8e6", color: b.status === "confirmed" ? "#1e7e34" : "#c01e1e" }}>
+                                {b.status}
+                              </span>
+                            </td>
+                            <td style={{ padding: "8px 4px", textAlign: "center" }}>
+                              <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: b.verified ? "#e6f4ea" : "#fff8e1", color: b.verified ? "#1e7e34" : "#b45309" }}>
+                                {b.verified ? "Verified" : "Pending"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Scan Ticket Modal ── */}
       {isScanOpen && (
         <div
@@ -530,7 +900,6 @@ const Analytics = () => {
             {/* Camera Tab */}
             {scanTab === "camera" && !scanResult && !verifying && (
               <div>
-                {/* The video preview renders inside this div */}
                 <div
                   id="qr-reader-element"
                   style={{

@@ -36,5 +36,115 @@ export default function SeatMapBuilder({ value, onSave, eventMode = false, title
 
 const Field = ({ label, value, onChange, type = "text" }) => <label className="block text-sm">{label}<input type={type} value={value} onChange={(e) => onChange(type === "number" ? Number(e.target.value) : e.target.value)} className="mt-1 w-full rounded border p-2" /></label>;
 const ShapeEditor = ({ shape, patch, remove }) => <div className="space-y-3"><h2 className="font-display text-xl">Shape details</h2><p className="text-sm text-muted">Use shapes for non-bookable landmarks: entrance, stage, bar, washroom or food area.</p><Field label="Label" value={shape.label || ""} onChange={(label) => patch({ label })} /><Field label="X position" type="number" value={shape.x} onChange={(x) => patch({ x })} /><Field label="Y position" type="number" value={shape.y} onChange={(y) => patch({ y })} /><Field label="Width" type="number" value={shape.width} onChange={(width) => patch({ width })} /><Field label="Height" type="number" value={shape.height} onChange={(height) => patch({ height })} /><label className="block text-sm">Colour<input type="color" value={shape.color} onChange={(e) => patch({ color: e.target.value })} className="mt-1 h-9 w-full" /></label><button onClick={() => patch({ visible: !shape.visible })} className="rounded bg-ink px-3 py-2 text-sm text-paper">{shape.visible === false ? "Show" : "Hide"}</button><button onClick={remove} className="ml-2 text-sm text-danger">Delete shape</button></div>;
-const BlockEditor = ({ block, eventMode, patch, remove }) => <div className="space-y-3"><h2 className="font-display text-xl">Block details</h2><Field label="Name" value={block.name} onChange={(name) => patch({ name })} />{eventMode && <Field label="Price (PKR)" type="number" value={block.price || 0} onChange={(price) => patch({ price })} />}<label className="block text-sm">Colour<input type="color" value={block.configuration?.color || "#facc15"} onChange={(e) => patch({ configuration: { ...block.configuration, color: e.target.value } })} className="mt-1 h-9 w-full" /></label><p className="text-sm text-muted">{block.seats?.length || 0} inventory seats</p><button onClick={remove} className="text-sm text-danger">Delete block</button></div>;
+const BlockEditor = ({ block, eventMode, patch, remove }) => {
+  // Derive rows & cols from the seats array
+  const currentRows = block.seats?.length
+    ? Math.max(...block.seats.map((s) => s.row ?? 0)) + 1
+    : 0;
+  const currentCols = block.seats?.length
+    ? Math.max(...block.seats.map((s) => s.column ?? 0)) + 1
+    : 0;
+
+  const rebuildSeats = (rows, cols) => {
+    return Array.from({ length: rows * cols }, (_, n) => {
+      const row = Math.floor(n / cols);
+      const col = n % cols;
+      // Re-use existing seat id if it exists so status is preserved
+      const existing = block.seats?.find((s) => s.row === row && s.column === col);
+      return existing || {
+        id: uid("seat"),
+        row,
+        column: col,
+        seatName: `${String.fromCharCode(65 + row)}${col + 1}`,
+        status: "available",
+        type: null,
+      };
+    });
+  };
+
+  const changeRows = (delta) => {
+    const newRows = Math.max(1, currentRows + delta);
+    patch({ seats: rebuildSeats(newRows, currentCols || 10) });
+  };
+
+  const changeCols = (delta) => {
+    const newCols = Math.max(1, currentCols + delta);
+    patch({ seats: rebuildSeats(currentRows || 1, newCols) });
+  };
+
+  return (
+    <div className="space-y-3">
+      <h2 className="font-display text-xl">Block details</h2>
+
+      <Field label="Name" value={block.name} onChange={(name) => patch({ name })} />
+
+      {eventMode && (
+        <Field label="Price (PKR)" type="number" value={block.price || 0} onChange={(price) => patch({ price })} />
+      )}
+
+      <label className="block text-sm">
+        Colour
+        <input
+          type="color"
+          value={block.configuration?.color || "#facc15"}
+          onChange={(e) => patch({ configuration: { ...block.configuration, color: e.target.value } })}
+          className="mt-1 h-9 w-full"
+        />
+      </label>
+
+      {/* Row controls — only for seat/table blocks */}
+      {block.type !== "general-admission" && (
+        <div className="space-y-2 rounded border p-3 text-sm">
+          <p className="font-semibold text-muted">Layout</p>
+
+          {/* Rows */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span>Rows: <strong>{currentRows}</strong></span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={() => changeRows(-1)}
+                disabled={currentRows <= 1}
+                style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #ccc", cursor: "pointer", fontWeight: 700, background: currentRows <= 1 ? "#f5f5f5" : "#fff", color: currentRows <= 1 ? "#aaa" : "#c01e1e" }}
+              >
+                − Row
+              </button>
+              <button
+                onClick={() => changeRows(1)}
+                style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #ccc", cursor: "pointer", fontWeight: 700, background: "#fff", color: "#16a34a" }}
+              >
+                + Row
+              </button>
+            </div>
+          </div>
+
+          {/* Columns */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span>Columns: <strong>{currentCols}</strong></span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={() => changeCols(-1)}
+                disabled={currentCols <= 1}
+                style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #ccc", cursor: "pointer", fontWeight: 700, background: currentCols <= 1 ? "#f5f5f5" : "#fff", color: currentCols <= 1 ? "#aaa" : "#c01e1e" }}
+              >
+                − Col
+              </button>
+              <button
+                onClick={() => changeCols(1)}
+                style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #ccc", cursor: "pointer", fontWeight: 700, background: "#fff", color: "#16a34a" }}
+              >
+                + Col
+              </button>
+            </div>
+          </div>
+
+          <p className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+            {block.seats?.length || 0} total seats · removing rows/cols deletes those seats
+          </p>
+        </div>
+      )}
+
+      <button onClick={remove} className="text-sm text-danger">Delete block</button>
+    </div>
+  );
+};
 const CanvasEditor = ({ map, commit }) => <div className="space-y-3"><h2 className="font-display text-xl">Canvas details</h2><Field label="Map name" value={map.name} onChange={(name) => commit((current) => ({ ...current, name }))} /><label className="block text-sm">Background<input type="color" value={map.boundary?.color || "#dbe3f4"} onChange={(e) => commit((current) => ({ ...current, boundary: { ...current.boundary, color: e.target.value } }))} className="mt-1 h-9 w-full" /></label><p className="text-sm text-muted">Click a block to edit its inventory or a shape to edit the visual landmark.</p></div>;

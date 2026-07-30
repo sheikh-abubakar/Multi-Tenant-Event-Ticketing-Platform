@@ -14,4 +14,14 @@ const getAnalytics = async (req, res) => {
   }
 };
 
-module.exports = { getAnalytics };
+const getEventAnalytics = async (req, res) => {
+  try {
+    const data = await analyticsService.getEventAnalytics(req.organizationId, req.params.eventId);
+    return res.json(data);
+  } catch (error) {
+    console.error("[Event Analytics] Error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message || "Could not load event analytics data." });
+  }
+};
+
+module.exports = { getAnalytics, getEventAnalytics };

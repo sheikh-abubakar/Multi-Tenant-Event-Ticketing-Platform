@@ -255,4 +255,149 @@ const getOwnerAnalytics = async (organizationId) => {
   };
 };
 
-module.exports = { getOwnerAnalytics };
+const getEventAnalytics = async (organizationId, eventId) => {
+  const orgId = new mongoose.Types.ObjectId(organizationId);
+  const evId = new mongoose.Types.ObjectId(eventId);
+
+  const event = await Event.findOne({ _id: evId, organizationId: orgId }).populate("venueId", "name address");
+  if (!event) {
+    const error = new Error("Event not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const [
+    totalBookings,
+    totalRevenueResult,
+    totalTicketsResult,
+    verifiedCount,
+    unverifiedCount,
+    refundStats,
+    recentBookings,
+    revenueByDay,
+  ] = await Promise.all([
+    // Total confirmed bookings
+    Booking.countDocuments({ eventId: evId, organizationId: orgId, status: "confirmed" }),
+
+    // Total sales revenue
+    Booking.aggregate([
+      { $match: { eventId: evId, organizationId: orgId, status: "confirmed" } },
+      { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+    ]),
+
+    // Total tickets sold
+    Booking.aggregate([
+      { $match: { eventId: evId, organizationId: orgId, status: "confirmed" } },
+      { $unwind: "$items" },
+      { $group: { _id: null, total: { $sum: "$items.quantity" } } },
+    ]),
+
+    // Verified tickets
+    Booking.countDocuments({ eventId: evId, organizationId: orgId, status: "confirmed", verified: true }),
+
+    // Unverified tickets
+    Booking.countDocuments({ eventId: evId, organizationId: orgId, status: "confirmed", verified: false }),
+
+    // Refund stats for this event
+    Booking.aggregate([
+      { $match: { eventId: evId, organizationId: orgId, status: "refunded" } },
+      {
+        $group: {
+          _id: null,
+          totalRefunds: { $sum: 1 },
+          totalRefundedAmount: { $sum: "$refundInfo.amount" },
+        },
+      },
+    ]),
+
+    // Recent bookings for this event
+    Booking.find({ eventId: evId, organizationId: orgId, status: { $in: ["confirmed", "refunded"] } })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean(),
+
+    // Revenue trend for last 30 days for this event
+    Booking.aggregate([
+      {
+        $match: {
+          eventId: evId,
+          organizationId: orgId,
+          status: "confirmed",
+          createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          revenue: { $sum: "$totalAmount" },
+          bookings: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          revenue: 1,
+          bookings: 1,
+        },
+      },
+    ]),
+  ]);
+
+  const totalRevenue = totalRevenueResult[0]?.total || 0;
+  const totalTicketsSold = totalTicketsResult[0]?.total || 0;
+  const refundsInfo = refundStats[0] || { totalRefunds: 0, totalRefundedAmount: 0 };
+
+  // Fill in missing days
+  const revenueMap = {};
+  revenueByDay.forEach((d) => {
+    revenueMap[d.date] = { revenue: d.revenue, bookings: d.bookings };
+  });
+
+  const filledRevenueByDay = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    const dateStr = d.toISOString().split("T")[0];
+    filledRevenueByDay.push({
+      date: dateStr,
+      revenue: revenueMap[dateStr]?.revenue || 0,
+      bookings: revenueMap[dateStr]?.bookings || 0,
+    });
+  }
+
+  const shapedRecentBookings = recentBookings.map((b) => ({
+    id: b._id,
+    buyerName: b.buyerName,
+    buyerEmail: b.buyerEmail,
+    totalAmount: b.totalAmount,
+    status: b.status,
+    paymentStatus: b.paymentStatus,
+    verified: b.verified || false,
+    verifiedAt: b.verifiedAt || null,
+    createdAt: b.createdAt,
+  }));
+
+  return {
+    event: {
+      id: event._id,
+      name: event.name,
+      dateTime: event.dateTime,
+      venueName: event.venueId?.name || "Unknown Venue",
+      venueAddress: event.venueId?.address || "",
+    },
+    metrics: {
+      totalBookings,
+      totalRevenue,
+      totalTicketsSold,
+      verifiedTickets: verifiedCount,
+      unverifiedTickets: unverifiedCount,
+      totalRefunds: refundsInfo.totalRefunds,
+      totalRefundedAmount: refundsInfo.totalRefundedAmount,
+    },
+    recentBookings: shapedRecentBookings,
+    revenueByDay: filledRevenueByDay,
+  };
+};
+
+module.exports = { getOwnerAnalytics, getEventAnalytics };

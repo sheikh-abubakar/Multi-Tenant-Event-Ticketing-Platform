@@ -48,12 +48,11 @@
   text-decoration: none;
 }
 
-/* Two-column grid */
+/* Stacked layout: seat map full-width on top, order panel below */
 .ss-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  display: flex;
+  flex-direction: column;
   gap: 28px;
-  align-items: start;
 }
 
 /* ── LEFT: map section ── */
@@ -147,10 +146,9 @@
   width: 100%;
 }
 
-/* ── RIGHT: sidebar ── */
+/* ── BOTTOM: order summary ── */
 .ss-sidebar {
-  position: sticky;
-  top: 24px;
+  width: 100%;
 }
 
 .ss-sidebar__inner {
@@ -161,6 +159,8 @@
     0 20px 60px rgba(0, 0, 0, 0.45),
     0 0 0 1px rgba(201, 154, 60, 0.1);
   overflow: hidden;
+  max-width: 720px;
+  margin: 0 auto;
 }
 
 .ss-sidebar__header {
@@ -253,10 +253,8 @@
 
 /* Seat list */
 .ss-seat-list {
-  min-height: 100px;
+  min-height: 60px;
   padding: 14px 22px;
-  max-height: 260px;
-  overflow-y: auto;
 }
 
 /* Empty state */
@@ -393,18 +391,6 @@
 }
 
 /* ── Responsive ── */
-@media (max-width: 1100px) {
-  .ss-layout {
-    grid-template-columns: 1fr;
-  }
-  .ss-sidebar {
-    position: static;
-  }
-  .ss-sidebar__inner {
-    max-width: 560px;
-  }
-}
-
 @media (max-width: 620px) {
   .ss-layout { gap: 20px; }
   .ss-title  { font-size: 30px; }

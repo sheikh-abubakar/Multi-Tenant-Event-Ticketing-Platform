@@ -421,9 +421,33 @@ body { transition: background-color 220ms ease, color 220ms ease; }
 /* Auth pages follow the StagePass poster system while retaining the existing
    fields and submit behaviour. */
 .auth-page{position:relative;display:grid;grid-template-columns:.82fr 1.18fr;gap:clamp(38px,8vw,110px);max-width:960px;margin:0 auto;padding:clamp(34px,7vw,82px) 24px;align-items:center}.auth-page::before{content:"";position:absolute;z-index:-1;width:430px;height:430px;right:-160px;top:-80px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--gold) 23%,transparent),transparent 68%);filter:blur(18px)}.auth-intro h1{margin:0;color:var(--paper);font-size:clamp(42px,7vw,88px)}.auth-intro h1 em{color:var(--gold);font-style:normal}.auth-intro>p:last-child{max-width:310px;margin:22px 0 0;color:var(--muted);line-height:1.65;font-size:15px}.auth-card{position:relative;max-width:480px;width:100%;padding:34px;background:var(--paper);border-radius:2px;box-shadow:16px 16px 0 color-mix(in srgb,var(--gold) 56%,transparent),0 24px 48px rgba(0,0,0,.3)}.auth-card::before{content:"";position:absolute;inset:9px -9px -9px 9px;z-index:-1;border:1px solid var(--gold)}.auth-card-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:27px;padding-bottom:15px;border-bottom:2px dashed rgba(30,32,48,.2)}.auth-card-heading span{color:var(--muted);font:10px var(--font-mono);letter-spacing:.08em}.auth-card-heading b{color:var(--text);font:29px/1 var(--font-display);letter-spacing:.03em}.auth-card .field{margin-bottom:17px}.auth-card .field label{color:var(--text);font:10px var(--font-mono);letter-spacing:.08em}.auth-card .field input{padding:12px 0;border:0;border-bottom:1px solid rgba(30,32,48,.25);border-radius:0;background:transparent;color:var(--text);transition:border-color 180ms ease}.auth-card .field input:focus{outline:0;border-bottom:2px solid var(--gold)}.auth-submit{min-height:47px;border-radius:2px;box-shadow:4px 4px 0 var(--text);transition:transform 160ms ease,box-shadow 160ms ease}.auth-submit:hover:not(:disabled){transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--text)}.auth-switch{grid-column:2;margin:-12px 0 0;color:var(--muted);font-size:13px}.auth-switch a{color:var(--gold-soft);font-weight:700}.auth-switch a:hover{color:var(--paper)}
-@media(max-width:700px){.auth-page{grid-template-columns:1fr;gap:24px;padding:28px 16px 64px;box-sizing:border-box;width:100%;}.auth-intro h1{font-size:clamp(32px, 8vw, 52px)}.auth-card{max-width:none;padding:20px;width:100%;box-sizing:border-box;}.auth-switch{grid-column:auto;margin:8px 0 0;}.auth-intro>p:last-child{max-width:430px}.layout-nav{gap:10px!important}.layout-nav .nav-signup{padding:7px 11px}}
-/* On very small phones hide the decorative intro text and show only the form card */
-@media(max-width:430px){.auth-intro{display:none}.auth-page{padding:20px 12px 56px;gap:16px}.auth-switch{margin:12px 0 0}}
+@media(max-width:700px){.auth-page{grid-template-columns:1fr;gap:24px;padding:48px 16px 64px;box-sizing:border-box;width:100%;min-height:calc(100vh - 130px);display:flex;flex-direction:column;justify-content:center;}.auth-intro h1{font-size:clamp(32px, 8vw, 52px)}.auth-card{max-width:none;padding:20px;width:100%;box-sizing:border-box;margin:0 auto;}.auth-switch{grid-column:auto;margin:8px 0 0;}.auth-intro>p:last-child{max-width:430px}.layout-nav{gap:10px!important}.layout-nav .nav-signup{padding:7px 11px}}
+/* On very small phones keep the intro text visible above the card but scale it nicely */
+@media(max-width:430px){
+  .auth-intro {
+    display: block !important;
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .auth-intro h1 {
+    font-size: 32px !important;
+    line-height: 1.1;
+  }
+  .auth-intro p {
+    font-size: 13px !important;
+    margin-top: 8px !important;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .auth-page {
+    padding: 32px 12px 56px;
+    gap: 16px;
+    min-height: calc(100vh - 110px);
+  }
+  .auth-switch {
+    margin: 12px 0 0;
+  }
+}
 
 /* Global scroll barrier to avoid horizontal overflow on all screen sizes */
 html, body {

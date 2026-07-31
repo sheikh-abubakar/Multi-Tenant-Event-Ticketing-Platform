@@ -1,3 +1,4 @@
+// Force reload to pick up email.js template changes
 require("dotenv").config();
 const app = require("./app");
 const connectDB = require("./config/db");

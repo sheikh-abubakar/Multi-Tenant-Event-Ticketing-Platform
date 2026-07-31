@@ -25,6 +25,56 @@
 .app-main:not(.app-main--landing)>div{animation:page-enter .38s ease-out both}.app-main:not(.app-main--landing) .card,.app-main:not(.app-main--landing) [class*="bg-paper"]{position:relative}.app-main:not(.app-main--landing) [class*="bg-paper"]{border-color:rgba(201,154,60,.14)}.app-main:not(.app-main--landing) [class*="rounded-2xl"]{border-radius:4px!important}.app-main:not(.app-main--landing) [class*="rounded-xl"]{border-radius:4px!important}.app-main:not(.app-main--landing) h1.display,.app-main:not(.app-main--landing)>div>h1{letter-spacing:.045em}.app-main:not(.app-main--landing) input:focus,.app-main:not(.app-main--landing) textarea:focus,.app-main:not(.app-main--landing) select:focus{box-shadow:0 0 0 3px rgba(201,154,60,.2)}.app-main:not(.app-main--landing) button:not(.theme-toggle){transition:transform 150ms ease,filter 150ms ease}.app-main:not(.app-main--landing) button:hover:not(:disabled){filter:brightness(1.04)}.app-main:not(.app-main--landing) .badge{letter-spacing:.07em}.app-main:not(.app-main--landing) img{max-width:100%}.app-main:not(.app-main--landing) [style*="background: rgba(247, 242, 231, 0.04)"]{background:rgba(201,154,60,.08)!important;border-color:rgba(201,154,60,.24)!important}.app-main:not(.app-main--landing) [style*="borderRadius: 12"]{border-radius:4px!important}@keyframes page-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .app-main:not(.app-main--landing) .card label{color:var(--text)!important}.app-main:not(.app-main--landing) .card [style*="color: var(--paper)"]{color:var(--text)!important}.app-main:not(.app-main--landing) .card [style*="background: \"var(--gold)\""]{box-shadow:3px 3px 0 var(--text)}.app-main:not(.app-main--landing) .card [style*="borderRadius: 10"],.app-main:not(.app-main--landing) .card [style*="borderRadius: 12"]{border-radius:3px!important}
 
+/* ── Animated Hamburger button shared styles ── */
+.platform-hamburger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+}
+
+.hamburger-box {
+  width: 20px;
+  height: 14px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.hamburger-line {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background-color: var(--paper, #f7f2e7);
+  border-radius: 4px;
+  transition: transform 0.25s cubic-bezier(0.2, 0.6, 0.3, 1),
+              opacity 0.2s ease,
+              background-color 0.2s ease;
+}
+
+/* Transform lines into an "X" when open */
+.platform-hamburger.is-active .line-1 {
+  transform: translateY(6px) rotate(45deg);
+  background-color: var(--gold, #d4a53d);
+}
+
+.platform-hamburger.is-active .line-2 {
+  opacity: 0;
+  transform: scale(0.5);
+}
+
+.platform-hamburger.is-active .line-3 {
+  transform: translateY(-6px) rotate(-45deg);
+  background-color: var(--gold, #d4a53d);
+}
+
 /* ── Personal nav links (desktop) ───────────────────────────────── */
 .layout-nav .nav-personal-link{display:inline-flex;align-items:center;gap:6px;color:var(--gold-soft);font-size:12px;font-weight:800;letter-spacing:.02em;transition:color 160ms ease,transform 160ms ease}.layout-nav .nav-personal-link:hover{color:var(--paper);text-decoration:none;transform:translateY(-1px)}.layout-nav .nav-personal-link svg{stroke-width:2.25}
 

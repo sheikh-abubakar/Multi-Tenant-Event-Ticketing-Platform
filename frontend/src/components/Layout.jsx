@@ -114,11 +114,15 @@ const Layout = ({ children }) => {
           <header className="organizer-mobile-header">
             {/* Hamburger — only on mobile */}
             <button
-              className="hamburger-btn"
+              className={`hamburger-btn platform-hamburger ${sidebarOpen ? "is-active" : ""}`}
               onClick={() => setSidebarOpen(true)}
               aria-label="Open menu"
             >
-              <Menu size={22} />
+              <div className="hamburger-box">
+                <span className="hamburger-line line-1"></span>
+                <span className="hamburger-line line-2"></span>
+                <span className="hamburger-line line-3"></span>
+              </div>
             </button>
             <Link to="/" className="display organizer-mobile-logo">
               <Logo width="110" height="30" />

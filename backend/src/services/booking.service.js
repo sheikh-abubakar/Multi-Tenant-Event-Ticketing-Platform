@@ -202,6 +202,7 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
           discountAmount: discountRes.referralDiscountAmount,
           couponCode: discountRes.couponCode,
           couponDiscountAmount: discountRes.couponDiscountAmount,
+          userId: userId || null,
           currency: "USD",
           status: "pending",
           paymentStatus: "pending",
@@ -464,6 +465,7 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
           discountAmount: discountRes.referralDiscountAmount,
           couponCode: discountRes.couponCode,
           couponDiscountAmount: discountRes.couponDiscountAmount,
+          userId: userId || null,
           currency: "USD",
           status: "pending",
           paymentStatus: "pending",
@@ -563,6 +565,57 @@ const confirmBooking = async (stripeSessionId) => {
   }
 
   if (booking.status === "confirmed" && booking.paymentStatus === "paid") {
+    console.log(`[ConfirmBooking] Booking ${booking._id} is already confirmed. Running post-confirmation tasks (referrals & email) to ensure they are processed locally.`);
+    
+    // Process referral reward for the referrer if referredByCode was used
+    try {
+      await referralService.processBookingReferral(booking);
+    } catch (refErr) {
+      console.error("Referral reward processing failed:", refErr.message);
+    }
+
+    // Consume used referral rewards if buyer applied rewards at checkout
+    if (booking.referralRewardsUsedCount > 0) {
+      try {
+        console.log(`[Referrals - EarlyExit] Booking has referralRewardsUsedCount = ${booking.referralRewardsUsedCount}`);
+        const consumerUserId = booking.userId;
+        if (consumerUserId) {
+          console.log(`[Referrals - EarlyExit] Consuming rewards using booking.userId: ${consumerUserId}`);
+          await referralService.consumeReferralRewards(consumerUserId, booking.referralRewardsUsedCount, booking._id);
+        } else {
+          console.log(`[Referrals - EarlyExit] No userId on booking. Falling back to email: "${booking.buyerEmail}"`);
+          const user = await User.findOne({ email: booking.buyerEmail });
+          if (user) {
+            console.log(`[Referrals - EarlyExit] Found user by email: ${user.email} (id: ${user._id})`);
+            await referralService.consumeReferralRewards(user._id, booking.referralRewardsUsedCount, booking._id);
+          } else {
+            console.warn(`[Referrals - EarlyExit] ⚠️ No user found for email: "${booking.buyerEmail}". Consumption skipped!`);
+          }
+        }
+      } catch (consumeErr) {
+        console.error("[Referrals - EarlyExit] Consuming referral rewards failed:", consumeErr.message);
+      }
+    }
+
+    // Increment coupon usage count if coupon was used
+    if (booking.couponCode) {
+      try {
+        await couponService.incrementCouponUses(booking.organizationId, booking.couponCode);
+      } catch (couponErr) {
+        console.error("Incrementing coupon uses failed:", couponErr.message);
+      }
+    }
+
+    // Send confirmation email
+    try {
+      const event = await Event.findById(booking.eventId).populate("venueId", "name address city");
+      if (event) {
+        await sendBookingConfirmation(booking, event, booking.qrCodeUrl, booking.organizationId);
+      }
+    } catch (emailError) {
+      console.error("Confirmation email failed:", emailError.message);
+    }
+
     return booking;
   }
 
@@ -638,12 +691,23 @@ const confirmBooking = async (stripeSessionId) => {
   // Consume used referral rewards if buyer applied rewards at checkout
   if (booking.referralRewardsUsedCount > 0) {
     try {
-      const user = await User.findOne({ email: booking.buyerEmail });
-      if (user) {
-        await referralService.consumeReferralRewards(user._id, booking.referralRewardsUsedCount, booking._id);
+      console.log(`[Referrals - Main] Booking has referralRewardsUsedCount = ${booking.referralRewardsUsedCount}`);
+      const consumerUserId = booking.userId;
+      if (consumerUserId) {
+        console.log(`[Referrals - Main] Consuming rewards using booking.userId: ${consumerUserId}`);
+        await referralService.consumeReferralRewards(consumerUserId, booking.referralRewardsUsedCount, booking._id);
+      } else {
+        console.log(`[Referrals - Main] No userId on booking. Falling back to email: "${booking.buyerEmail}"`);
+        const user = await User.findOne({ email: booking.buyerEmail });
+        if (user) {
+          console.log(`[Referrals - Main] Found user by email: ${user.email} (id: ${user._id})`);
+          await referralService.consumeReferralRewards(user._id, booking.referralRewardsUsedCount, booking._id);
+        } else {
+          console.warn(`[Referrals - Main] ⚠️ No user found for email: "${booking.buyerEmail}". Consumption skipped!`);
+        }
       }
     } catch (consumeErr) {
-      console.error("Consuming referral rewards failed:", consumeErr.message);
+      console.error("[Referrals - Main] Consuming referral rewards failed:", consumeErr.message);
     }
   }
 

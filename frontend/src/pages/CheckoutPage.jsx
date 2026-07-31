@@ -58,6 +58,14 @@ const CheckoutPage = () => {
           setEvent(cartRes.data.event);
           setWalletBalance(walletBalanceVal);
           setReferralStats(refStatsVal);
+          
+          // Prefill name and email if user is logged in
+          if (user) {
+            setForm({
+              buyerName: user.name || "",
+              buyerEmail: user.email || "",
+            });
+          }
         }
       } catch (err) {
         if (!cancelled) {

@@ -14,7 +14,12 @@ const signup = async (req, res) => {
     }
 
     const result = await authService.signup({ name, email, password });
-    return res.status(201).json(result);
+    
+    // Clear any previous anonymous/stale session data
+    req.session.regenerate((err) => {
+      if (err) console.error("Session regeneration failed on signup:", err);
+      return res.status(201).json(result);
+    });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
@@ -29,7 +34,12 @@ const login = async (req, res) => {
     }
 
     const result = await authService.login({ email, password });
-    return res.status(200).json(result);
+    
+    // Destroy previous session (along with any other user's cart) and create fresh session
+    req.session.regenerate((err) => {
+      if (err) console.error("Session regeneration failed on login:", err);
+      return res.status(200).json(result);
+    });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
@@ -39,11 +49,17 @@ const googleSignIn = async (req, res) => {
   try {
     if (!req.body?.credential) return res.status(400).json({ message: "Google credential is required" });
     const result = await authService.signInWithGoogle(req.body.credential);
-    return res.status(200).json(result);
+    
+    // Destroy previous session and create fresh session
+    req.session.regenerate((err) => {
+      if (err) console.error("Session regeneration failed on Google sign-in:", err);
+      return res.status(200).json(result);
+    });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
+
 
 const updateProfile = async (req, res) => {
   try {
@@ -101,6 +117,25 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const logout = async (req, res) => {
+  try {
+    if (req.session) {
+      req.session.destroy((err) => {
+        if (err) {
+          console.error("Logout session destruction failed:", err);
+          return res.status(500).json({ message: "Logout failed" });
+        }
+        res.clearCookie("stagepass.sid");
+        return res.status(200).json({ message: "Logged out successfully" });
+      });
+    } else {
+      return res.status(200).json({ message: "Logged out successfully" });
+    }
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   signup,
   login,
@@ -109,4 +144,5 @@ module.exports = {
   updatePassword,
   forgotPassword,
   resetPassword,
+  logout,
 };

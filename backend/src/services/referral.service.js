@@ -158,7 +158,11 @@ async function calculateReferralDiscount(userId, rewardsToApply, originalTotal) 
  * Mark rewards as used after payment confirmation
  */
 async function consumeReferralRewards(userId, rewardsCount, bookingId) {
-  if (!rewardsCount || rewardsCount <= 0) return;
+  console.log(`[ReferralService] consumeReferralRewards invoked for userId = ${userId}, rewardsCount = ${rewardsCount}, bookingId = ${bookingId}`);
+  if (!rewardsCount || rewardsCount <= 0) {
+    console.log(`[ReferralService] rewardsCount <= 0, returning.`);
+    return;
+  }
 
   const count = Math.min(rewardsCount, 5);
   const availableRewards = await ReferralReward.find({
@@ -166,12 +170,19 @@ async function consumeReferralRewards(userId, rewardsCount, bookingId) {
     status: "available",
   }).limit(count);
 
+  console.log(`[ReferralService] Found ${availableRewards.length} available rewards for userId: ${userId} to consume.`);
+
   const rewardIds = availableRewards.map((r) => r._id);
+  console.log(`[ReferralService] Reward document IDs to set as 'used':`, rewardIds);
+  
   if (rewardIds.length > 0) {
-    await ReferralReward.updateMany(
+    const updateResult = await ReferralReward.updateMany(
       { _id: { $in: rewardIds } },
       { $set: { status: "used", usedInBookingId: bookingId } }
     );
+    console.log(`[ReferralService] Update result:`, updateResult);
+  } else {
+    console.warn(`[ReferralService] ⚠️ No available rewards were found in DB for user ${userId}.`);
   }
 }
 

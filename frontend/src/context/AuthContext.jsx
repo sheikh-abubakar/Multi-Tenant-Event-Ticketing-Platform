@@ -43,6 +43,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    apiClient.post("/auth/logout").catch((err) => {
+      console.warn("Server logout request failed, clearing local session:", err);
+    });
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setToken(null);

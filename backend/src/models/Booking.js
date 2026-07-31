@@ -211,6 +211,12 @@ const bookingSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     referralRewardsUsedCount: {
       type: Number,
       default: 0,

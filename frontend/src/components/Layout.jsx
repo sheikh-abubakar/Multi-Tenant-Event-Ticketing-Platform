@@ -1,5 +1,6 @@
+import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { ShoppingCart, WalletCards, User } from "lucide-react";
+import { ShoppingCart, WalletCards, User, Menu, X, LogOut, Building2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "./Logo";
 import "./Layout.css";
@@ -12,6 +13,30 @@ const Layout = ({ children }) => {
   const organizerMatch = location.pathname.match(/^\/o\/([^/]+)\/(?:dashboard|manage(?:\/|$))/);
   const orgSlug = organizerMatch?.[1];
 
+  // ── Organizer sidebar state (mobile only) ──────────────────────
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // ── User profile dropdown state ────────────────────────────────
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (profileRef.current && !profileRef.current.contains(e.target)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  // Close sidebar on route change
+  useEffect(() => {
+    setSidebarOpen(false);
+    setProfileOpen(false);
+  }, [location.pathname]);
+
   const handleLogout = () => {
     logout();
     navigate("/login");
@@ -19,6 +44,7 @@ const Layout = ({ children }) => {
 
   if (location.pathname.startsWith("/platform-admin")) return children;
 
+  // ── ORGANIZER CONSOLE LAYOUT ──────────────────────────────────
   if (orgSlug && user) {
     const organizationLinks = [
       ["Overview", `/o/${orgSlug}/dashboard`],
@@ -31,15 +57,39 @@ const Layout = ({ children }) => {
 
     return (
       <div className="organizer-shell">
-        <aside className="organizer-sidebar">
-          <Link to="/" className="display sidebar-brand"><Logo width="130" height="36" /></Link>
+        {/* ── Sidebar ── */}
+        <aside className={`organizer-sidebar${sidebarOpen ? " is-open" : ""}`}>
+          {/* Close button — only visible on mobile */}
+          <button
+            className="sidebar-close-btn"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close menu"
+          >
+            <X size={20} />
+          </button>
+
+          <Link to="/" className="display sidebar-brand" onClick={() => setSidebarOpen(false)}>
+            <Logo width="130" height="36" />
+          </Link>
           <p className="sidebar-caption">ORGANIZER CONSOLE</p>
           <nav className="sidebar-nav" aria-label="Organization navigation">
-            <NavLink to="/browse" className="sidebar-link sidebar-link--global">My Organizations</NavLink>
+            <NavLink
+              to="/browse"
+              className="sidebar-link sidebar-link--global"
+              onClick={() => setSidebarOpen(false)}
+            >
+              My Organizations
+            </NavLink>
             <span className="sidebar-divider" />
             <p className="sidebar-caption">THIS ORGANIZATION</p>
             {organizationLinks.map(([label, to]) => (
-              <NavLink key={to} to={to} end={label === "Overview"} className={({ isActive }) => `sidebar-link${isActive ? " is-active" : ""}`}>
+              <NavLink
+                key={to}
+                to={to}
+                end={label === "Overview"}
+                className={({ isActive }) => `sidebar-link${isActive ? " is-active" : ""}`}
+                onClick={() => setSidebarOpen(false)}
+              >
                 {label}
               </NavLink>
             ))}
@@ -49,14 +99,39 @@ const Layout = ({ children }) => {
             <button type="button" onClick={handleLogout}>Log out <b>→</b></button>
           </div>
         </aside>
+
+        {/* ── Backdrop overlay (mobile only) ── */}
+        {sidebarOpen && (
+          <div
+            className="sidebar-backdrop"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* ── Main content ── */}
         <div className="organizer-stage">
-          <header className="organizer-mobile-header"><Link to="/" className="display">Stagepass</Link><span>{orgSlug}</span></header>
+          <header className="organizer-mobile-header">
+            {/* Hamburger — only on mobile */}
+            <button
+              className="hamburger-btn"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu size={22} />
+            </button>
+            <Link to="/" className="display organizer-mobile-logo">
+              <Logo width="110" height="30" />
+            </Link>
+            <span className="organizer-mobile-slug">{orgSlug}</span>
+          </header>
           <main className="organizer-main">{children}</main>
         </div>
       </div>
     );
   }
 
+  // ── PUBLIC / LOGGED-IN USER LAYOUT ───────────────────────────
   return (
     <div className="app-shell">
       <header className="app-header" style={{ padding: "24px 0 18px" }}>
@@ -64,25 +139,62 @@ const Layout = ({ children }) => {
           <Link to="/" className="display" style={styles.logo}>
             <Logo width="130" height="36" />
           </Link>
+
           <nav className="layout-nav" style={styles.nav}>
             {user ? (
               <>
-                <Link to="/browse" className="nav-login">My Organizations</Link>
-                <Link to="/cart" className="nav-personal-link" aria-label="View cart" title="View cart">
+                {/* Desktop links — hidden on mobile */}
+                <Link to="/browse" className="nav-login nav-desktop-only">My Organizations</Link>
+                <Link to="/cart" className="nav-personal-link nav-desktop-only" aria-label="View cart">
                   <ShoppingCart size={15} aria-hidden="true" /> <span>Cart</span>
                 </Link>
-                <Link to="/my/dashboard" className="nav-personal-link" aria-label="Open wallet" title="Wallet">
+                <Link to="/my/dashboard" className="nav-personal-link nav-desktop-only" aria-label="Open wallet">
                   <WalletCards size={15} aria-hidden="true" /> <span>Wallet</span>
                 </Link>
-                <Link to="/profile" className="nav-personal-link" aria-label="View profile" title="Profile">
+                <Link to="/profile" className="nav-personal-link nav-desktop-only" aria-label="View profile">
                   <User size={15} aria-hidden="true" /> <span>Profile</span>
                 </Link>
-                <span style={{ color: "var(--muted)", fontSize: 13 }}>
-                  {user.name}
-                </span>
-                <button className="btn btn-ghost" onClick={handleLogout} style={styles.navBtn}>
+                <span className="nav-username nav-desktop-only">{user.name}</span>
+                <button className="btn btn-ghost nav-desktop-only" onClick={handleLogout} style={styles.navBtn}>
                   Log out
                 </button>
+
+                {/* ── Mobile profile dropdown trigger ── */}
+                <div className="nav-profile-menu" ref={profileRef}>
+                  <button
+                    className="nav-profile-btn"
+                    onClick={() => setProfileOpen((o) => !o)}
+                    aria-label="User menu"
+                    aria-expanded={profileOpen}
+                  >
+                    <div className="nav-avatar">
+                      {user.name?.[0]?.toUpperCase() || "U"}
+                    </div>
+                  </button>
+
+                  {profileOpen && (
+                    <div className="nav-dropdown">
+                      <div className="nav-dropdown-header">
+                        <span className="nav-dropdown-name">{user.name}</span>
+                      </div>
+                      <Link to="/browse" className="nav-dropdown-item" onClick={() => setProfileOpen(false)}>
+                        <Building2 size={15} /> My Organizations
+                      </Link>
+                      <Link to="/cart" className="nav-dropdown-item" onClick={() => setProfileOpen(false)}>
+                        <ShoppingCart size={15} /> Cart
+                      </Link>
+                      <Link to="/my/dashboard" className="nav-dropdown-item" onClick={() => setProfileOpen(false)}>
+                        <WalletCards size={15} /> Wallet
+                      </Link>
+                      <Link to="/profile" className="nav-dropdown-item" onClick={() => setProfileOpen(false)}>
+                        <User size={15} /> Profile
+                      </Link>
+                      <button className="nav-dropdown-item nav-dropdown-logout" onClick={handleLogout}>
+                        <LogOut size={15} /> Log out
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>

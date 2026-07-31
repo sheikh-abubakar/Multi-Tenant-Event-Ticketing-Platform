@@ -116,7 +116,7 @@ const UserProfile = () => {
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "start" }}>
+      <div className="profile-layout">
 
         {/* LEFT COLUMN: Profile and Password Cards */}
         <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
@@ -246,7 +246,7 @@ const UserProfile = () => {
         <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
 
           {/* Quick Stats Grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+          <div className="profile-stats-grid">
             {/* Wallet Stat */}
             <Link to="/my/dashboard" style={{ textDecoration: "none" }}>
               <div className="card" style={{ padding: 20, textAlign: "center", background: "linear-gradient(135deg, #192436 0%, #2a3148 100%)", border: "1px solid rgba(201, 154, 60, 0.25)", color: "#f7f2e7" }}>

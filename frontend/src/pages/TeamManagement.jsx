@@ -270,7 +270,7 @@ const TeamManagement = () => {
           <h3 style={{ marginTop: 0, marginBottom: 16, fontSize: 18 }}>
             Invite a team member
           </h3>
-          <form onSubmit={handleInvite} style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <form onSubmit={handleInvite} className="invite-team-form">
             <div className="field" style={{ flex: "1 1 200px", marginBottom: 0 }}>
               <label htmlFor="inviteEmail" style={{ fontSize: 12 }}>Email address</label>
               <input
@@ -583,17 +583,10 @@ const MemberRow = ({
 
   return (
     <div
-      className="card"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        padding: "16px 20px",
-        ...(currentUser ? { borderLeft: "3px solid var(--gold)" } : {}),
-      }}
+      className="card member-row"
+      style={currentUser ? { borderLeft: "3px solid var(--gold)" } : {}}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 auto", minWidth: 0 }}>
         <div
           style={{
             width: 40,
@@ -629,13 +622,13 @@ const MemberRow = ({
               </span>
             )}
           </div>
-          <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--muted)" }}>
+          <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {member.user?.email}
           </p>
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+      <div className="member-controls">
         <span className={getRoleBadgeClass(memberRole)} style={{ fontSize: 11, padding: "3px 10px" }}>
           {memberRole}
         </span>

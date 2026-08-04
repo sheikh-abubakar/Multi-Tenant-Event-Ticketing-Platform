@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import apiClient from "../api/client";
 import { cachedGet, prefetch } from "../api/requestCache";
+import "./PublicEvents.css";
 
 const PublicEvents = () => {
   const { orgSlug } = useParams();
@@ -12,7 +12,6 @@ const PublicEvents = () => {
 
   useEffect(() => {
     let cancelled = false;
-
     const load = async () => {
       setLoading(true);
       setError("");
@@ -21,168 +20,144 @@ const PublicEvents = () => {
           cachedGet(`/o/${orgSlug}/info`, 60_000),
           cachedGet(`/o/${orgSlug}/events`, 30_000),
         ]);
-
         if (!cancelled) {
           setOrganization(infoRes.data.organization);
           setEvents(eventsRes.data.events || []);
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(err.response?.data?.message || "Could not load public events.");
-        }
+        if (!cancelled) setError(err.response?.data?.message || "Could not load public events.");
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
-
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [orgSlug]);
 
-  const remainingTickets = (ticketTypes = []) =>
+  const getPriceRange = (ticketTypes = []) => {
+    if (!ticketTypes.length) return null;
+    const prices = ticketTypes.map((t) => Number(t.price || 0));
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    return min === max ? `$${min}` : `$${min} – $${max}`;
+  };
+
+  const getTotalRemaining = (ticketTypes = []) =>
     ticketTypes.reduce(
-      (sum, ticketType) =>
-        sum + Math.max(0, Number(ticketType.quantityTotal || 0) - Number(ticketType.quantityBooked || 0)),
+      (sum, t) => sum + Math.max(0, Number(t.quantityTotal || 0) - Number(t.quantityBooked || 0)),
       0
     );
 
+  const formatDate = (dateStr) => {
+    const d = new Date(dateStr);
+    return {
+      day: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+      time: d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+    };
+  };
+
   return (
-    <div className="storefront-page">
-      <div className="storefront-header" style={styles.header}>
-        <div>
-          <p style={styles.kicker}>Public storefront</p>
-          <h1 style={{ color: "var(--paper)", margin: "4px 0 0" }}>
-            {organization ? organization.name : "Loading organization…"}
+    <div className="pe-page">
+      {/* ── Header ── */}
+      <div className="pe-header">
+        <div className="pe-header-left">
+          <span className="pe-eyebrow">Public Storefront</span>
+          <h1 className="pe-org-name">
+            {organization ? organization.name : "Loading…"}
           </h1>
-          {organization && <p style={styles.slug}>/o/{organization.slug}</p>}
+          {organization && <span className="pe-slug">/o/{organization.slug}</span>}
         </div>
-        <Link
-          to="/"
-          className="btn btn-ghost"
-          style={{ color: "var(--paper)", borderColor: "rgba(247,242,231,0.35)" }}
-        >
-          Home
-        </Link>
+        <Link to="/" className="pe-home-btn">← Home</Link>
       </div>
 
-      {loading && <p style={{ color: "var(--muted)" }}>Loading events…</p>}
-      {error && <div className="error-banner">{error}</div>}
-
+      {/* ── States ── */}
+      {loading && (
+        <div className="pe-loading-grid">
+          {[1, 2, 3].map((i) => <div key={i} className="pe-skeleton-card" />)}
+        </div>
+      )}
+      {error && <div className="pe-error">{error}</div>}
       {!loading && !error && events.length === 0 && (
-        <div className="card">No public events yet.</div>
+        <div className="pe-empty">
+          <span className="pe-empty-icon">🎟️</span>
+          <p>No upcoming events yet. Check back soon!</p>
+        </div>
       )}
 
-      <div style={styles.grid}>
-        {events.map((event) => {
-          const previewDescription = event.description
-            ? `${event.description.slice(0, 120)}${event.description.length > 120 ? "..." : ""}`
-            : "No description provided.";
+      {/* ── Event Grid ── */}
+      {!loading && !error && events.length > 0 && (
+        <div className="pe-grid">
+          {events.map((event) => {
+            const { day, time } = formatDate(event.dateTime);
+            const priceRange = getPriceRange(event.ticketTypes);
+            const remaining = getTotalRemaining(event.ticketTypes);
+            const isSeatmap = event.purchaseMode === "seatmap";
+            const isSoldOut = !isSeatmap && event.ticketTypes?.length > 0 && remaining === 0;
 
-          return (
-            <Link
-              key={event._id}
-              to={`/o/${orgSlug}/events/${event._id}`}
-              onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${event._id}`, 30_000)}
-              onFocus={() => prefetch(`/o/${orgSlug}/events/${event._id}`, 30_000)}
-              className="card storefront-event-card"
-              style={styles.card}
-            >
-              {event.bannerImageUrl ? (
-                <img src={event.bannerImageUrl} alt="" style={styles.banner} />
-              ) : (
-                <div style={styles.bannerFallback} />
-              )}
+            return (
+              <Link
+                key={event._id}
+                to={`/o/${orgSlug}/events/${event._id}`}
+                onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${event._id}`, 30_000)}
+                onFocus={() => prefetch(`/o/${orgSlug}/events/${event._id}`, 30_000)}
+                className={`pe-card ${isSoldOut ? "pe-card--sold-out" : ""}`}
+              >
+                {/* Banner */}
+                <div className="pe-card-banner">
+                  {event.bannerImageUrl ? (
+                    <img src={event.bannerImageUrl} alt={event.name} className="pe-card-img" />
+                  ) : (
+                    <div className="pe-card-img-fallback" />
+                  )}
+                  <div className="pe-card-overlay" />
 
-              <div style={styles.body}>
-                <p style={styles.meta}>{new Date(event.dateTime).toLocaleString()}</p>
-                <h3 style={styles.title}>{event.name}</h3>
-                <p style={styles.meta}>
-                  {event.venueId?.name}
-                  {event.venueId?.city ? ` · ${event.venueId.city}` : ""}
-                </p>
-                <p style={styles.description}>{previewDescription}</p>
-                <div style={styles.badges}>
-                  <span className="badge">{event.ticketTypes?.length || 0} ticket types</span>
-                  <span className="badge">{remainingTickets(event.ticketTypes)} remaining</span>
+                  {/* Top badges */}
+                  <div className="pe-card-top-badges">
+                    {isSeatmap && <span className="pe-badge pe-badge--seat">🪑 Choose Seats</span>}
+                    {isSoldOut && <span className="pe-badge pe-badge--sold">Sold Out</span>}
+                    {!isSoldOut && priceRange && (
+                      <span className="pe-badge pe-badge--price">{priceRange}</span>
+                    )}
+                  </div>
+
+                  {/* Date chip */}
+                  <div className="pe-card-date-chip">
+                    <span className="pe-date-day">{day}</span>
+                    <span className="pe-date-time">{time}</span>
+                  </div>
                 </div>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+
+                {/* Body */}
+                <div className="pe-card-body">
+                  <h3 className="pe-card-title">{event.name}</h3>
+                  {event.venueId && (
+                    <p className="pe-card-venue">
+                      📍 {event.venueId.name}{event.venueId.city ? ` · ${event.venueId.city}` : ""}
+                    </p>
+                  )}
+                  {event.description && (
+                    <p className="pe-card-desc">
+                      {event.description.length > 90
+                        ? `${event.description.slice(0, 90)}…`
+                        : event.description}
+                    </p>
+                  )}
+                  <div className="pe-card-footer">
+                    <span className="pe-cta">
+                      {isSoldOut ? "Sold Out" : isSeatmap ? "Pick Your Seat →" : "Get Tickets →"}
+                    </span>
+                    {!isSoldOut && !isSeatmap && remaining > 0 && (
+                      <span className="pe-remaining">{remaining} left</span>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
-};
-
-const styles = {
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 16,
-    alignItems: "flex-start",
-    marginBottom: 28,
-  },
-  kicker: {
-    margin: 0,
-    textTransform: "uppercase",
-    letterSpacing: "0.12em",
-    fontSize: 12,
-    color: "var(--muted)",
-  },
-  slug: {
-    margin: "8px 0 0",
-    color: "var(--muted)",
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-    gap: 18,
-  },
-  card: {
-    display: "block",
-    textDecoration: "none",
-    color: "var(--text)",
-    overflow: "hidden",
-    padding: 0,
-  },
-  banner: {
-    width: "100%",
-    height: 180,
-    objectFit: "cover",
-    display: "block",
-  },
-  bannerFallback: {
-    width: "100%",
-    height: 180,
-    background:
-      "linear-gradient(135deg, rgba(231, 168, 73, 0.35), rgba(25, 36, 54, 0.9))",
-  },
-  body: {
-    padding: 16,
-  },
-  meta: {
-    margin: "0 0 6px",
-    color: "var(--muted)",
-    fontSize: 13,
-  },
-  title: {
-    margin: "0 0 6px",
-    color: "var(--paper)",
-  },
-  description: {
-    margin: "8px 0 12px",
-    color: "var(--text)",
-    fontSize: 14,
-    lineHeight: 1.5,
-    minHeight: 42,
-  },
-  badges: {
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-  },
 };
 
 export default PublicEvents;

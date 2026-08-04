@@ -24,6 +24,7 @@ const seatmapRoutes = require("./routes/seatmap.routes");
 const referralRoutes = require("./routes/referral.routes");
 const couponRoutes = require("./routes/coupon.routes");
 const platformAdminRoutes = require("./routes/platformAdmin.routes");
+const aiRoutes = require("./routes/ai.routes");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -121,6 +122,7 @@ app.use("/api/o/:orgSlug", calendarRoutes);
 app.use("/api", publicRoutes);
 app.use("/api", refundRoutes);
 app.use("/api/referrals", referralRoutes);
+app.use("/api/ai", aiRoutes);
 
 app.use((req, res) => res.status(404).json({ message: "Route not found" }));
 

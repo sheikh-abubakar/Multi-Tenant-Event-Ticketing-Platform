@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, Building2, Activity, LogOut, ShieldCheck, X } from "lucide-react";
+import { LayoutDashboard, Building2, Activity, LogOut, ShieldCheck, X, Sparkles } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import "./PlatformAdmin.css";
 
@@ -23,7 +23,8 @@ const PlatformAdminLayout = () => {
   const links = [
     ["Overview", "/platform-admin", LayoutDashboard],
     ["Organizations", "/platform-admin/organizations", Building2],
-    ["Activity log", "/platform-admin/activity", Activity]
+    ["Activity log", "/platform-admin/activity", Activity],
+    ["AI Assistant", "/platform-admin/assistant", Sparkles]
   ];
 
   return (

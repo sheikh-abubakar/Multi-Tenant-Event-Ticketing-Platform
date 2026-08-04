@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { ShoppingCart, WalletCards, User, Menu, X, LogOut, Building2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "./Logo";
+import AICopilot from "./ai/AICopilot";
 import "./Layout.css";
 import "./PageVisuals.css";
 
@@ -130,6 +131,7 @@ const Layout = ({ children }) => {
             <span className="organizer-mobile-slug">{orgSlug}</span>
           </header>
           <main className="organizer-main">{children}</main>
+          <AICopilot />
         </div>
       </div>
     );
@@ -216,6 +218,7 @@ const Layout = ({ children }) => {
       >
         {children}
       </main>
+      <AICopilot />
     </div>
   );
 };

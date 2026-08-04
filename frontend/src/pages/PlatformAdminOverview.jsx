@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
-import apiClient from "../api/client";
+import { cachedGet } from "../api/requestCache";
 import "../components/PlatformAdmin.css";
 
 const formatMoney = (value) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value || 0);
@@ -11,7 +11,7 @@ const colours = ["#d4a53d", "#8d7ad7", "#53c793", "#e86c6c", "#6aa8e8"];
 const Metric = ({ label, value }) => <div className="platform-kpi"><span>{label}</span><strong>{value}</strong></div>;
 const PlatformAdminOverview = () => {
   const [range, setRange] = useState("30d"); const [data, setData] = useState(null); const [error, setError] = useState("");
-  useEffect(() => { let cancelled = false; setData(null); apiClient.get(`/platform-admin/overview?range=${range}`).then(({ data }) => !cancelled && setData(data)).catch((err) => !cancelled && setError(err.response?.data?.message || "Could not load platform analytics.")).finally(() => {}); return () => { cancelled = true; }; }, [range]);
+  useEffect(() => { let cancelled = false; cachedGet(`/platform-admin/overview?range=${range}`).then(({ data }) => !cancelled && setData(data)).catch((err) => !cancelled && setError(err.response?.data?.message || "Could not load platform analytics.")).finally(() => {}); return () => { cancelled = true; }; }, [range]);
   if (error) return <div className="platform-alert">{error}</div>;
   if (!data) return <p className="platform-empty">Loading platform analytics…</p>;
   const { metrics, trend, topOrganizations, bookingStatus, activity, upcomingEvents } = data;

@@ -1,41 +1,46 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense, lazy } from "react";
 import { Routes, Route, useSearchParams } from "react-router-dom";
 import LoadingScreen from "./components/LoadingScreen";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Home from "./pages/Home";
+
+// ── Eagerly loaded (tiny, always needed) ───────────────────────────────────
 import LandingPage from "./pages/LandingPage";
-import Signup from "./pages/Signup";
 import Login from "./pages/Login";
-import CreateOrganization from "./pages/CreateOrganization";
-import Dashboard from "./pages/Dashboard";
-import Venues from "./pages/Venues";
-import Events from "./pages/Events";
-import PublicEvents from "./pages/PublicEvents";
-import EventDetail from "./pages/EventDetail";
-import CartPage from "./pages/CartPage";
-import CheckoutPage from "./pages/CheckoutPage";
-import BookingConfirmation from "./pages/BookingConfirmation";
-import OrgSettings from "./pages/OrgSettings";
-import TeamManagement from "./pages/TeamManagement";
-import AcceptInvite from "./pages/AcceptInvite";
-import Analytics from "./pages/Analytics";
-import BuyerDashboard from "./pages/BuyerDashboard";
-import VenueSeatMapBuilder from "./pages/VenueSeatMapBuilder";
-import EventSeatMapBuilder from "./pages/EventSeatMapBuilder";
-import SeatSelection from "./pages/SeatSelection";
-import GlobalCart from "./pages/GlobalCart";
+import Signup from "./pages/Signup";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
-import UserProfile from "./pages/UserProfile";
-import SetPassword from "./pages/SetPassword";
+import AcceptInvite from "./pages/AcceptInvite";
 import PlatformAdminRoute from "./components/PlatformAdminRoute";
 import PlatformAdminLayout from "./components/PlatformAdminLayout";
 import PlatformAdminLogin from "./pages/PlatformAdminLogin";
-import PlatformAdminOverview from "./pages/PlatformAdminOverview";
-import PlatformOrganizations from "./pages/PlatformOrganizations";
-import PlatformOrganizationDetail from "./pages/PlatformOrganizationDetail";
-import PlatformActivity from "./pages/PlatformActivity";
+
+// ── Lazy loaded (heavy pages — only fetched when first visited) ────────────
+const Home = lazy(() => import("./pages/Home"));
+const CreateOrganization = lazy(() => import("./pages/CreateOrganization"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Venues = lazy(() => import("./pages/Venues"));
+const Events = lazy(() => import("./pages/Events"));
+const PublicEvents = lazy(() => import("./pages/PublicEvents"));
+const EventDetail = lazy(() => import("./pages/EventDetail"));
+const CartPage = lazy(() => import("./pages/CartPage"));
+const CheckoutPage = lazy(() => import("./pages/CheckoutPage"));
+const BookingConfirmation = lazy(() => import("./pages/BookingConfirmation"));
+const OrgSettings = lazy(() => import("./pages/OrgSettings"));
+const TeamManagement = lazy(() => import("./pages/TeamManagement"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const BuyerDashboard = lazy(() => import("./pages/BuyerDashboard"));
+const VenueSeatMapBuilder = lazy(() => import("./pages/VenueSeatMapBuilder"));
+const EventSeatMapBuilder = lazy(() => import("./pages/EventSeatMapBuilder"));
+const SeatSelection = lazy(() => import("./pages/SeatSelection"));
+const GlobalCart = lazy(() => import("./pages/GlobalCart"));
+const UserProfile = lazy(() => import("./pages/UserProfile"));
+const SetPassword = lazy(() => import("./pages/SetPassword"));
+const PlatformAdminOverview = lazy(() => import("./pages/PlatformAdminOverview"));
+const PlatformOrganizations = lazy(() => import("./pages/PlatformOrganizations"));
+const PlatformOrganizationDetail = lazy(() => import("./pages/PlatformOrganizationDetail"));
+const PlatformActivity = lazy(() => import("./pages/PlatformActivity"));
+const PlatformAIAssistant = lazy(() => import("./pages/PlatformAIAssistant"));
 
 function App() {
   const [searchParams] = useSearchParams();
@@ -73,6 +78,7 @@ function App() {
 
   return (
     <Layout>
+      <Suspense fallback={<p style={{ color: "#aeb0c4", padding: "40px", textAlign: "center" }}>Loading…</p>}>
       <Routes>
         {/* Public buyer dashboard — shows all events across all orgs */}
         <Route path="/" element={<LandingPage />} />
@@ -93,6 +99,7 @@ function App() {
           <Route path="organizations" element={<PlatformOrganizations />} />
           <Route path="organizations/:organizationId" element={<PlatformOrganizationDetail />} />
           <Route path="activity" element={<PlatformActivity />} />
+          <Route path="assistant" element={<PlatformAIAssistant />} />
         </Route>
 
         <Route
@@ -178,6 +185,7 @@ function App() {
           }
         />
       </Routes>
+      </Suspense>
     </Layout>
   );
 }

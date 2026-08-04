@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom"
 import apiClient from "../api/client";
 import { cachedGet, prefetch } from "../api/requestCache";
 import { useAuth } from "../context/AuthContext";
+import "./EventDetail.css";
 
 const EventDetail = () => {
   const { orgSlug, eventId } = useParams();
@@ -23,7 +24,6 @@ const EventDetail = () => {
 
   useEffect(() => {
     let cancelled = false;
-
     const load = async () => {
       setLoading(true);
       setError("");
@@ -32,32 +32,23 @@ const EventDetail = () => {
           cachedGet(`/o/${orgSlug}/info`, 60_000),
           cachedGet(`/o/${orgSlug}/events/${eventId}`, 30_000),
         ]);
-
         if (!cancelled) {
           setOrganization(infoRes.data.organization);
           setEvent(eventRes.data.event);
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(err.response?.data?.message || "Could not load this event.");
-        }
+        if (!cancelled) setError(err.response?.data?.message || "Could not load this event.");
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
-
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [eventId, orgSlug]);
 
-  // Capture ?ref=CODE from URL and save to sessionStorage for checkout
   useEffect(() => {
     const refCode = searchParams.get("ref");
-    if (refCode) {
-      sessionStorage.setItem("referralCode", refCode);
-    }
+    if (refCode) sessionStorage.setItem("referralCode", refCode);
   }, [searchParams]);
 
   const handleShare = async () => {
@@ -85,392 +76,325 @@ const EventDetail = () => {
 
   const remainingTickets = (ticketTypes = []) =>
     ticketTypes.reduce(
-      (sum, ticketType) =>
-        sum + Math.max(0, Number(ticketType.quantityTotal || 0) - Number(ticketType.quantityBooked || 0)),
+      (sum, t) => sum + Math.max(0, Number(t.quantityTotal || 0) - Number(t.quantityBooked || 0)),
       0
     );
 
-  if (loading) return <p style={{ color: "var(--muted)" }}>Loading event…</p>;
+  const formatEventDate = (dateStr) => {
+    const d = new Date(dateStr);
+    return {
+      full: d.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
+      time: d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+    };
+  };
 
+  // ── Loading ─────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="ed-loading">
+        <div className="ed-skeleton-banner" />
+        <div className="ed-skeleton-body">
+          <div className="ed-skeleton-line w-40" />
+          <div className="ed-skeleton-line w-70" />
+          <div className="ed-skeleton-line w-55" />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Error ────────────────────────────────────────────────────────────
   if (error) {
     return (
-      <div className="card" style={{ maxWidth: 640 }}>
-        <p style={{ marginTop: 0 }}>
-          <Link to={`/o/${orgSlug}/events`}>&larr; Back to events</Link>
-        </p>
-        <h3 style={{ marginTop: 0, color: "var(--danger)" }}>Could not load event</h3>
-        <p>{error}</p>
+      <div className="ed-error-wrap">
+        <Link to={`/o/${orgSlug}/events`} className="ed-back">← Back to events</Link>
+        <div className="ed-error-box">
+          <span>⚠️</span>
+          <p>{error}</p>
+        </div>
       </div>
     );
   }
 
   if (!event) return null;
 
+  const { full: dateStr, time } = formatEventDate(event.dateTime);
+
+  // ── Seatmap mode ─────────────────────────────────────────────────────
   if (event.purchaseMode === "seatmap") {
     return (
-      <div className="card event-seatmap-hero" style={{ maxWidth: 780, margin: "0 auto" }}>
-        <p><Link to={`/o/${orgSlug}/events`}>&larr; Back to events</Link></p>
-        {event.bannerImageUrl && <img src={event.bannerImageUrl} alt="" style={{ width: "100%", maxHeight: 300, objectFit: "cover", borderRadius: 10 }} />}
-        <h1>{event.name}</h1><p style={{ color: "var(--muted)" }}>{new Date(event.dateTime).toLocaleString()} · {event.venueId?.name}</p>
-        <p>{event.description || "Choose your exact seats from the interactive seating plan."}</p>
-        <Link
-          to={`/o/${orgSlug}/events/${eventId}/seats`}
-          className="btn btn-primary"
-          onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000)}
-          onFocus={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000)}
-        >
-          Choose seats
-        </Link>
+      <div className="ed-seatmap-page">
+        <Link to={`/o/${orgSlug}/events`} className="ed-back">← Back to events</Link>
+
+        <div className="ed-seatmap-hero">
+          {/* Banner with cinematic gradient */}
+          <div className="ed-sm-banner-wrap">
+            {event.bannerImageUrl ? (
+              <img src={event.bannerImageUrl} alt={event.name} className="ed-sm-banner-img" />
+            ) : (
+              <div className="ed-sm-banner-fallback" />
+            )}
+            <div className="ed-sm-banner-gradient" />
+          </div>
+
+          {/* Content card floating over the gradient */}
+          <div className="ed-sm-content">
+            <div className="ed-sm-badges">
+              <span className="ed-sm-badge ed-sm-badge--seat">🪑 Interactive Seating</span>
+              <span className="ed-sm-badge ed-sm-badge--live">Live Map</span>
+            </div>
+
+            <h1 className="ed-sm-title">{event.name}</h1>
+
+            <div className="ed-sm-meta-row">
+              <div className="ed-sm-meta-item">
+                <span className="ed-sm-meta-icon">📅</span>
+                <div>
+                  <p className="ed-sm-meta-label">Date</p>
+                  <p className="ed-sm-meta-val">{dateStr}</p>
+                </div>
+              </div>
+              <div className="ed-sm-meta-item">
+                <span className="ed-sm-meta-icon">⏰</span>
+                <div>
+                  <p className="ed-sm-meta-label">Time</p>
+                  <p className="ed-sm-meta-val">{time}</p>
+                </div>
+              </div>
+              {event.venueId && (
+                <div className="ed-sm-meta-item">
+                  <span className="ed-sm-meta-icon">📍</span>
+                  <div>
+                    <p className="ed-sm-meta-label">Venue</p>
+                    <p className="ed-sm-meta-val">{event.venueId.name}{event.venueId.city ? `, ${event.venueId.city}` : ""}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {event.description && (
+              <p className="ed-sm-desc">{event.description}</p>
+            )}
+
+            <Link
+              to={`/o/${orgSlug}/events/${eventId}/seats`}
+              className="ed-sm-cta"
+              onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000)}
+              onFocus={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000)}
+            >
+              <span className="ed-sm-cta-icon">🗺️</span>
+              Choose Your Seats
+              <span className="ed-sm-cta-arrow">→</span>
+            </Link>
+
+            <p className="ed-sm-hint">
+              Select your preferred seats from the interactive venue map and pay only for what you choose.
+            </p>
+          </div>
+        </div>
+
+        {/* Share Card */}
+        <ShareCard
+          user={user}
+          shareLoading={shareLoading}
+          sharePopover={sharePopover}
+          shareLinkData={shareLinkData}
+          copied={copied}
+          onShare={handleShare}
+          onCopy={handleCopyLink}
+          onClose={() => setSharePopover(false)}
+        />
       </div>
     );
   }
 
+  // ── Standard ticket purchase mode ────────────────────────────────────
   const totalRemaining = remainingTickets(event.ticketTypes);
 
   return (
-    <div className="event-detail-page" style={{ maxWidth: 980, margin: "0 auto" }}>
-      <p style={{ marginBottom: 16 }}>
-        <Link to={`/o/${orgSlug}/events`}>&larr; Back to events</Link>
-      </p>
+    <div className="ed-page">
+      <Link to={`/o/${orgSlug}/events`} className="ed-back">← Back to events</Link>
 
-      <div style={styles.topBar}>
-        <div>
-          <p style={styles.kicker}>Public event detail</p>
-          <h1 style={{ color: "var(--paper)", margin: "4px 0 0" }}>{organization?.name || "Event"}</h1>
-          {organization && <p style={styles.slug}>/o/{organization.slug}</p>}
-        </div>
-        <span className="badge">{totalRemaining} remaining</span>
-      </div>
-
-      <div className="card event-hero-card" style={styles.heroCard}>
-        {event.bannerImageUrl ? (
-          <img src={event.bannerImageUrl} alt="" style={styles.heroImage} />
-        ) : (
-          <div style={styles.heroFallback} />
-        )}
-
-        <div style={styles.heroBody}>
-          <div style={styles.badges}>
-            <span className="badge">Public listing</span>
-            <span className="badge">{new Date(event.dateTime).toLocaleString()}</span>
-            <span className="badge">{event.venueId?.name || "Venue not set"}</span>
-          </div>
-
-          <h2 style={styles.title}>{event.name}</h2>
-          <p style={styles.meta}>
-            {event.venueId?.name}
-            {event.venueId?.city ? ` · ${event.venueId.city}` : ""}
-          </p>
-          <p style={styles.description}>
-            {event.description || "No description provided by the organizer yet."}
-          </p>
-        </div>
-      </div>
-
-      <div className="card event-pricing-panel" style={{ marginTop: 20 }}>
-        <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 0 }}>
-          <span>Ticket types</span>
-          {event.ticketTypes?.length > 0 && (
-            <Link
-              to="/cart"
-              className="badge"
-              style={{ textDecoration: "none" }}
-            >
-              View Cart
-            </Link>
+      {/* Hero */}
+      <div className="ed-hero">
+        <div className="ed-hero-banner-wrap">
+          {event.bannerImageUrl ? (
+            <img src={event.bannerImageUrl} alt={event.name} className="ed-hero-img" />
+          ) : (
+            <div className="ed-hero-fallback" />
           )}
-        </h3>
+          <div className="ed-hero-gradient" />
+
+          {/* Info overlaid on the banner bottom */}
+          <div className="ed-hero-overlay-info">
+            <div className="ed-hero-badges">
+              <span className="ed-hero-badge">{dateStr} · {time}</span>
+              {event.venueId && <span className="ed-hero-badge">📍 {event.venueId.name}{event.venueId.city ? `, ${event.venueId.city}` : ""}</span>}
+              {totalRemaining > 0 && <span className="ed-hero-badge ed-hero-badge--tickets">{totalRemaining} tickets left</span>}
+            </div>
+            <h1 className="ed-hero-title">{event.name}</h1>
+          </div>
+        </div>
+
+        {event.description && (
+          <div className="ed-hero-desc-wrap">
+            <p className="ed-hero-desc">{event.description}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Ticket panel */}
+      <div className="ed-ticket-panel">
+        <div className="ed-ticket-panel-header">
+          <h2 className="ed-ticket-panel-title">🎟️ Select Tickets</h2>
+          {event.ticketTypes?.length > 0 && (
+            <Link to="/cart" className="ed-view-cart-btn">View Cart</Link>
+          )}
+        </div>
 
         {cartMessage && (
-          <div
-            style={{
-              padding: "10px 14px",
-              borderRadius: 8,
-              marginBottom: 12,
-              background: cartMessage.includes("Error")
-                ? "rgba(220, 38, 38, 0.1)"
-                : "rgba(22, 163, 74, 0.1)",
-              color: cartMessage.includes("Error") ? "var(--danger)" : "#16a34a",
-              fontSize: 14,
-            }}
-          >
+          <div className={`ed-cart-msg ${cartMessage.includes("Error") ? "ed-cart-msg--error" : "ed-cart-msg--success"}`}>
             {cartMessage}
           </div>
         )}
 
         {event.ticketTypes?.length ? (
-          <div style={{ display: "grid", gap: 12 }}>
+          <div className="ed-tickets-list">
             {event.ticketTypes.map((ticketType, index) => {
-              const remaining = Math.max(
-                0,
+              const remaining = Math.max(0,
                 Number(ticketType.quantityTotal || 0) - Number(ticketType.quantityBooked || 0)
               );
+              const soldOut = remaining === 0;
+              const fillPct = ticketType.quantityTotal > 0
+                ? Math.round((ticketType.quantityBooked / ticketType.quantityTotal) * 100)
+                : 0;
 
               return (
-                <div key={ticketType._id || ticketType.name} className="event-ticket-row" style={styles.ticketRow}>
-                  <div style={{ flex: 1 }}>
-                    <h4 style={{ margin: "0 0 4px", color: "var(--paper)" }}>{ticketType.name}</h4>
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
-                      {ticketType.quantityBooked || 0} booked of {ticketType.quantityTotal}
-                    </p>
+                <div key={ticketType._id || ticketType.name} className={`ed-ticket-row ${soldOut ? "ed-ticket-row--sold" : ""}`}>
+                  <div className="ed-ticket-info">
+                    <h4 className="ed-ticket-name">{ticketType.name}</h4>
+                    <div className="ed-ticket-fill-bar">
+                      <div className="ed-ticket-fill-track">
+                        <div className="ed-ticket-fill-fill" style={{ width: `${fillPct}%` }} />
+                      </div>
+                      <span className="ed-ticket-fill-label">{remaining} remaining</span>
+                    </div>
                   </div>
-                  <div style={{ textAlign: "right", minWidth: 120 }}>
-                    <div style={styles.price}>$ {Number(ticketType.price || 0)}</div>
-                    <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 14 }}>
-                      {remaining} left
-                    </p>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input
-                      type="number"
-                      min={0}
-                      max={remaining}
-                      value={quantities[index] || 0}
-                      onChange={(e) =>
-                        setQuantities((prev) => ({
-                          ...prev,
-                          [index]: Math.max(0, Math.min(remaining, Number(e.target.value))),
-                        }))
-                      }
-                      style={{
-                        width: 56,
-                        padding: "8px 6px",
-                        borderRadius: 8,
-                        border: "1px solid #d8d0bd",
-                        background: "#fffdf8",
-                        color: "#1e2030",
-                        textAlign: "center",
-                        fontSize: 14,
-                      }}
-                    />
-                    <button
-                      style={styles.addBtn}
-                      onClick={async () => {
-                        const qty = Number(quantities[index] || 0);
-                        if (qty < 1) return;
 
-                        setAddingToCart(true);
-                        setCartMessage("");
-                        try {
-                          await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items`, {
-                            ticketTypeIndex: index,
-                            quantity: qty,
-                          });
-                          setCartMessage(`Added ${qty} x ${ticketType.name} to cart!`);
-                          setQuantities((prev) => ({ ...prev, [index]: 0 }));
-                        } catch (err) {
-                          setCartMessage(
-                            `Error: ${err.response?.data?.message || "Could not add to cart"}`
-                          );
-                        } finally {
-                          setAddingToCart(false);
-                        }
-                      }}
-                      disabled={addingToCart || !(quantities[index] > 0)}
-                    >
-                      Add
-                    </button>
+                  <div className="ed-ticket-price-col">
+                    <span className="ed-ticket-price">${Number(ticketType.price || 0)}</span>
+                    <span className="ed-ticket-per">per ticket</span>
+                  </div>
+
+                  <div className="ed-ticket-actions">
+                    {soldOut ? (
+                      <span className="ed-ticket-sold-badge">Sold Out</span>
+                    ) : (
+                      <>
+                        <div className="ed-qty-stepper">
+                          <button
+                            className="ed-qty-btn"
+                            onClick={() => setQuantities((prev) => ({ ...prev, [index]: Math.max(0, (prev[index] || 0) - 1) }))}
+                          >−</button>
+                          <span className="ed-qty-val">{quantities[index] || 0}</span>
+                          <button
+                            className="ed-qty-btn"
+                            onClick={() => setQuantities((prev) => ({ ...prev, [index]: Math.min(remaining, (prev[index] || 0) + 1) }))}
+                          >+</button>
+                        </div>
+                        <button
+                          className="ed-add-btn"
+                          disabled={addingToCart || !(quantities[index] > 0)}
+                          onClick={async () => {
+                            const qty = Number(quantities[index] || 0);
+                            if (qty < 1) return;
+                            setAddingToCart(true);
+                            setCartMessage("");
+                            try {
+                              await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items`, {
+                                ticketTypeIndex: index,
+                                quantity: qty,
+                              });
+                              setCartMessage(`Added ${qty} × ${ticketType.name} to cart!`);
+                              setQuantities((prev) => ({ ...prev, [index]: 0 }));
+                            } catch (err) {
+                              setCartMessage(`Error: ${err.response?.data?.message || "Could not add to cart"}`);
+                            } finally {
+                              setAddingToCart(false);
+                            }
+                          }}
+                        >
+                          {addingToCart ? "…" : "Add"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
         ) : (
-          <p style={{ color: "var(--muted)" }}>No ticket types are available for this event yet.</p>
+          <p className="ed-no-tickets">No ticket types are available for this event yet.</p>
         )}
-      </div>
 
-      {/* Share & Earn Referral Card */}
-      <div className="card" style={styles.shareCard}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <div>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: "var(--paper)" }}>🎁 Share &amp; Earn 10% Off</p>
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>
-              Share this event with friends. When they buy a ticket, you earn a 10% discount reward on your next purchase.
-            </p>
-          </div>
-          {user ? (
-            <button
-              style={styles.shareBtn}
-              onClick={handleShare}
-              disabled={shareLoading}
-            >
-              {shareLoading ? "Loading..." : "🔗 Get My Share Link"}
-            </button>
-          ) : (
-            <Link to="/login" style={{ ...styles.shareBtn, textDecoration: "none", display: "inline-block" }}>
-              Login to Share &amp; Earn
-            </Link>
-          )}
-        </div>
-
-        {/* Share Popover */}
-        {sharePopover && shareLinkData && (
-          <div style={styles.sharePopover}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <p style={{ margin: 0, fontWeight: 700, color: "var(--paper)" }}>Your Referral Link</p>
-              <button onClick={() => setSharePopover(false)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 18 }}>✕</button>
-            </div>
-            <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--muted)" }}>
-              Code: <strong style={{ color: "var(--gold)" }}>{shareLinkData.referralCode}</strong> — share the link below:
-            </p>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                readOnly
-                value={shareLinkData.shareLink}
-                style={{ flex: 1, padding: "9px 12px", borderRadius: 8, border: "1px solid #d8d0bd", background: "#fffdf8", color: "#1e2030", fontSize: 13 }}
-                onClick={(e) => e.target.select()}
-              />
-              <button onClick={handleCopyLink} style={styles.copyBtn}>
-                {copied ? "✓ Copied!" : "Copy"}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Proceed to Cart button bottom */}
-      {event.ticketTypes?.length > 0 && (
-        <div style={{ textAlign: "center", marginTop: 20 }}>
-          <button
-            style={styles.goToCartBtn}
-            onClick={() => navigate(`/o/${orgSlug}/cart/${eventId}`)}
-          >
-            Go to Cart →
+        {event.ticketTypes?.length > 0 && (
+          <button className="ed-go-cart-btn" onClick={() => navigate(`/o/${orgSlug}/cart/${eventId}`)}>
+            Proceed to Cart →
           </button>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Share Card */}
+      <ShareCard
+        user={user}
+        shareLoading={shareLoading}
+        sharePopover={sharePopover}
+        shareLinkData={shareLinkData}
+        copied={copied}
+        onShare={handleShare}
+        onCopy={handleCopyLink}
+        onClose={() => setSharePopover(false)}
+      />
     </div>
   );
 };
 
-const styles = {
-  topBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 16,
-    alignItems: "flex-start",
-    marginBottom: 20,
-  },
-  kicker: {
-    margin: 0,
-    textTransform: "uppercase",
-    letterSpacing: "0.12em",
-    fontSize: 12,
-    color: "var(--muted)",
-  },
-  slug: {
-    margin: "8px 0 0",
-    color: "var(--muted)",
-  },
-  heroCard: {
-    overflow: "hidden",
-    padding: 0,
-  },
-  heroImage: {
-    width: "100%",
-    height: 340,
-    objectFit: "cover",
-    display: "block",
-  },
-  heroFallback: {
-    width: "100%",
-    height: 340,
-    background:
-      "linear-gradient(135deg, rgba(231, 168, 73, 0.35), rgba(25, 36, 54, 0.95))",
-  },
-  heroBody: {
-    padding: 20,
-  },
-  badges: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 14,
-  },
-  title: {
-    margin: "0 0 8px",
-    color: "var(--paper)",
-    fontSize: 32,
-  },
-  meta: {
-    margin: "0 0 10px",
-    color: "var(--muted)",
-  },
-  description: {
-    margin: 0,
-    lineHeight: 1.6,
-  },
-  ticketRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 12,
-    background: "rgba(247, 242, 231, 0.04)",
-    border: "1px solid rgba(247, 242, 231, 0.08)",
-  },
-  addBtn: {
-    padding: "8px 14px",
-    background: "var(--gold)",
-    color: "var(--navy)",
-    border: "none",
-    borderRadius: 8,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontSize: 13,
-    whiteSpace: "nowrap",
-  },
-  goToCartBtn: {
-    padding: "12px 28px",
-    background: "var(--gold)",
-    color: "var(--navy)",
-    border: "none",
-    borderRadius: 12,
-    fontSize: 16,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  price: {
-    color: "var(--paper)",
-    fontWeight: 700,
-    fontSize: 18,
-  },
-  shareCard: {
-    marginTop: 20,
-    background: "linear-gradient(135deg, rgba(201,154,60,0.08), rgba(25,36,54,0.6))",
-    border: "1px solid rgba(201,154,60,0.25)",
-  },
-  shareBtn: {
-    padding: "10px 20px",
-    background: "var(--gold)",
-    color: "var(--navy)",
-    border: "none",
-    borderRadius: 10,
-    fontWeight: 700,
-    fontSize: 14,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-  sharePopover: {
-    marginTop: 16,
-    padding: "16px",
-    background: "rgba(25, 36, 54, 0.95)",
-    borderRadius: 12,
-    border: "1px solid rgba(201,154,60,0.3)",
-  },
-  copyBtn: {
-    padding: "9px 16px",
-    background: "var(--gold)",
-    color: "var(--navy)",
-    border: "none",
-    borderRadius: 8,
-    fontWeight: 700,
-    fontSize: 13,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-};
+/* ── Share & Earn Card (reused in both modes) ─────────────────────── */
+const ShareCard = ({ user, shareLoading, sharePopover, shareLinkData, copied, onShare, onCopy, onClose }) => (
+  <div className="ed-share-card">
+    <div className="ed-share-row">
+      <div>
+        <p className="ed-share-title">🎁 Share &amp; Earn 10% Off</p>
+        <p className="ed-share-sub">
+          Share this event. When a friend buys a ticket, you earn a 10% discount on your next purchase.
+        </p>
+      </div>
+      {user ? (
+        <button className="ed-share-btn" onClick={onShare} disabled={shareLoading}>
+          {shareLoading ? "Loading…" : "🔗 Get My Link"}
+        </button>
+      ) : (
+        <Link to="/login" className="ed-share-btn" style={{ textDecoration: "none" }}>
+          Login to Share &amp; Earn
+        </Link>
+      )}
+    </div>
+
+    {sharePopover && shareLinkData && (
+      <div className="ed-share-popover">
+        <div className="ed-share-pop-header">
+          <p className="ed-share-pop-title">Your Referral Link</p>
+          <button onClick={onClose} className="ed-share-pop-close">✕</button>
+        </div>
+        <p className="ed-share-pop-code">
+          Code: <strong>{shareLinkData.referralCode}</strong>
+        </p>
+        <div className="ed-share-pop-input-row">
+          <input readOnly value={shareLinkData.shareLink} className="ed-share-pop-input" onClick={(e) => e.target.select()} />
+          <button onClick={onCopy} className="ed-share-pop-copy">{copied ? "✓ Copied!" : "Copy"}</button>
+        </div>
+      </div>
+    )}
+  </div>
+);
 
 export default EventDetail;

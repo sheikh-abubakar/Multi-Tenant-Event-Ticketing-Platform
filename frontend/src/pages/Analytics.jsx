@@ -4,6 +4,7 @@ import { Html5Qrcode } from "html5-qrcode";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import apiClient from "../api/client";
+import { cachedGet } from "../api/requestCache";
 import {
   XAxis,
   YAxis,
@@ -67,10 +68,10 @@ const Analytics = () => {
     setLoading(true);
     setError("");
 
-    // Fetch org wide analytics and org events list
+    // Fetch org wide analytics and org events list (cached for 30s)
     Promise.all([
-      apiClient.get(`/o/${orgSlug}/analytics`),
-      apiClient.get(`/o/${orgSlug}/events`),
+      cachedGet(`/o/${orgSlug}/analytics`),
+      cachedGet(`/o/${orgSlug}/events`),
     ])
       .then(([analyticsRes, eventsRes]) => {
         if (!cancelled) {

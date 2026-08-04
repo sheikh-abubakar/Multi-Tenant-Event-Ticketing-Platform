@@ -1,0 +1,648 @@
+/* ─── EventDetail.css ────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+
+.ed-page, .ed-seatmap-page {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 4px;
+  color: #f7f2e7;
+}
+
+/* Back Link */
+.ed-back {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: rgba(247, 242, 231, 0.45);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+.ed-back:hover {
+  color: #c99a3c;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   ── SEATMAP LANDING HERO (Premium Upgrade) ──
+   ───────────────────────────────────────────────────────────────────── */
+.ed-seatmap-hero {
+  border-radius: 24px;
+  overflow: hidden;
+  background: rgba(20, 22, 43, 0.65);
+  border: 1px solid rgba(247, 242, 231, 0.08);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  margin-bottom: 24px;
+}
+
+.ed-sm-banner-wrap {
+  position: relative;
+  height: 320px;
+  overflow: hidden;
+}
+.ed-sm-banner-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ed-sm-banner-fallback {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(201, 154, 60, 0.25) 0%, rgba(25, 36, 54, 0.95) 100%);
+}
+.ed-sm-banner-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(14, 17, 35, 1) 0%, rgba(14, 17, 35, 0.4) 60%, transparent 100%);
+}
+
+.ed-sm-content {
+  padding: 32px;
+  margin-top: -60px;
+  position: relative;
+}
+
+.ed-sm-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.ed-sm-badge {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.ed-sm-badge--seat {
+  background: rgba(201, 154, 60, 0.15);
+  border: 1px solid rgba(201, 154, 60, 0.3);
+  color: #c99a3c;
+}
+.ed-sm-badge--live {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+}
+
+.ed-sm-title {
+  font-size: clamp(28px, 4vw, 38px);
+  font-weight: 800;
+  color: #f7f2e7;
+  margin: 0 0 24px;
+  line-height: 1.15;
+}
+
+/* Grid of mini Meta cards */
+.ed-sm-meta-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.ed-sm-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: rgba(247, 242, 231, 0.03);
+  border: 1px solid rgba(247, 242, 231, 0.05);
+}
+.ed-sm-meta-icon {
+  font-size: 20px;
+  opacity: 0.85;
+}
+.ed-sm-meta-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(247, 242, 231, 0.4);
+}
+.ed-sm-meta-val {
+  margin: 2px 0 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f7f2e7;
+}
+
+.ed-sm-desc {
+  font-size: 14.5px;
+  color: rgba(247, 242, 231, 0.7);
+  line-height: 1.6;
+  margin: 0 0 32px;
+}
+
+/* Big Interactive CTA */
+.ed-sm-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 16px 32px;
+  background: linear-gradient(135deg, #c99a3c 0%, #e5b95f 100%);
+  color: #0e1123;
+  text-decoration: none;
+  font-size: 16px;
+  font-weight: 800;
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(201, 154, 60, 0.35);
+  transition: all 0.25s ease;
+}
+.ed-sm-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 35px rgba(201, 154, 60, 0.5);
+  background: linear-gradient(135deg, #e5b95f 0%, #f0cd83 100%);
+}
+.ed-sm-cta-arrow {
+  transition: transform 0.2s ease;
+}
+.ed-sm-cta:hover .ed-sm-cta-arrow {
+  transform: translateX(4px);
+}
+
+.ed-sm-hint {
+  text-align: center;
+  font-size: 12px;
+  color: rgba(247, 242, 231, 0.4);
+  margin: 14px 0 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   ── STANDARD HERO SECTION ──
+   ───────────────────────────────────────────────────────────────────── */
+.ed-hero {
+  border-radius: 24px;
+  overflow: hidden;
+  background: rgba(20, 22, 43, 0.65);
+  border: 1px solid rgba(247, 242, 231, 0.08);
+  margin-bottom: 24px;
+}
+.ed-hero-banner-wrap {
+  position: relative;
+  height: 380px;
+}
+.ed-hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ed-hero-fallback {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(201, 154, 60, 0.25) 0%, rgba(25, 36, 54, 0.95) 100%);
+}
+.ed-hero-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(14, 17, 35, 1) 0%, rgba(14, 17, 35, 0.4) 60%, transparent 100%);
+}
+
+.ed-hero-overlay-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 32px;
+}
+.ed-hero-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.ed-hero-badge {
+  background: rgba(14, 17, 35, 0.7);
+  border: 1px solid rgba(247, 242, 231, 0.12);
+  color: rgba(247, 242, 231, 0.85);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
+}
+.ed-hero-badge--tickets {
+  background: rgba(201, 154, 60, 0.25);
+  border-color: rgba(201, 154, 60, 0.4);
+  color: #e5b95f;
+}
+.ed-hero-title {
+  font-size: clamp(26px, 4vw, 36px);
+  font-weight: 800;
+  color: #f7f2e7;
+  margin: 0;
+  line-height: 1.15;
+}
+
+.ed-hero-desc-wrap {
+  padding: 24px 32px 32px;
+}
+.ed-hero-desc {
+  font-size: 14.5px;
+  color: rgba(247, 242, 231, 0.75);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   ── TICKETING PANEL ──
+   ───────────────────────────────────────────────────────────────────── */
+.ed-ticket-panel {
+  background: rgba(20, 22, 43, 0.65);
+  border: 1px solid rgba(247, 242, 231, 0.08);
+  border-radius: 20px;
+  padding: 28px;
+  margin-bottom: 24px;
+}
+
+.ed-ticket-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+.ed-ticket-panel-title {
+  font-size: 19px;
+  font-weight: 800;
+  color: #f7f2e7;
+  margin: 0;
+}
+.ed-view-cart-btn {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #c99a3c;
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(201, 154, 60, 0.08);
+  border: 1px solid rgba(201, 154, 60, 0.15);
+  transition: all 0.2s;
+}
+.ed-view-cart-btn:hover {
+  background: rgba(201, 154, 60, 0.15);
+  border-color: rgba(201, 154, 60, 0.3);
+}
+
+.ed-cart-msg {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+.ed-cart-msg--success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+.ed-cart-msg--error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.ed-tickets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.ed-ticket-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 24px;
+  border-radius: 14px;
+  background: rgba(247, 242, 231, 0.02);
+  border: 1px solid rgba(247, 242, 231, 0.06);
+  transition: background 0.2s, border-color 0.2s;
+}
+.ed-ticket-row:hover {
+  background: rgba(247, 242, 231, 0.04);
+  border-color: rgba(247, 242, 231, 0.12);
+}
+.ed-ticket-row--sold {
+  opacity: 0.5;
+}
+
+.ed-ticket-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ed-ticket-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f7f2e7;
+  margin: 0;
+}
+
+/* Linear booking statistics progress indicator */
+.ed-ticket-fill-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ed-ticket-fill-track {
+  width: 80px;
+  height: 4px;
+  border-radius: 10px;
+  background: rgba(247, 242, 231, 0.1);
+  overflow: hidden;
+}
+.ed-ticket-fill-fill {
+  height: 100%;
+  background: #c99a3c;
+  border-radius: 10px;
+}
+.ed-ticket-fill-label {
+  font-size: 11.5px;
+  color: rgba(247, 242, 231, 0.45);
+}
+
+.ed-ticket-price-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.ed-ticket-price {
+  font-size: 20px;
+  font-weight: 800;
+  color: #c99a3c;
+}
+.ed-ticket-per {
+  font-size: 11px;
+  color: rgba(247, 242, 231, 0.4);
+  text-transform: uppercase;
+}
+
+.ed-ticket-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Qty stepper styles */
+.ed-qty-stepper {
+  display: flex;
+  align-items: center;
+  background: rgba(247, 242, 231, 0.05);
+  border: 1px solid rgba(247, 242, 231, 0.15);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ed-qty-btn {
+  background: transparent;
+  border: none;
+  color: #f7f2e7;
+  font-size: 16px;
+  width: 32px;
+  height: 36px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.ed-qty-btn:hover {
+  background: rgba(247, 242, 231, 0.08);
+}
+.ed-qty-val {
+  font-size: 13.5px;
+  font-weight: 700;
+  width: 28px;
+  text-align: center;
+}
+
+.ed-add-btn {
+  padding: 9px 18px;
+  background: #f7f2e7;
+  color: #0e1123;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.ed-add-btn:hover:not(:disabled) {
+  background: #c99a3c;
+  color: #0e1123;
+}
+.ed-add-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ed-ticket-sold-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.ed-no-tickets {
+  text-align: center;
+  color: rgba(247, 242, 231, 0.4);
+  padding: 24px 0;
+  margin: 0;
+}
+
+.ed-go-cart-btn {
+  width: 100%;
+  padding: 14px 28px;
+  background: #c99a3c;
+  color: #0e1123;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(201, 154, 60, 0.15);
+  transition: all 0.25s;
+  margin-top: 10px;
+}
+.ed-go-cart-btn:hover {
+  background: #e5b95f;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(201, 154, 60, 0.25);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   ── SHARE & REFERRALS CARD ──
+   ───────────────────────────────────────────────────────────────────── */
+.ed-share-card {
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(201, 154, 60, 0.08) 0%, rgba(20, 22, 43, 0.75) 100%);
+  border: 1px solid rgba(201, 154, 60, 0.25);
+  padding: 24px 28px;
+  margin-bottom: 24px;
+}
+
+.ed-share-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.ed-share-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #c99a3c;
+  margin: 0 0 4px;
+}
+.ed-share-sub {
+  font-size: 13px;
+  color: rgba(247, 242, 231, 0.55);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 580px;
+}
+
+.ed-share-btn {
+  padding: 10px 20px;
+  background: #c99a3c;
+  color: #0e1123;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.ed-share-btn:hover {
+  background: #e5b95f;
+}
+
+/* Referral details popover */
+.ed-share-popover {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px dashed rgba(247, 242, 231, 0.15);
+}
+
+.ed-share-pop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.ed-share-pop-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f7f2e7;
+  margin: 0;
+}
+.ed-share-pop-close {
+  background: none;
+  border: none;
+  color: rgba(247, 242, 231, 0.4);
+  font-size: 16px;
+  cursor: pointer;
+}
+.ed-share-pop-close:hover {
+  color: #f7f2e7;
+}
+
+.ed-share-pop-code {
+  font-size: 12.5px;
+  color: rgba(247, 242, 231, 0.5);
+  margin: 0 0 12px;
+}
+.ed-share-pop-code strong {
+  color: #c99a3c;
+}
+
+.ed-share-pop-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.ed-share-pop-input {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(247, 242, 231, 0.15);
+  color: #f7f2e7;
+  font-size: 13px;
+  outline: none;
+  font-family: monospace;
+}
+.ed-share-pop-copy {
+  padding: 10px 18px;
+  background: #c99a3c;
+  color: #0e1123;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.ed-share-pop-copy:hover {
+  background: #e5b95f;
+}
+
+/* ── Skeletons / Errors ── */
+.ed-loading {
+  max-width: 980px;
+  margin: 0 auto;
+}
+.ed-skeleton-banner {
+  height: 320px;
+  background: rgba(247, 242, 231, 0.03);
+  border-radius: 24px;
+  border: 1px solid rgba(247, 242, 231, 0.05);
+}
+.ed-skeleton-body {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ed-skeleton-line {
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(247, 242, 231, 0.05);
+}
+.w-40 { width: 40%; }
+.w-70 { width: 70%; }
+.w-55 { width: 55%; }
+
+.ed-error-wrap {
+  max-width: 640px;
+  margin: 40px auto;
+}
+.ed-error-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 40px;
+  border-radius: 20px;
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  text-align: center;
+  color: #f87171;
+}
+
+@media (max-width: 768px) {
+  .ed-sm-meta-row { grid-template-columns: 1fr; }
+  .ed-ticket-row { grid-template-columns: 1fr; gap: 14px; }
+  .ed-ticket-price-col { align-items: flex-start; }
+}

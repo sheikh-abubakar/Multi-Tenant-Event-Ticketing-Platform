@@ -17,6 +17,7 @@ router.get("/manage", authenticate, resolveTenant, loadMembership, filterByAssig
 
 // Individual event by ID (public)
 router.get("/:eventId", resolveTenant, eventController.getOne);
+router.post("/:eventId/verify-access", resolveTenant, eventController.verifyAccess);
 
 // Organizer writes — permission-gated and venue-filtered for staff
 router.post("/", authenticate, resolveTenant, loadMembership, checkPermission("events:create"), upload.single("banner"), eventController.create);

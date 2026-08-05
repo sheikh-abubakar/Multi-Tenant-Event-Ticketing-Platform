@@ -22,15 +22,29 @@ const EventDetail = () => {
   const [shareLoading, setShareLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Protected Event states
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [unlockCodeInput, setUnlockCodeInput] = useState("");
+  const [unlockError, setUnlockError] = useState("");
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [reloadTrigger, setReloadTrigger] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       setError("");
       try {
+        const savedCodes = JSON.parse(sessionStorage.getItem("unlockedCodes") || "{}");
+        const eventCode = savedCodes[eventId] || "";
+        const headers = {};
+        if (eventCode) {
+          headers["x-event-access-code"] = eventCode;
+        }
+
         const [infoRes, eventRes] = await Promise.all([
           cachedGet(`/o/${orgSlug}/info`, 60_000),
-          cachedGet(`/o/${orgSlug}/events/${eventId}`, 30_000),
+          apiClient.get(`/o/${orgSlug}/events/${eventId}`, { headers }),
         ]);
         if (!cancelled) {
           setOrganization(infoRes.data.organization);
@@ -44,7 +58,7 @@ const EventDetail = () => {
     };
     load();
     return () => { cancelled = true; };
-  }, [eventId, orgSlug]);
+  }, [eventId, orgSlug, reloadTrigger]);
 
   useEffect(() => {
     const refCode = searchParams.get("ref");
@@ -117,7 +131,162 @@ const EventDetail = () => {
 
   if (!event) return null;
 
+  const handleUnlockSubmit = async (e) => {
+    e.preventDefault();
+    setVerifyingCode(true);
+    setUnlockError("");
+    try {
+      await apiClient.post(`/o/${orgSlug}/events/${eventId}/verify-access`, {
+        accessCode: unlockCodeInput,
+      });
+      const savedCodes = JSON.parse(sessionStorage.getItem("unlockedCodes") || "{}");
+      savedCodes[eventId] = unlockCodeInput;
+      sessionStorage.setItem("unlockedCodes", JSON.stringify(savedCodes));
+
+      setShowUnlockModal(false);
+      setUnlockCodeInput("");
+      setReloadTrigger((prev) => prev + 1);
+    } catch (err) {
+      setUnlockError(err.response?.data?.message || "Invalid access code.");
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
+
+  const renderUnlockModal = () => (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(0,0,0,0.85)",
+        backdropFilter: "blur(12px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 9999,
+        padding: 16,
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          width: "100%",
+          maxWidth: 420,
+          background: "linear-gradient(155deg, #181b35 0%, #111326 100%)",
+          border: "1px solid rgba(201, 154, 60, 0.3)",
+          borderRadius: 20,
+          padding: 28,
+          boxShadow: "0 24px 60px rgba(0,0,0,0.7)",
+          color: "var(--paper)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h3 className="font-display text-2xl" style={{ margin: 0, color: "var(--gold)" }}>🔒 Unlock Event</h3>
+          <button
+            onClick={() => { setShowUnlockModal(false); setUnlockError(""); }}
+            style={{ border: "none", background: "transparent", color: "var(--muted)", fontSize: 20, cursor: "pointer" }}
+          >
+            &times;
+          </button>
+        </div>
+
+        <form onSubmit={handleUnlockSubmit}>
+          <label style={{ display: "block", marginBottom: 16, fontSize: 13, fontWeight: 600, color: "var(--paper, #ffffff)" }}>
+            Enter Security Code
+            <input
+              type="text"
+              required
+              value={unlockCodeInput}
+              onChange={(e) => setUnlockCodeInput(e.target.value)}
+              placeholder="Private access code..."
+              className="w-full mt-2 rounded-md border border-black/15 px-3 py-2 text-ink-text bg-white"
+              style={{ fontSize: 14 }}
+              autoFocus
+            />
+          </label>
+
+          {unlockError && (
+            <div style={{ marginBottom: 16, padding: "8px 12px", background: "rgba(192, 80, 62, 0.12)", border: "1px solid var(--danger)", borderRadius: 8, fontSize: 12, color: "#ffa0a0" }}>
+              ⚠️ {unlockError}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => { setShowUnlockModal(false); setUnlockError(""); }}
+              className="rounded-lg border px-4 py-2 text-sm"
+              style={{ background: "transparent", color: "var(--paper)", border: "1px solid rgba(255,255,255,0.15)" }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={verifyingCode}
+              className="rounded-lg bg-gold px-5 py-2 font-bold text-ink text-sm"
+            >
+              {verifyingCode ? "Verifying..." : "Verify & Unlock"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
   const { full: dateStr, time } = formatEventDate(event.dateTime);
+
+  if (event.isProtected) {
+    return (
+      <div className="ed-page">
+        <Link to={`/o/${orgSlug}/events`} className="ed-back">← Back to events</Link>
+        <div className="ed-hero" style={{ filter: "blur(4px)", pointerEvents: "none" }}>
+          <div className="ed-hero-banner-wrap">
+            {event.bannerImageUrl ? (
+              <img src={event.bannerImageUrl} alt={event.name} className="ed-hero-img" />
+            ) : (
+              <div className="ed-hero-fallback" />
+            )}
+            <div className="ed-hero-gradient" />
+            <div className="ed-hero-overlay-info">
+              <h1 className="ed-hero-title">{event.name}</h1>
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: -60,
+            position: "relative",
+            zIndex: 10,
+            background: "rgba(20, 22, 43, 0.55)",
+            backdropFilter: "blur(16px)",
+            border: "1px solid rgba(201, 154, 60, 0.25)",
+            borderRadius: 20,
+            padding: "48px 32px",
+            textAlign: "center",
+            boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
+            maxWidth: 600,
+            margin: "0 auto 40px",
+          }}
+        >
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+          <h2 className="font-display text-3xl" style={{ color: "var(--paper)", margin: "0 0 12px" }}>Protected Event</h2>
+          <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.6, margin: "0 0 24px" }}>
+            This is a private event. You must provide a valid security code to unlock the seating layout and purchase tickets.
+          </p>
+          <button
+            onClick={() => setShowUnlockModal(true)}
+            className="ed-sm-cta"
+            style={{ margin: "0 auto", padding: "12px 32px", fontSize: 15, fontWeight: 700 }}
+          >
+            🔑 Unlock with Access Code
+          </button>
+        </div>
+
+        {showUnlockModal && renderUnlockModal()}
+      </div>
+    );
+  }
 
   // ── Seatmap mode ─────────────────────────────────────────────────────
   if (event.purchaseMode === "seatmap") {

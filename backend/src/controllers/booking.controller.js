@@ -1,6 +1,7 @@
 const stripe = require("../config/stripe");
 const bookingService = require("../services/booking.service");
 const { recordPlatformAudit } = require("../utils/platformAudit");
+const { invalidateOrgCache } = require("../services/analytics.service");
 
 const create = async (req, res) => {
   try {
@@ -108,7 +109,21 @@ const verify = async (req, res) => {
       targetId: booking._id,
       metadata: { buyerEmail: booking.buyerEmail },
     });
+    // Bust the analytics cache so the organizer sees fresh verified counts immediately
+    invalidateOrgCache(booking.organizationId.toString());
     return res.json({ message: "Ticket verified successfully", booking });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+const getBundleBookings = async (req, res) => {
+  try {
+    const bookings = await bookingService.getBundleBookings(
+      req.params.bundleBookingId,
+      req.organizationId
+    );
+    return res.json({ bookings });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
@@ -122,4 +137,5 @@ module.exports = {
   getByEvent,
   handleWebhook,
   verify,
+  getBundleBookings,
 };

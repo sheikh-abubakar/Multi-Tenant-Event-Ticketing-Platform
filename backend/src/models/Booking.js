@@ -244,12 +244,31 @@ const bookingSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // ─── Bundle Booking fields ───────────────────────────────────────
+    bundleBookingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      index: true,
+    },
+    isBundleBooking: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true },
 );
 
 bookingSchema.index({ organizationId: 1, eventId: 1 });
 bookingSchema.index({ buyerEmail: 1, createdAt: -1 });
+
+// ── Analytics compound indexes ────────────────────────────────────────────
+// Every analytics aggregate starts with { organizationId, status } — without
+// a compound index Mongo falls back to the single-field organisationId index
+// and scans the entire org's booking collection to filter status in memory.
+// These covering indexes let all 11 aggregation pipelines use index-only scans.
+bookingSchema.index({ organizationId: 1, status: 1, createdAt: -1 });  // recent bookings sort
+bookingSchema.index({ organizationId: 1, status: 1, totalAmount: 1 }); // revenue sums
+bookingSchema.index({ organizationId: 1, eventId: 1, status: 1 });     // per-event analytics
 
 // COMPOUND indexes for the booking scheduler's two periodic sweeps
 // (services/bookingScheduler.js), which run every 5 seconds against

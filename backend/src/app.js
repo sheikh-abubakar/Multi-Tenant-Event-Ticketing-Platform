@@ -25,6 +25,7 @@ const referralRoutes = require("./routes/referral.routes");
 const couponRoutes = require("./routes/coupon.routes");
 const platformAdminRoutes = require("./routes/platformAdmin.routes");
 const aiRoutes = require("./routes/ai.routes");
+const bundleRoutes = require("./routes/bundle.routes");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -61,14 +62,14 @@ app.use(express.json({ limit: "1mb" }));
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 1000,
-  standardHeaders: "draft-8",
+  standardHeaders: "draft-7",
   legacyHeaders: false,
 });
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
-  standardHeaders: "draft-8",
+  standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { message: "Too many authentication attempts. Please try again in 15 minutes." },
 });
@@ -109,6 +110,7 @@ app.use("/api/o/:orgSlug/venues", venueRoutes);
 app.use("/api/o/:orgSlug/venues", seatmapRoutes.templates);
 app.use("/api/o/:orgSlug/events", eventRoutes);
 app.use("/api/o/:orgSlug/events", seatmapRoutes.eventMaps);
+app.use("/api/o/:orgSlug/bundles", bundleRoutes);
 app.use("/api/o/:orgSlug/events/:eventId/bookings", bookingRoutes);
 // Simpler path for confirmation — Stripe redirects here without eventId
 app.use("/api/o/:orgSlug/bookings", bookingConfirmRoutes);

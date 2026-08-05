@@ -42,6 +42,14 @@ const PlatformOrganizationDetail = lazy(() => import("./pages/PlatformOrganizati
 const PlatformActivity = lazy(() => import("./pages/PlatformActivity"));
 const PlatformAIAssistant = lazy(() => import("./pages/PlatformAIAssistant"));
 
+// Event Bundling components
+const Bundles = lazy(() => import("./pages/Bundles"));
+const CreateBundle = lazy(() => import("./pages/CreateBundle"));
+const BundleDetail = lazy(() => import("./pages/BundleDetail"));
+const BundleSeatSelection = lazy(() => import("./pages/BundleSeatSelection"));
+const BundleCheckoutPage = lazy(() => import("./pages/BundleCheckoutPage"));
+const EditBundle = lazy(() => import("./pages/EditBundle"));
+
 function App() {
   const [searchParams] = useSearchParams();
   const [appReady, setAppReady] = useState(false);
@@ -160,10 +168,37 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/o/:orgSlug/manage/bundles"
+          element={
+            <ProtectedRoute>
+              <Bundles />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/o/:orgSlug/manage/bundles/new"
+          element={
+            <ProtectedRoute>
+              <CreateBundle />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/o/:orgSlug/manage/bundles/:bundleId/edit"
+          element={
+            <ProtectedRoute>
+              <EditBundle />
+            </ProtectedRoute>
+          }
+        />
         {/* Public buyer-facing routes */}
         <Route path="/o/:orgSlug/events" element={<PublicEvents />} />
         <Route path="/o/:orgSlug/events/:eventId" element={<EventDetail />} />
         <Route path="/o/:orgSlug/events/:eventId/seats" element={<SeatSelection />} />
+        <Route path="/o/:orgSlug/bundles/:bundleId" element={<BundleDetail />} />
+        <Route path="/o/:orgSlug/bundles/:bundleId/seats" element={<BundleSeatSelection />} />
+        <Route path="/o/:orgSlug/checkout/bundle" element={<BundleCheckoutPage />} />
         
         {/* Public invite acceptance (no auth) */}
         <Route path="/o/:orgSlug/accept-invite" element={<AcceptInvite />} />

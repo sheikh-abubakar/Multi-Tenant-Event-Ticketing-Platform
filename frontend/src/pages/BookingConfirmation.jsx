@@ -8,6 +8,7 @@ const BookingConfirmation = () => {
   const sessionId = searchParams.get("session_id");
 
   const [booking, setBooking] = useState(null);
+  const [bundleBookings, setBundleBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -30,8 +31,16 @@ const BookingConfirmation = () => {
         const res = await apiClient.get(
           `/o/${orgSlug}/bookings/${bookingId}`,
         );
+        
         if (!cancelled) {
-          setBooking(res.data.booking);
+          const mainBooking = res.data.booking;
+          setBooking(mainBooking);
+
+          // If this is a bundle, fetch all linked bookings
+          if (mainBooking.isBundleBooking && mainBooking.bundleBookingId) {
+            const bundleRes = await apiClient.get(`/o/${orgSlug}/bookings/bundle/${mainBooking.bundleBookingId}`);
+            setBundleBookings(bundleRes.data.bookings || []);
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -41,7 +50,13 @@ const BookingConfirmation = () => {
               `/o/${orgSlug}/bookings/${bookingId}`,
             );
             if (!cancelled) {
-              setBooking(res.data.booking);
+              const mainBooking = res.data.booking;
+              setBooking(mainBooking);
+
+              if (mainBooking.isBundleBooking && mainBooking.bundleBookingId) {
+                const bundleRes = await apiClient.get(`/o/${orgSlug}/bookings/bundle/${mainBooking.bundleBookingId}`);
+                setBundleBookings(bundleRes.data.bookings || []);
+              }
             }
           } catch (fetchErr) {
             if (!cancelled) {
@@ -174,99 +189,101 @@ const BookingConfirmation = () => {
         </div>
       </div>
 
-      {/* ── Ticket Summary ── */}
-      <div className="card confirmation-tickets-card" style={{ marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0, color: "var(--text)" }}>Ticket Summary</h3>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.1)" }}>
-              <th
-                style={{
-                  textAlign: "left",
-                  padding: "8px 4px",
-                  color: "var(--muted)",
-                }}
-              >
-                Ticket Type
-              </th>
-              <th
-                style={{
-                  textAlign: "center",
-                  padding: "8px 4px",
-                  color: "var(--muted)",
-                }}
-              >
-                Qty
-              </th>
-              <th
-                style={{
-                  textAlign: "right",
-                  padding: "8px 4px",
-                  color: "var(--muted)",
-                }}
-              >
-                Amount
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {(booking.items || []).map((item, idx) => (
-              <tr
-                key={idx}
-                style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.06)" }}
-              >
-                <td style={{ padding: "10px 4px", color: "var(--text)" }}>
-                  {item.ticketTypeName}
-                </td>
-                <td
-                  style={{
-                    padding: "10px 4px",
-                    textAlign: "center",
-                    color: "var(--text)",
-                  }}
-                >
-                  {item.quantity}
-                </td>
-                <td
-                  style={{
-                    padding: "10px 4px",
-                    textAlign: "right",
-                    fontWeight: 700,
-                    color: "var(--text)",
-                  }}
-                >
-                  $ {item.lineTotal}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── QR Code ── */}
-      {booking.qrCodeUrl && (
-        <div
-          className="card confirmation-qr-card"
-          style={{ marginBottom: 16, textAlign: "center" }}
-        >
-          <h3 style={{ marginTop: 0, color: "var(--text)" }}>Your QR Code</h3>
-          <p style={{ color: "var(--muted)", fontSize: 14, marginBottom: 16 }}>
-            Show this at the event entrance for scanning.
-          </p>
-          <img
-            src={booking.qrCodeUrl}
-            alt="Booking QR Code"
-            style={{
-              display: "block",
-              margin: "0 auto",
-              maxWidth: 220,
-              border: "3px solid var(--gold)",
-              borderRadius: 12,
-              padding: 8,
-              background: "white",
-            }}
-          />
+      {/* ── Ticket Summary & QR Code(s) ── */}
+      {booking.isBundleBooking && bundleBookings.length > 0 ? (
+        <div style={{ display: "grid", gap: 16 }}>
+          <h2 style={{ color: "var(--paper)", margin: "10px 0 0", fontSize: 18 }}>Your Bundle Tickets</h2>
+          {bundleBookings.map((b, idx) => (
+            <div key={b._id} className="card" style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ flex: 1, minWidth: 260 }}>
+                <span className="badge" style={{ background: "rgba(201,154,60,0.15)", color: "#c99a3c", marginBottom: 8, display: "inline-block" }}>
+                  Event {idx + 1}
+                </span>
+                <h3 style={{ margin: "0 0 6px", color: "var(--text)" }}>{b.eventName}</h3>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                  📅 {b.eventId?.dateTime ? new Date(b.eventId.dateTime).toLocaleString() : "TBD"}
+                </p>
+                <div style={{ marginTop: 12 }}>
+                  <p style={styles.label}>Selected Seats</p>
+                  <p style={{ ...styles.value, fontWeight: 700 }}>
+                    {b.selectedSeats?.map(s => `${s.sectionName} — ${s.seatName}`).join(", ")}
+                  </p>
+                </div>
+              </div>
+              {b.qrCodeUrl && (
+                <div style={{ textAlign: "center" }}>
+                  <img
+                    src={b.qrCodeUrl}
+                    alt="Ticket QR Code"
+                    style={{
+                      display: "block",
+                      maxWidth: 130,
+                      border: "2px solid var(--gold)",
+                      borderRadius: 8,
+                      padding: 4,
+                      background: "white",
+                    }}
+                  />
+                  <span style={{ fontSize: 10, color: "var(--muted)", marginTop: 4, display: "block" }}>
+                    Scan at Entrance
+                  </span>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
+      ) : (
+        <>
+          <div className="card confirmation-tickets-card" style={{ marginBottom: 16 }}>
+            <h3 style={{ marginTop: 0, color: "var(--text)" }}>Ticket Summary</h3>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.1)" }}>
+                  <th style={{ textAlign: "left", padding: "8px 4px", color: "var(--muted)" }}>
+                    Ticket Type
+                  </th>
+                  <th style={{ textAlign: "center", padding: "8px 4px", color: "var(--muted)" }}>
+                    Qty
+                  </th>
+                  <th style={{ textAlign: "right", padding: "8px 4px", color: "var(--muted)" }}>
+                    Amount
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {(booking.items || []).map((item, idx) => (
+                  <tr key={idx} style={{ borderBottom: "1px solid rgba(247, 242, 231, 0.06)" }}>
+                    <td style={{ padding: "10px 4px", color: "var(--text)" }}>{item.ticketTypeName}</td>
+                    <td style={{ padding: "10px 4px", textAlign: "center", color: "var(--text)" }}>{item.quantity}</td>
+                    <td style={{ padding: "10px 4px", textAlign: "right", fontWeight: 700, color: "var(--text)" }}>$ {item.lineTotal}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {booking.qrCodeUrl && (
+            <div className="card confirmation-qr-card" style={{ marginBottom: 16, textAlign: "center" }}>
+              <h3 style={{ marginTop: 0, color: "var(--text)" }}>Your QR Code</h3>
+              <p style={{ color: "var(--muted)", fontSize: 14, marginBottom: 16 }}>
+                Show this at the event entrance for scanning.
+              </p>
+              <img
+                src={booking.qrCodeUrl}
+                alt="Booking QR Code"
+                style={{
+                  display: "block",
+                  margin: "0 auto",
+                  maxWidth: 220,
+                  border: "3px solid var(--gold)",
+                  borderRadius: 12,
+                  padding: 8,
+                  background: "white",
+                }}
+              />
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Browse More ── */}

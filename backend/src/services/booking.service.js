@@ -215,6 +215,73 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
     event.markModified("selectedSeatMap");
     await event.save({ session: dbSession });
 
+    if (finalAmount === 0) {
+      booking.status = "confirmed";
+      booking.paymentStatus = "paid";
+
+      const qrData = JSON.stringify({
+        bookingId: booking._id.toString(),
+        confirmationCode: booking.confirmationCode,
+        eventId: booking.eventId.toString(),
+        buyerEmail: booking.buyerEmail,
+      });
+      try {
+        booking.qrCodeUrl = await QRCode.toDataURL(qrData);
+      } catch (qrError) {
+        console.error("QR Code generation failed:", qrError.message);
+      }
+
+      if (booking.selectedSeats?.length) {
+        for (const reference of booking.selectedSeats) {
+          const seat = event.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+          if (seat) {
+            seat.status = "sold";
+          }
+        }
+        event.markModified("selectedSeatMap");
+        await event.save({ session: dbSession });
+      }
+
+      if (walletAmount > 0) {
+        const targetUserId = userId || (await User.findOne({ email: booking.buyerEmail }).session(dbSession))?._id;
+        if (targetUserId) {
+          await walletService.debit(
+            targetUserId,
+            walletAmount,
+            `Wallet payment for ${booking.confirmationCode}`,
+            { type: "purchase", bookingId: booking._id, session: dbSession }
+          );
+        }
+        booking.walletDeductionPending = 0;
+      }
+
+      await booking.save({ session: dbSession });
+
+      try {
+        await referralService.processBookingReferral(booking);
+      } catch (refErr) {
+        console.error("Referral reward processing failed:", refErr.message);
+      }
+
+      if (booking.referralRewardsUsedCount > 0) {
+        try {
+          const consumerUserId = userId || (await User.findOne({ email: booking.buyerEmail }).session(dbSession))?._id;
+          if (consumerUserId) {
+            await referralService.consumeReferralRewards(consumerUserId, booking.referralRewardsUsedCount, booking._id);
+          }
+        } catch (refErr) {
+          console.error("Referral rewards consumption failed:", refErr.message);
+        }
+      }
+
+      await dbSession.commitTransaction();
+      return {
+        bookingId: booking._id,
+        success: true,
+        confirmationUrl: `${FRONTEND_URL}/o/${orgSlug}/bookings/${booking._id}/confirmation`,
+      };
+    }
+
     const paymentRatio = totalAmount ? finalAmount / totalAmount : 1;
     const stripeItems = selectedSeats.map((seat) => ({
       price_data: {
@@ -508,6 +575,62 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
       ];
     }
 
+    if (finalAmount === 0) {
+      booking.status = "confirmed";
+      booking.paymentStatus = "paid";
+
+      const qrData = JSON.stringify({
+        bookingId: booking._id.toString(),
+        confirmationCode: booking.confirmationCode,
+        eventId: booking.eventId.toString(),
+        buyerEmail: booking.buyerEmail,
+      });
+      try {
+        booking.qrCodeUrl = await QRCode.toDataURL(qrData);
+      } catch (qrError) {
+        console.error("QR Code generation failed:", qrError.message);
+      }
+
+      if (walletAmount > 0) {
+        const targetUserId = userId || (await User.findOne({ email: booking.buyerEmail }).session(mongoSession))?._id;
+        if (targetUserId) {
+          await walletService.debit(
+            targetUserId,
+            walletAmount,
+            `Wallet payment for ${booking.confirmationCode}`,
+            { type: "purchase", bookingId: booking._id, session: mongoSession }
+          );
+        }
+        booking.walletDeductionPending = 0;
+      }
+
+      await booking.save({ session: mongoSession });
+
+      try {
+        await referralService.processBookingReferral(booking);
+      } catch (refErr) {
+        console.error("Referral reward processing failed:", refErr.message);
+      }
+
+      if (booking.referralRewardsUsedCount > 0) {
+        try {
+          const consumerUserId = userId || (await User.findOne({ email: booking.buyerEmail }).session(mongoSession))?._id;
+          if (consumerUserId) {
+            await referralService.consumeReferralRewards(consumerUserId, booking.referralRewardsUsedCount, booking._id);
+          }
+        } catch (refErr) {
+          console.error("Referral rewards consumption failed:", refErr.message);
+        }
+      }
+
+      await mongoSession.commitTransaction();
+      return {
+        bookingId: booking._id,
+        success: true,
+        confirmationUrl: `${FRONTEND_URL}/o/${orgSlug}/bookings/${booking._id}/confirmation`,
+      };
+    }
+
     const idempotencyKey = `checkout-${normalizedEmail}-${eventId}-${booking._id}`;
 
     // Create Stripe Checkout Session
@@ -556,17 +679,81 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
  * Confirm a booking after successful Stripe payment.
  */
 const confirmBooking = async (stripeSessionId) => {
-  const booking = await Booking.findOne({ stripeSessionId });
+  const bookings = await Booking.find({ stripeSessionId });
 
-  if (!booking) {
+  if (!bookings || bookings.length === 0) {
     const error = new Error("Booking not found for this session");
     error.statusCode = 404;
     throw error;
   }
 
-  if (booking.status === "confirmed" && booking.paymentStatus === "paid") {
-    console.log(`[ConfirmBooking] Booking ${booking._id} is already confirmed. Running post-confirmation tasks (referrals & email) to ensure they are processed locally.`);
-    
+  const confirmedBookings = [];
+
+  for (const booking of bookings) {
+    if (booking.status === "confirmed" && booking.paymentStatus === "paid") {
+      console.log(`[ConfirmBooking] Booking ${booking._id} is already confirmed.`);
+      confirmedBookings.push(booking);
+      continue;
+    }
+
+    if (booking.status === "expired") {
+      continue;
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(stripeSessionId);
+
+    if (session.payment_status !== "paid") {
+      const error = new Error("Payment has not been completed yet");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const qrData = JSON.stringify({
+      bookingId: booking._id.toString(),
+      confirmationCode: booking.confirmationCode,
+      eventId: booking.eventId.toString(),
+      buyerEmail: booking.buyerEmail,
+    });
+
+    let qrCodeUrl = null;
+    try {
+      qrCodeUrl = await QRCode.toDataURL(qrData);
+    } catch (qrError) {
+      console.error("QR Code generation failed:", qrError.message);
+    }
+
+    booking.status = "confirmed";
+    booking.paymentStatus = "paid";
+    booking.qrCodeUrl = qrCodeUrl;
+    if (booking.selectedSeats?.length) {
+      const seatEvent = await Event.findOne({ _id: booking.eventId, organizationId: booking.organizationId });
+      for (const reference of booking.selectedSeats) {
+        const seat = seatEvent?.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+        if (seat?.status === "checkout-held") seat.status = "sold";
+      }
+      if (seatEvent) { seatEvent.markModified("selectedSeatMap"); await seatEvent.save(); }
+    }
+    await booking.save();
+
+    // Deduct wallet balance if pending
+    if (booking.walletDeductionPending > 0) {
+      try {
+        const user = await User.findOne({ email: booking.buyerEmail });
+        if (user) {
+          await walletService.debit(
+            user._id,
+            booking.walletDeductionPending,
+            `Wallet payment for ${booking.confirmationCode}`,
+            { type: "purchase", bookingId: booking._id }
+          );
+          booking.walletDeductionPending = 0;
+          await booking.save();
+        }
+      } catch (walletError) {
+        console.error("Wallet deduction failed:", walletError.message);
+      }
+    }
+
     // Process referral reward for the referrer if referredByCode was used
     try {
       await referralService.processBookingReferral(booking);
@@ -577,23 +764,17 @@ const confirmBooking = async (stripeSessionId) => {
     // Consume used referral rewards if buyer applied rewards at checkout
     if (booking.referralRewardsUsedCount > 0) {
       try {
-        console.log(`[Referrals - EarlyExit] Booking has referralRewardsUsedCount = ${booking.referralRewardsUsedCount}`);
         const consumerUserId = booking.userId;
         if (consumerUserId) {
-          console.log(`[Referrals - EarlyExit] Consuming rewards using booking.userId: ${consumerUserId}`);
           await referralService.consumeReferralRewards(consumerUserId, booking.referralRewardsUsedCount, booking._id);
         } else {
-          console.log(`[Referrals - EarlyExit] No userId on booking. Falling back to email: "${booking.buyerEmail}"`);
           const user = await User.findOne({ email: booking.buyerEmail });
           if (user) {
-            console.log(`[Referrals - EarlyExit] Found user by email: ${user.email} (id: ${user._id})`);
             await referralService.consumeReferralRewards(user._id, booking.referralRewardsUsedCount, booking._id);
-          } else {
-            console.warn(`[Referrals - EarlyExit] ⚠️ No user found for email: "${booking.buyerEmail}". Consumption skipped!`);
           }
         }
       } catch (consumeErr) {
-        console.error("[Referrals - EarlyExit] Consuming referral rewards failed:", consumeErr.message);
+        console.error("Consuming referral rewards failed:", consumeErr.message);
       }
     }
 
@@ -606,131 +787,21 @@ const confirmBooking = async (stripeSessionId) => {
       }
     }
 
-    // Send confirmation email
+    // Send confirmation email in background
     try {
       const event = await Event.findById(booking.eventId).populate("venueId", "name address city");
       if (event) {
-        await sendBookingConfirmation(booking, event, booking.qrCodeUrl, booking.organizationId);
+        await sendBookingConfirmation(booking, event, qrCodeUrl, booking.organizationId);
       }
     } catch (emailError) {
       console.error("Confirmation email failed:", emailError.message);
     }
 
-    return booking;
+    confirmedBookings.push(booking);
   }
 
-  if (booking.status === "expired") {
-    const error = new Error(
-      "This booking has expired and its tickets were released. Please start a new checkout.",
-    );
-    error.statusCode = 410;
-    throw error;
-  }
-
-  const session = await stripe.checkout.sessions.retrieve(stripeSessionId);
-
-  if (session.payment_status !== "paid") {
-    const error = new Error("Payment has not been completed yet");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const qrData = JSON.stringify({
-    bookingId: booking._id.toString(),
-    confirmationCode: booking.confirmationCode,
-    eventId: booking.eventId.toString(),
-    buyerEmail: booking.buyerEmail,
-  });
-
-  let qrCodeUrl = null;
-  try {
-    qrCodeUrl = await QRCode.toDataURL(qrData);
-  } catch (qrError) {
-    console.error("QR Code generation failed:", qrError.message);
-  }
-
-  booking.status = "confirmed";
-  booking.paymentStatus = "paid";
-  booking.qrCodeUrl = qrCodeUrl;
-  if (booking.selectedSeats?.length) {
-    const seatEvent = await Event.findOne({ _id: booking.eventId, organizationId: booking.organizationId });
-    for (const reference of booking.selectedSeats) {
-      const seat = seatEvent?.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
-      if (seat?.status === "checkout-held") seat.status = "sold";
-    }
-    if (seatEvent) { seatEvent.markModified("selectedSeatMap"); await seatEvent.save(); }
-  }
-  await booking.save();
-
-  // Deduct wallet balance if pending
-  if (booking.walletDeductionPending > 0) {
-    try {
-      const user = await User.findOne({ email: booking.buyerEmail });
-      if (user) {
-        await walletService.debit(
-          user._id,
-          booking.walletDeductionPending,
-          `Wallet payment for ${booking.confirmationCode}`,
-          { type: "purchase", bookingId: booking._id }
-        );
-        booking.walletDeductionPending = 0;
-        await booking.save();
-      }
-    } catch (walletError) {
-      console.error("Wallet deduction failed:", walletError.message);
-    }
-  }
-
-  // Process referral reward for the referrer if referredByCode was used
-  try {
-    await referralService.processBookingReferral(booking);
-  } catch (refErr) {
-    console.error("Referral reward processing failed:", refErr.message);
-  }
-
-  // Consume used referral rewards if buyer applied rewards at checkout
-  if (booking.referralRewardsUsedCount > 0) {
-    try {
-      console.log(`[Referrals - Main] Booking has referralRewardsUsedCount = ${booking.referralRewardsUsedCount}`);
-      const consumerUserId = booking.userId;
-      if (consumerUserId) {
-        console.log(`[Referrals - Main] Consuming rewards using booking.userId: ${consumerUserId}`);
-        await referralService.consumeReferralRewards(consumerUserId, booking.referralRewardsUsedCount, booking._id);
-      } else {
-        console.log(`[Referrals - Main] No userId on booking. Falling back to email: "${booking.buyerEmail}"`);
-        const user = await User.findOne({ email: booking.buyerEmail });
-        if (user) {
-          console.log(`[Referrals - Main] Found user by email: ${user.email} (id: ${user._id})`);
-          await referralService.consumeReferralRewards(user._id, booking.referralRewardsUsedCount, booking._id);
-        } else {
-          console.warn(`[Referrals - Main] ⚠️ No user found for email: "${booking.buyerEmail}". Consumption skipped!`);
-        }
-      }
-    } catch (consumeErr) {
-      console.error("[Referrals - Main] Consuming referral rewards failed:", consumeErr.message);
-    }
-  }
-
-  // Increment coupon usage count if coupon was used
-  if (booking.couponCode) {
-    try {
-      await couponService.incrementCouponUses(booking.organizationId, booking.couponCode);
-    } catch (couponErr) {
-      console.error("Incrementing coupon uses failed:", couponErr.message);
-    }
-  }
-
-  // Send confirmation email in background
-  try {
-    const event = await Event.findById(booking.eventId).populate("venueId", "name address city");
-    if (event) {
-      await sendBookingConfirmation(booking, event, qrCodeUrl, booking.organizationId);
-    }
-  } catch (emailError) {
-    console.error("Confirmation email failed:", emailError.message);
-  }
-
-  return booking;
+  // Return the first booking to satisfy controller redirect / page title info
+  return confirmedBookings[0];
 };
 
 const expireBookingIfStillPending = async (booking) => {
@@ -800,6 +871,10 @@ const getEventBookings = async (eventId, organizationId) => {
   return Booking.find({ eventId, organizationId }).sort({ createdAt: -1 });
 };
 
+const getBundleBookings = async (bundleBookingId, organizationId) => {
+  return Booking.find({ bundleBookingId, organizationId }).populate("eventId", "name dateTime bannerImageUrl venueId");
+};
+
 const handleStripeWebhook = async (event) => {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
@@ -840,12 +915,336 @@ const verifyTicket = async (bookingId, organizationId) => {
   return booking;
 };
 
+const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => {
+  const { buyerName, buyerEmail, selections, useWallet, walletDeduction, refCode, couponCode, rewardsToApply, userId, bundleAccessCode, eventAccessCodes } = data;
+  const EventBundle = require("../models/EventBundle");
+  const Event = require("../models/Event");
+
+  if (!buyerName || !buyerEmail || !selections || typeof selections !== "object") {
+    const error = new Error("buyerName, buyerEmail, and selections are required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const bundle = await EventBundle.findOne({ _id: bundleId, organizationId });
+  if (!bundle) {
+    const error = new Error("Event bundle not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // 1. Check if the bundle is protected (Case 1)
+  if (bundle.accessCode) {
+    if (!bundleAccessCode || bundleAccessCode.trim() !== bundle.accessCode.trim()) {
+      const error = new Error("This event bundle is protected. A valid access code is required.");
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+
+  // 2. Validate event-level access codes (Case 2 and Case 3)
+  const isBundleUnlocked = bundle.accessCode && bundleAccessCode && bundleAccessCode.trim() === bundle.accessCode.trim();
+
+  // Load events to check accessCode
+  const events = await Event.find({ _id: { $in: bundle.eventIds }, organizationId });
+  for (const event of events) {
+    if (event.accessCode) {
+      // Bypassed if bundle override is active (Case 2), otherwise requires correct event code (Case 3)
+      const isUnlocked = isBundleUnlocked || (eventAccessCodes && eventAccessCodes[event._id.toString()] && eventAccessCodes[event._id.toString()].trim() === event.accessCode.trim());
+      if (!isUnlocked) {
+        const error = new Error(`The event "${event.name}" is protected. A valid access code is required.`);
+        error.statusCode = 403;
+        throw error;
+      }
+    }
+  }
+
+  const dbSession = await mongoose.startSession();
+  try {
+    dbSession.startTransaction();
+
+    const normalizedEmail = buyerEmail.trim().toLowerCase();
+    const cleanRefCode = refCode ? String(refCode).trim() : null;
+    const bundleBookingId = new mongoose.Types.ObjectId();
+    const stripeSessionId = `sess_${crypto.randomBytes(12).toString("hex")}`; // Temporary placeholder before Stripe session
+
+    let totalAmount = 0;
+    const bookingsData = [];
+    const eventsToUpdate = [];
+
+    // ── Bundle pricing model ───────────────────────────────────────────────
+    // pricePerSeat = the flat price charged for the WHOLE bundle (all events)
+    // for ONE seat quantity slot. Total = pricePerSeat × qty
+    // where qty = number of seats the buyer picks per event.
+    // The number of events does NOT multiply the price.
+
+    // First pass: validate selections and determine qty
+    const firstEventId = bundle.eventIds[0].toString();
+    const firstSelections = selections[firstEventId];
+    if (!firstSelections || !Array.isArray(firstSelections) || firstSelections.length === 0) {
+      throw new Error("Please select seats for all events in the bundle.");
+    }
+    const qty = firstSelections.length; // seats per event
+    const numEvents = bundle.eventIds.length;
+
+    // Total bundle charge = pricePerSeat × qty
+    const bundleTotalAmount = Number(bundle.pricePerSeat) * qty;
+
+    // Each event's proportional share of the bundle price
+    const eventShare = bundleTotalAmount / numEvents;
+    // Each seat's unit price within an event
+    const unitPricePerSeat = eventShare / qty;
+
+    // ── Main loop: validate seats ──────────────────────────────────────────
+    for (const eventId of bundle.eventIds) {
+      const event = await Event.findOne({ _id: eventId, organizationId }).session(dbSession);
+      if (!event || !event.selectedSeatMap) {
+        throw new Error(`Event ${eventId} not found or seat map not configured.`);
+      }
+
+      const eventSelections = selections[eventId.toString()];
+      if (!eventSelections || !Array.isArray(eventSelections) || eventSelections.length === 0) {
+        throw new Error(`Please select seats for all events in the bundle.`);
+      }
+      if (eventSelections.length !== qty) {
+        throw new Error(`You must select the same number of seats for each event in the bundle.`);
+      }
+
+      const selectedSeats = [];
+      const seen = new Set();
+
+      for (const item of eventSelections) {
+        const key = `${item.blockId}:${item.seatId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const block = event.selectedSeatMap.blocks?.find((b) => b.id === item.blockId);
+        const seat = block?.seats?.find((s) => s.id === item.seatId);
+
+        if (!block || !seat || seat.status !== "available") {
+          throw new Error(`One or more selected seats for event ${event.name} are no longer available.`);
+        }
+
+        seat.status = "checkout-held";
+
+        selectedSeats.push({
+          blockId: block.id,
+          seatId: seat.id,
+          seatName: seat.seatName,
+          sectionName: block.name,
+          category: block.category || null,
+          unitPrice: unitPricePerSeat,
+        });
+      }
+
+      eventsToUpdate.push(event);
+
+      bookingsData.push({
+        organizationId,
+        eventId,
+        eventName: event.name,
+        eventDateTime: event.dateTime,
+        buyerName: buyerName.trim(),
+        buyerEmail: normalizedEmail,
+        items: selectedSeats.map((seat) => ({
+          ticketTypeName: `${seat.sectionName} — ${seat.seatName} (Bundle)`,
+          quantity: 1,
+          unitPrice: seat.unitPrice,
+          lineTotal: seat.unitPrice,
+        })),
+        selectedSeats,
+        totalAmount: 0, // Will be computed after discount distribution
+        originalAmount: eventShare, // this event's equal share of the bundle price
+        referredByCode: cleanRefCode,
+        userId: userId || null,
+        currency: "USD",
+        status: "pending",
+        paymentStatus: "pending",
+        isBundleBooking: true,
+        bundleBookingId,
+        expiresAt: new Date(Date.now() + HOLD_DURATION_MS),
+        confirmationCode: generateConfirmationCode(),
+      });
+    }
+
+    // totalAmount for discounts/wallet = full bundle price
+    totalAmount = bundleTotalAmount;
+
+    // Save event seat states
+    for (const event of eventsToUpdate) {
+      event.markModified("selectedSeatMap");
+      await event.save({ session: dbSession });
+    }
+
+    // Calculate discounts based on global bundle total amount
+    const discountRes = await calculateDiscounts(organizationId, bundle.eventIds[0], totalAmount, {
+      couponCode,
+      rewardsToApply,
+      userId,
+    });
+
+    const totalDiscount = discountRes.couponDiscountAmount + discountRes.referralDiscountAmount;
+    const walletAmount = useWallet && walletDeduction > 0 ? Math.min(walletDeduction, Math.max(0, totalAmount - totalDiscount)) : 0;
+    const finalAmount = Math.max(0, totalAmount - walletAmount - totalDiscount);
+
+    // Distribute total finalAmount across bookings proportionally
+    const stripeLineItems = [];
+    const createdBookings = [];
+
+    for (let i = 0; i < bookingsData.length; i++) {
+      const bData = bookingsData[i];
+      const weight = bData.originalAmount / totalAmount;
+      const proportionalDiscount = totalDiscount * weight;
+      const proportionalWallet = walletAmount * weight;
+      const proportionalFinal = Math.max(0, bData.originalAmount - proportionalDiscount - proportionalWallet);
+
+      bData.totalAmount = proportionalFinal;
+      bData.walletDeduction = proportionalWallet;
+      bData.walletDeductionPending = proportionalWallet;
+      bData.discountAmount = discountRes.referralDiscountAmount * weight;
+      bData.couponCode = discountRes.couponCode;
+      bData.couponDiscountAmount = discountRes.couponDiscountAmount * weight;
+      bData.referralRewardsUsedCount = Math.round(discountRes.referralRewardsUsedCount * weight);
+
+      const [newBooking] = await Booking.create([bData], { session: dbSession });
+      createdBookings.push(newBooking);
+
+      for (const seat of bData.selectedSeats) {
+        stripeLineItems.push({
+          price_data: {
+            currency: "usd",
+            product_data: { name: `Bundle: ${bData.eventName} — ${seat.sectionName} ${seat.seatName}` },
+            unit_amount: Math.max(1, Math.round(seat.unitPrice * 100 * (proportionalFinal / bData.originalAmount))),
+          },
+          quantity: 1,
+        });
+      }
+    }
+
+    if (finalAmount === 0) {
+      for (const booking of createdBookings) {
+        booking.status = "confirmed";
+        booking.paymentStatus = "paid";
+
+        const qrData = JSON.stringify({
+          bookingId: booking._id.toString(),
+          confirmationCode: booking.confirmationCode,
+          eventId: booking.eventId.toString(),
+          buyerEmail: booking.buyerEmail,
+        });
+        try {
+          booking.qrCodeUrl = await QRCode.toDataURL(qrData);
+        } catch (qrError) {
+          console.error("QR Code generation failed:", qrError.message);
+        }
+
+        if (booking.selectedSeats?.length) {
+          const seatEvent = eventsToUpdate.find((evt) => evt._id.toString() === booking.eventId.toString());
+          if (seatEvent) {
+            for (const reference of booking.selectedSeats) {
+              const seat = seatEvent.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+              if (seat) {
+                seat.status = "sold";
+              }
+            }
+            seatEvent.markModified("selectedSeatMap");
+            await seatEvent.save({ session: dbSession });
+          }
+        }
+
+        if (booking.walletDeduction > 0) {
+          const targetUserId = userId || (await User.findOne({ email: booking.buyerEmail }).session(dbSession))?._id;
+          if (targetUserId) {
+            await walletService.debit(
+              targetUserId,
+              booking.walletDeduction,
+              `Wallet payment for ${booking.confirmationCode}`,
+              { type: "purchase", bookingId: booking._id, session: dbSession }
+            );
+          }
+          booking.walletDeductionPending = 0;
+        }
+
+        await booking.save({ session: dbSession });
+
+        try {
+          await referralService.processBookingReferral(booking);
+        } catch (refErr) {
+          console.error("Referral reward processing failed:", refErr.message);
+        }
+
+        if (booking.referralRewardsUsedCount > 0) {
+          try {
+            const consumerUserId = userId || (await User.findOne({ email: booking.buyerEmail }).session(dbSession))?._id;
+            if (consumerUserId) {
+              await referralService.consumeReferralRewards(consumerUserId, booking.referralRewardsUsedCount, booking._id);
+            }
+          } catch (refErr) {
+            console.error("Referral rewards consumption failed:", refErr.message);
+          }
+        }
+      }
+
+      await dbSession.commitTransaction();
+      return {
+        bundleBookingId,
+        success: true,
+        confirmationUrl: `${FRONTEND_URL}/o/${orgSlug}/bookings/${createdBookings[0]._id}/confirmation`,
+      };
+    }
+
+    // Create Stripe Session
+    const stripeSession = await stripe.checkout.sessions.create(
+      {
+        payment_method_types: ["card"],
+        mode: "payment",
+        customer_email: normalizedEmail,
+        client_reference_id: createdBookings[0]._id.toString(), // Reference first booking
+        metadata: {
+          bundleBookingId: bundleBookingId.toString(),
+          bundleId: bundleId.toString(),
+          organizationId: organizationId.toString(),
+          useWallet: useWallet ? "true" : "false",
+          walletDeduction: walletAmount.toString(),
+          refCode: cleanRefCode || "",
+          couponCode: discountRes.couponCode || "",
+        },
+        line_items: stripeLineItems,
+        success_url: `${FRONTEND_URL}/o/${orgSlug}/bookings/${createdBookings[0]._id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${FRONTEND_URL}/o/${orgSlug}/events/${bundle.eventIds[0]}`,
+      },
+      { idempotencyKey: `bundle-${bundleBookingId}` }
+    );
+
+    // Save Stripe session ID to all bookings in this bundle checkout
+    for (const booking of createdBookings) {
+      booking.stripeSessionId = stripeSession.id;
+      await booking.save({ session: dbSession });
+    }
+
+    await dbSession.commitTransaction();
+
+    return {
+      bundleBookingId,
+      stripeSessionId: stripeSession.id,
+      stripeUrl: stripeSession.url,
+    };
+  } catch (error) {
+    await dbSession.abortTransaction();
+    throw error;
+  } finally {
+    dbSession.endSession();
+  }
+};
+
 module.exports = {
   createCheckoutSession,
   confirmBooking,
   expireBookingIfStillPending,
   getBooking,
   getEventBookings,
+  getBundleBookings,
   handleStripeWebhook,
   verifyTicket,
+  createBundleCheckout,
 };

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import apiClient from "../api/client";
 import { hasPermission } from "../utils/permissionsClient";
 
-const emptyForm = { name: "", description: "", dateTime: "", venueId: "" };
+const emptyForm = { name: "", description: "", dateTime: "", venueId: "", accessCode: "" };
 
 export default function Events() {
   const { orgSlug } = useParams();
@@ -87,6 +87,7 @@ export default function Events() {
       description: item.description || "",
       dateTime: item.dateTime?.slice(0, 16) || "",
       venueId: item.venueId?._id || item.venueId || "",
+      accessCode: item.accessCode || "",
     });
   };
 
@@ -161,6 +162,46 @@ export default function Events() {
               />
             </label>
             <label className="block text-sm font-semibold">
+              Private Access Code (Optional)
+              <div className="flex gap-2 items-center mt-1">
+                <input
+                  name="accessCode"
+                  type="text"
+                  value={form.accessCode}
+                  onChange={(e) => setForm({ ...form, accessCode: e.target.value })}
+                  placeholder="e.g. secret123"
+                  className="w-full rounded-md border border-black/15 px-3 py-2 text-ink"
+                  style={{ color: "#111326" }}
+                />
+                {form.accessCode && (
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, accessCode: "" })}
+                    style={{
+                      padding: "8px 12px",
+                      background: "rgba(220, 38, 38, 0.08)",
+                      border: "1px solid rgba(220, 38, 38, 0.3)",
+                      borderRadius: "6px",
+                      color: "var(--danger, #dc2626)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    title="Remove access code"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      <line x1="10" y1="11" x2="10" y2="17"></line>
+                      <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>
+                  </button>
+                )}
+              </div>
+              <span className="text-xs text-muted font-normal block mt-0.5">If set, buyers must enter this code to book seats/tickets.</span>
+            </label>
+            <label className="block text-sm font-semibold">
               Banner
               <input
                 type="file"
@@ -207,7 +248,9 @@ export default function Events() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <h2 className="font-display text-xl">{item.name}</h2>
+                    <h2 className="font-display text-xl">
+                      {item.name} {item.accessCode && <span title="Private Event" style={{ fontSize: 13, marginLeft: 4 }}>🔒 Private</span>}
+                    </h2>
                     <p className="text-sm text-muted">
                       {new Date(item.dateTime).toLocaleString()} · {item.venueId?.name}
                     </p>

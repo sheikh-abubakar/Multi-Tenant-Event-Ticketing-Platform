@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { cachedGet, prefetch } from "../api/requestCache";
+import apiClient from "../api/client";
 import "./PublicEvents.css";
 
 const PublicEvents = () => {
   const { orgSlug } = useParams();
   const [organization, setOrganization] = useState(null);
   const [events, setEvents] = useState([]);
+  const [bundles, setBundles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -16,13 +18,15 @@ const PublicEvents = () => {
       setLoading(true);
       setError("");
       try {
-        const [infoRes, eventsRes] = await Promise.all([
+        const [infoRes, eventsRes, bundlesRes] = await Promise.all([
           cachedGet(`/o/${orgSlug}/info`, 60_000),
           cachedGet(`/o/${orgSlug}/events`, 30_000),
+          apiClient.get(`/o/${orgSlug}/bundles`).catch(() => ({ data: { bundles: [] } })),
         ]);
         if (!cancelled) {
           setOrganization(infoRes.data.organization);
           setEvents(eventsRes.data.events || []);
+          setBundles(bundlesRes.data?.bundles || []);
         }
       } catch (err) {
         if (!cancelled) setError(err.response?.data?.message || "Could not load public events.");
@@ -56,6 +60,8 @@ const PublicEvents = () => {
     };
   };
 
+  const hasContent = events.length > 0 || bundles.length > 0;
+
   return (
     <div className="pe-page">
       {/* ── Header ── */}
@@ -77,16 +83,77 @@ const PublicEvents = () => {
         </div>
       )}
       {error && <div className="pe-error">{error}</div>}
-      {!loading && !error && events.length === 0 && (
+      {!loading && !error && !hasContent && (
         <div className="pe-empty">
           <span className="pe-empty-icon">🎟️</span>
-          <p>No upcoming events yet. Check back soon!</p>
+          <p>No upcoming events or bundles yet. Check back soon!</p>
         </div>
       )}
 
-      {/* ── Event Grid ── */}
-      {!loading && !error && events.length > 0 && (
+      {/* ── Event & Bundle Grid ── */}
+      {!loading && !error && hasContent && (
         <div className="pe-grid">
+          {/* Render Bundles first */}
+          {bundles.map((bundle) => {
+            return (
+              <Link
+                key={bundle._id}
+                to={`/o/${orgSlug}/bundles/${bundle._id}`}
+                className="pe-card pe-card--bundle"
+                style={{ border: "1px solid rgba(201, 154, 60, 0.25)" }}
+              >
+                {/* Banner */}
+                <div className="pe-card-banner">
+                  {bundle.bannerImageUrl ? (
+                    <img src={bundle.bannerImageUrl} alt={bundle.name} className="pe-card-img" />
+                  ) : (
+                    <div className="pe-card-img-fallback" />
+                  )}
+                  <div className="pe-card-overlay" />
+
+                  {/* Top badges */}
+                  <div className="pe-card-top-badges">
+                    <span className="pe-badge" style={{ background: "linear-gradient(135deg, #c99a3c 0%, #e5b95f 100%)", color: "#14162b", fontWeight: 800 }}>
+                      🎉 Event Bundle
+                    </span>
+                     <span className="pe-badge pe-badge--price">
+                      ${bundle.pricePerSeat} / bundle
+                    </span>
+                  </div>
+
+                  {/* Date chip (shows count of events instead of single date) */}
+                  <div className="pe-card-date-chip">
+                    <span className="pe-date-day">📦 Multi-Event</span>
+                    <span className="pe-date-time">{bundle.eventIds?.length || 0} events package</span>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="pe-card-body">
+                  <h3 className="pe-card-title">{bundle.name}</h3>
+                  {bundle.venueId && (
+                    <p className="pe-card-venue">
+                      📍 {bundle.venueId.name}{bundle.venueId.city ? ` · ${bundle.venueId.city}` : ""}
+                    </p>
+                  )}
+                  {bundle.description && (
+                    <p className="pe-card-desc">
+                      {bundle.description.length > 90
+                        ? `${bundle.description.slice(0, 90)}…`
+                        : bundle.description}
+                    </p>
+                  )}
+                  <div className="pe-card-footer">
+                    <span className="pe-cta" style={{ color: "#e5b95f" }}>
+                      View Bundle Package →
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+
+          {/* Render Individual Events */}
           {events.map((event) => {
             const { day, time } = formatDate(event.dateTime);
             const priceRange = getPriceRange(event.ticketTypes);

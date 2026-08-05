@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
+import jsQR from "jsqr";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import apiClient from "../api/client";
 import { cachedGet } from "../api/requestCache";
+import { Ticket, DollarSign, Calendar, MapPin, RefreshCw, Layers } from "lucide-react";
 import {
   XAxis,
   YAxis,
@@ -290,7 +292,29 @@ const Analytics = () => {
   if (loading) {
     return (
       <div className="mx-auto" style={{ maxWidth: 1100, padding: "40px 0" }}>
-        <p style={{ color: "var(--muted)" }}>Loading analytics…</p>
+        {/* Title skeleton */}
+        <div style={{ height: 40, width: 200, borderRadius: 8, background: "rgba(255,255,255,0.06)", marginBottom: 8, animation: "pulse 1.5s ease-in-out infinite" }} />
+        <div style={{ height: 16, width: 280, borderRadius: 6, background: "rgba(255,255,255,0.04)", marginBottom: 32, animation: "pulse 1.5s ease-in-out infinite" }} />
+
+        {/* Stat cards skeleton */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 32 }}>
+          {Array.from({ length: 9 }).map((_, i) => (
+            <div key={i} style={{ height: 90, borderRadius: 12, background: "rgba(255,255,255,0.06)", animation: `pulse 1.5s ease-in-out ${i * 0.08}s infinite` }} />
+          ))}
+        </div>
+
+        {/* Chart skeleton */}
+        <div style={{ height: 300, borderRadius: 12, background: "rgba(255,255,255,0.06)", marginBottom: 24, animation: "pulse 1.5s ease-in-out infinite" }} />
+
+        {/* Table skeleton */}
+        <div style={{ height: 200, borderRadius: 12, background: "rgba(255,255,255,0.06)", animation: "pulse 1.5s ease-in-out infinite" }} />
+
+        <style>{`
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+          }
+        `}</style>
       </div>
     );
   }
@@ -1020,19 +1044,125 @@ const Analytics = () => {
                     if (!file) return;
                     setVerifying(true);
                     setScanResult(null);
+
+                    let scanSuccess = false;
+                    let scannedResultText = "";
+
+                    const loadImage = (f) => new Promise((resolve, reject) => {
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = reject;
+                        img.src = event.target.result;
+                      };
+                      reader.onerror = reject;
+                      reader.readAsDataURL(f);
+                    });
+
                     try {
-                      const tempId = "qr-file-reader-" + Date.now();
-                      const div = document.createElement("div");
-                      div.id = tempId;
-                      div.style.display = "none";
-                      document.body.appendChild(div);
-                      const scanner = new Html5Qrcode(tempId);
-                      try {
-                        const result = await scanner.scanFile(file, true);
-                        handleScannedCode(result);
-                      } finally {
-                        scanner.clear();
-                        document.body.removeChild(div);
+                      const img = await loadImage(file);
+                      
+                      // 1. Try decoding with jsQR on various crops/enhancements
+                      const decodeWithJsQR = (cropPercent, binarize) => {
+                        const canvas = document.createElement("canvas");
+                        const cropX = img.width * cropPercent;
+                        const cropY = img.height * cropPercent;
+                        const cropW = img.width - (cropX * 2);
+                        const cropH = img.height - (cropY * 2);
+                        canvas.width = cropW;
+                        canvas.height = cropH;
+                        
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+                        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        if (binarize) {
+                          const data = imgData.data;
+                          for (let i = 0; i < data.length; i += 4) {
+                            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                            const val = gray > 128 ? 255 : 0;
+                            data[i] = val;
+                            data[i + 1] = val;
+                            data[i + 2] = val;
+                          }
+                          ctx.putImageData(imgData, 0, 0);
+                        }
+
+                        const code = jsQR(imgData.data, imgData.width, imgData.height, {
+                          inversionAttempts: "both",
+                        });
+                        return code ? code.data : null;
+                      };
+
+                      // Run attempts in sequence of likelihood
+                      const attempts = [
+                        () => decodeWithJsQR(0, false),      // Raw full image
+                        () => decodeWithJsQR(0.05, false),   // 5% crop (light border removal)
+                        () => decodeWithJsQR(0.1, false),    // 10% crop (gold card border removal)
+                        () => decodeWithJsQR(0.15, false),   // 15% crop (deeper border removal)
+                        () => decodeWithJsQR(0.2, false),    // 20% crop
+                        () => decodeWithJsQR(0, true),       // Raw binarized
+                        () => decodeWithJsQR(0.1, true),     // 10% crop + binarized
+                      ];
+
+                      for (const attempt of attempts) {
+                        const result = attempt();
+                        if (result) {
+                          scannedResultText = result;
+                          scanSuccess = true;
+                          break;
+                        }
+                      }
+
+                      // 2. Fallback to Html5Qrcode (with a properly sized off-screen container)
+                      if (!scanSuccess) {
+                        const tempId = "qr-file-reader-" + Date.now();
+                        const div = document.createElement("div");
+                        div.id = tempId;
+                        div.style.position = "absolute";
+                        div.style.left = "-9999px";
+                        div.style.top = "-9999px";
+                        div.style.width = "800px";
+                        div.style.height = "800px";
+                        document.body.appendChild(div);
+
+                        const scanner = new Html5Qrcode(tempId);
+                        try {
+                          // Try raw scan
+                          try {
+                            scannedResultText = await scanner.scanFile(file, false);
+                            scanSuccess = true;
+                          } catch (err1) {
+                            // Try 10% crop scan in Html5Qrcode
+                            const canvas = document.createElement("canvas");
+                            const cropX = img.width * 0.1;
+                            const cropY = img.height * 0.1;
+                            const cropW = img.width - (cropX * 2);
+                            const cropH = img.height - (cropY * 2);
+                            canvas.width = cropW;
+                            canvas.height = cropH;
+                            const ctx = canvas.getContext("2d");
+                            ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+                            
+                            const croppedBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+                            scannedResultText = await scanner.scanFile(croppedBlob, false);
+                            scanSuccess = true;
+                          }
+                        } catch (html5Err) {
+                          console.log("Html5Qrcode scanner fallback failed:", html5Err);
+                        } finally {
+                          try {
+                            scanner.clear();
+                          } catch (scErr) {}
+                          document.body.removeChild(div);
+                        }
+                      }
+
+                      if (scanSuccess && scannedResultText) {
+                        handleScannedCode(scannedResultText);
+                      } else {
+                        throw new Error("Could not decode QR code from any variant");
                       }
                     } catch (err) {
                       setScanResult({ success: false, message: "Could not read QR code from this image. Make sure the QR code is clearly visible." });
@@ -1102,32 +1232,80 @@ const Analytics = () => {
 };
 
 /* ── Stat card component ──────────────────────────────────────── */
+const getIconForLabel = (label) => {
+  const size = 20;
+  const color = "var(--gold)";
+  const normalized = label.toLowerCase();
+  
+  if (normalized.includes("booking")) return <Ticket size={size} color={color} />;
+  if (normalized.includes("sold")) return <Ticket size={size} color={color} />;
+  if (normalized.includes("revenue") || normalized.includes("net") || normalized.includes("amount")) {
+    return <DollarSign size={size} color={color} />;
+  }
+  if (normalized.includes("event")) return <Calendar size={size} color={color} />;
+  if (normalized.includes("venue")) return <MapPin size={size} color={color} />;
+  if (normalized.includes("refund")) return <RefreshCw size={size} color={color} />;
+  return <Layers size={size} color={color} />;
+};
+
 const StatCard = ({ label, value }) => (
-  <div className="card" style={{ padding: "18px 20px" }}>
-    <p
-      style={{
-        margin: "0 0 4px",
-        fontSize: 12,
-        color: "var(--muted)",
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-        fontWeight: 600,
+  <div 
+    className="card" 
+    style={{ 
+      padding: "20px 24px",
+      background: "rgba(255, 255, 255, 0.03)",
+      border: "1px solid rgba(255, 255, 255, 0.06)",
+      borderRadius: "16px",
+      boxShadow: "0 10px 25px -5px rgba(0,0,0,0.3), 0 8px 10px -6px rgba(0,0,0,0.3)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 16,
+      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+    }}
+  >
+    <div style={{ flex: 1 }}>
+      <p
+        style={{
+          margin: "0 0 6px",
+          fontSize: 11,
+          color: "var(--muted)",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          fontWeight: 700,
+        }}
+      >
+        {label}
+      </p>
+      <p
+        style={{
+          margin: 0,
+          fontSize: 28,
+          fontWeight: 800,
+          color: "var(--paper)",
+          fontFamily: "var(--font-display)",
+          letterSpacing: "0.03em",
+          lineHeight: 1.1,
+        }}
+      >
+        {value}
+      </p>
+    </div>
+    <div 
+      style={{ 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "center", 
+        width: 44, 
+        height: 44, 
+        borderRadius: 12, 
+        background: "rgba(201, 154, 60, 0.12)",
+        border: "1px solid rgba(201, 154, 60, 0.2)",
+        flexShrink: 0,
       }}
     >
-      {label}
-    </p>
-    <p
-      style={{
-        margin: 0,
-        fontSize: 26,
-        fontWeight: 700,
-        color: "var(--text)",
-        fontFamily: "var(--font-display)",
-        letterSpacing: "0.02em",
-      }}
-    >
-      {value}
-    </p>
+      {getIconForLabel(label)}
+    </div>
   </div>
 );
 

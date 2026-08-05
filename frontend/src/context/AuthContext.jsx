@@ -20,6 +20,7 @@ export const AuthProvider = ({ children }) => {
   const persistSession = (newToken, newUser) => {
     localStorage.setItem("token", newToken);
     localStorage.setItem("user", JSON.stringify(newUser));
+    sessionStorage.removeItem("unlockedCodes");
     setToken(newToken);
     setUser(newUser);
   };
@@ -48,6 +49,7 @@ export const AuthProvider = ({ children }) => {
     });
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    sessionStorage.removeItem("unlockedCodes");
     setToken(null);
     setUser(null);
   };

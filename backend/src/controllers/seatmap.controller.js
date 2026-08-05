@@ -14,6 +14,46 @@ const getEventMap = async (req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
+
+    const Event = require("../models/Event");
+    const EventBundle = require("../models/EventBundle");
+    const event = await Event.findOne({ _id: req.params.eventId, organizationId: req.organizationId }).lean();
+    if (!event) {
+      return res.status(404).json({ message: "Event not found." });
+    }
+
+    if (event.accessCode) {
+      const eventCode = (req.headers["x-event-access-code"] || req.query.accessCode || "").trim();
+      const bundleCode = (req.headers["x-bundle-access-code"] || req.query.bundleAccessCode || "").trim();
+
+      let unlocked = false;
+
+      // 1. Check direct event access code
+      if (eventCode && eventCode === event.accessCode) {
+        unlocked = true;
+      }
+
+      // 2. Check if accessed via an unlocked bundle (Case 1 & 2)
+      if (!unlocked && bundleCode) {
+        const bundle = await EventBundle.findOne({
+          eventIds: event._id,
+          organizationId: req.organizationId,
+          accessCode: bundleCode,
+        });
+        if (bundle) {
+          unlocked = true;
+        }
+      }
+
+      if (!unlocked) {
+        return res.status(403).json({
+          message: "This event is protected. A valid access code is required.",
+          isProtected: true,
+          eventId: event._id,
+        });
+      }
+    }
+
     const seatmap = await seatmapService.getEventSeatmap(req.params.eventId, req.organizationId);
     return res.json({ seatmap });
   } catch (error) {

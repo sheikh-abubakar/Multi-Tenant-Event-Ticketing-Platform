@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { ShoppingCart, WalletCards, User, Menu, X, LogOut, Building2 } from "lucide-react";
+import { ShoppingCart, WalletCards, User, Menu, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "./Logo";
 import AICopilot from "./ai/AICopilot";
@@ -39,6 +39,7 @@ const Layout = ({ children }) => {
   }, [location.pathname]);
 
   const handleLogout = () => {
+    sessionStorage.removeItem("unlockedCodes");
     logout();
     navigate("/login");
   };
@@ -48,12 +49,13 @@ const Layout = ({ children }) => {
   // ── ORGANIZER CONSOLE LAYOUT ──────────────────────────────────
   if (orgSlug && user) {
     const organizationLinks = [
-      ["Overview", `/o/${orgSlug}/dashboard`],
-      ["Events", `/o/${orgSlug}/manage/events`],
-      ["Venues", `/o/${orgSlug}/manage/venues`],
-      ["Analytics", `/o/${orgSlug}/manage/analytics`],
-      ["Team", `/o/${orgSlug}/manage/team`],
-      ["Settings", `/o/${orgSlug}/manage/settings`],
+      ["Overview", `/o/${orgSlug}/dashboard`, LayoutDashboard],
+      ["Events", `/o/${orgSlug}/manage/events`, Calendar],
+      ["Venues", `/o/${orgSlug}/manage/venues`, MapPin],
+      ["Bundles", `/o/${orgSlug}/manage/bundles`, Package],
+      ["Analytics", `/o/${orgSlug}/manage/analytics`, BarChart3],
+      ["Team", `/o/${orgSlug}/manage/team`, Users2],
+      ["Settings", `/o/${orgSlug}/manage/settings`, Settings],
     ];
 
     return (
@@ -79,11 +81,14 @@ const Layout = ({ children }) => {
               className="sidebar-link sidebar-link--global"
               onClick={() => setSidebarOpen(false)}
             >
-              My Organizations
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Building2 size={16} />
+                <span>My Organizations</span>
+              </div>
             </NavLink>
             <span className="sidebar-divider" />
             <p className="sidebar-caption">THIS ORGANIZATION</p>
-            {organizationLinks.map(([label, to]) => (
+            {organizationLinks.map(([label, to, Icon]) => (
               <NavLink
                 key={to}
                 to={to}
@@ -91,7 +96,10 @@ const Layout = ({ children }) => {
                 className={({ isActive }) => `sidebar-link${isActive ? " is-active" : ""}`}
                 onClick={() => setSidebarOpen(false)}
               >
-                {label}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Icon size={16} />
+                  <span>{label}</span>
+                </div>
               </NavLink>
             ))}
           </nav>

@@ -14,6 +14,9 @@ router.post("/:bookingId/confirm", resolveTenant, bookingController.confirm);
 // Get a single booking by ID
 router.get("/:bookingId", resolveTenant, bookingController.getOne);
 
+// Get all bookings associated with a bundle Booking ID
+router.get("/bundle/:bundleBookingId", resolveTenant, bookingController.getBundleBookings);
+
 // Organizer-protected: verify a ticket directly
 const authenticate = require("../middlewares/authenticate");
 const loadMembership = require("../middlewares/loadMembership");

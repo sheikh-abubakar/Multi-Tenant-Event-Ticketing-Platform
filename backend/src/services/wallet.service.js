@@ -15,10 +15,19 @@ const WalletTransaction = require("../models/WalletTransaction");
 /**
  * Get wallet for a user — auto-creates if it doesn't exist
  */
-const getWallet = async (userId) => {
-  let wallet = await Wallet.findOne({ userId });
+const getWallet = async (userId, session) => {
+  let query = Wallet.findOne({ userId });
+  if (session) {
+    query = query.session(session);
+  }
+  let wallet = await query;
   if (!wallet) {
-    wallet = await Wallet.create({ userId, balance: 0, currency: "USD" });
+    if (session) {
+      const created = await Wallet.create([{ userId, balance: 0, currency: "USD" }], { session });
+      wallet = created[0];
+    } else {
+      wallet = await Wallet.create({ userId, balance: 0, currency: "USD" });
+    }
   }
   return wallet;
 };
@@ -26,8 +35,8 @@ const getWallet = async (userId) => {
 /**
  * Get wallet balance
  */
-const getBalance = async (userId) => {
-  const wallet = await getWallet(userId);
+const getBalance = async (userId, session) => {
+  const wallet = await getWallet(userId, session);
   return wallet.balance;
 };
 
@@ -37,7 +46,7 @@ const getBalance = async (userId) => {
  * @param {string} userId 
  * @param {number} amount - Positive number
  * @param {string} description - Description for transaction log
- * @param {object} options - Optional: { type, bookingId }
+ * @param {object} options - Optional: { type, bookingId, session }
  * @returns {object} { wallet, transaction }
  */
 const credit = async (userId, amount, description, options = {}) => {
@@ -47,13 +56,18 @@ const credit = async (userId, amount, description, options = {}) => {
     throw error;
   }
 
-  const wallet = await getWallet(userId);
+  const session = options.session;
+  const wallet = await getWallet(userId, session);
   const balanceBefore = wallet.balance;
 
   wallet.balance += amount;
-  await wallet.save();
+  if (session) {
+    await wallet.save({ session });
+  } else {
+    await wallet.save();
+  }
 
-  const transaction = await WalletTransaction.create({
+  const txData = {
     userId,
     type: options.type || "credit",
     amount,
@@ -61,7 +75,15 @@ const credit = async (userId, amount, description, options = {}) => {
     bookingId: options.bookingId || null,
     balanceBefore,
     balanceAfter: wallet.balance,
-  });
+  };
+
+  let transaction;
+  if (session) {
+    const created = await WalletTransaction.create([txData], { session });
+    transaction = created[0];
+  } else {
+    transaction = await WalletTransaction.create(txData);
+  }
 
   return { wallet, transaction };
 };
@@ -72,7 +94,7 @@ const credit = async (userId, amount, description, options = {}) => {
  * @param {string} userId 
  * @param {number} amount - Positive number (will be deducted)
  * @param {string} description - Description for transaction log
- * @param {object} options - Optional: { type, bookingId }
+ * @param {object} options - Optional: { type, bookingId, session }
  * @returns {object} { wallet, transaction }
  */
 const debit = async (userId, amount, description, options = {}) => {
@@ -82,7 +104,8 @@ const debit = async (userId, amount, description, options = {}) => {
     throw error;
   }
 
-  const wallet = await getWallet(userId);
+  const session = options.session;
+  const wallet = await getWallet(userId, session);
 
   if (wallet.balance < amount) {
     const error = new Error("Insufficient wallet balance");
@@ -92,9 +115,13 @@ const debit = async (userId, amount, description, options = {}) => {
 
   const balanceBefore = wallet.balance;
   wallet.balance -= amount;
-  await wallet.save();
+  if (session) {
+    await wallet.save({ session });
+  } else {
+    await wallet.save();
+  }
 
-  const transaction = await WalletTransaction.create({
+  const txData = {
     userId,
     type: options.type || "debit",
     amount: -amount, // negative to show deduction
@@ -102,7 +129,15 @@ const debit = async (userId, amount, description, options = {}) => {
     bookingId: options.bookingId || null,
     balanceBefore,
     balanceAfter: wallet.balance,
-  });
+  };
+
+  let transaction;
+  if (session) {
+    const created = await WalletTransaction.create([txData], { session });
+    transaction = created[0];
+  } else {
+    transaction = await WalletTransaction.create(txData);
+  }
 
   return { wallet, transaction };
 };

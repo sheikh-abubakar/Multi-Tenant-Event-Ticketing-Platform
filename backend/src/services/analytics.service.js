@@ -9,11 +9,37 @@ const Venue = require("../models/Venue");
  * never fetch-then-check (see §4.2 in TECHNICAL_DOCUMENTATION.md).
  */
 
+// ── Simple in-memory cache (TTL = 60 seconds) ──────────────────────────────
+// Prevents the 11 aggregation pipelines from running on every page refresh.
+// The cache is org-scoped so different orgs never see each other's data.
+const analyticsCache = new Map(); // key → { data, expiresAt }
+const CACHE_TTL_MS = 60_000; // 60 s
+
+function getCached(key) {
+  const entry = analyticsCache.get(key);
+  if (entry && entry.expiresAt > Date.now()) return entry.data;
+  analyticsCache.delete(key);
+  return null;
+}
+
+function setCache(key, data) {
+  analyticsCache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+/** Call this after a ticket verification so the stats refresh immediately. */
+const invalidateOrgCache = (organizationId) => {
+  analyticsCache.delete(`org:${organizationId}`);
+};
+
 /**
  * Get a comprehensive analytics payload for the owner dashboard.
  * All metrics are scoped to a single organization.
  */
 const getOwnerAnalytics = async (organizationId) => {
+  const cacheKey = `org:${organizationId}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
   const orgId = new mongoose.Types.ObjectId(organizationId);
 
   // ── 1. Core metrics (Promise.all for parallel execution) ──────
@@ -79,10 +105,18 @@ const getOwnerAnalytics = async (organizationId) => {
       },
     ]),
 
-    // Recent completed/refunded bookings. A refund is business activity and
-    // must remain visible to organizers instead of disappearing from history.
-    Booking.find({ organizationId: orgId, status: { $in: ["confirmed", "refunded"] } })
-      .populate("eventId", "name dateTime")
+    // Recent confirmed/refunded bookings — NO populate() here.
+    // We use the eventName/eventDateTime snapshot fields stored at booking
+    // time so this is a simple index scan with no secondary lookup.
+    Booking.find(
+      { organizationId: orgId, status: { $in: ["confirmed", "refunded"] } },
+      // Only project what the UI actually needs — fewer bytes over the wire
+      {
+        buyerName: 1, buyerEmail: 1, eventName: 1, eventDateTime: 1,
+        eventId: 1, totalAmount: 1, originalAmount: 1, status: 1,
+        paymentStatus: 1, refundInfo: 1, verified: 1, verifiedAt: 1, createdAt: 1,
+      }
+    )
       .sort({ createdAt: -1 })
       .limit(10)
       .lean(),
@@ -116,8 +150,20 @@ const getOwnerAnalytics = async (organizationId) => {
 
     // Refund trend for the same 30-day reporting window.
     Booking.aggregate([
-      { $match: { organizationId: orgId, status: "refunded", "refundInfo.processedAt": { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } },
-      { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$refundInfo.processedAt" } }, refunds: { $sum: 1 }, refundedAmount: { $sum: "$refundInfo.amount" } } },
+      {
+        $match: {
+          organizationId: orgId,
+          status: "refunded",
+          "refundInfo.processedAt": { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$refundInfo.processedAt" } },
+          refunds: { $sum: 1 },
+          refundedAmount: { $sum: "$refundInfo.amount" },
+        },
+      },
       { $project: { _id: 0, date: "$_id", refunds: 1, refundedAmount: 1 } },
     ]),
 
@@ -181,13 +227,6 @@ const getOwnerAnalytics = async (organizationId) => {
   const totalDeduction = refundStatsResult.totalDeduction || 0;
   const totalOrgRevenue = refundStatsResult.totalOrgRevenue || 0;
 
-  // Net revenue = revenue from confirmed ticket sales + the 10% the org
-  // keeps whenever a buyer takes a direct Stripe refund (refunded
-  // bookings are excluded from `totalRevenue` above since their tickets
-  // were returned, but the org still earned that 10% cut for processing
-  // the refund — that's real revenue and should count toward the total).
-  // Wallet refunds contribute 0 here since they're a 100% refund with no
-  // org cut (see refund.service.js#processWalletRefund).
   const netRevenue = totalRevenue + totalOrgRevenue;
 
   // Fill in missing days in revenueByDay with zeroes
@@ -213,18 +252,14 @@ const getOwnerAnalytics = async (organizationId) => {
     });
   }
 
-  // Shape recent bookings
+  // Shape recent bookings — no populate() needed since we project snapshot fields
   const shapedRecentBookings = recentBookings.map((b) => ({
     id: b._id,
     buyerName: b.buyerName,
     buyerEmail: b.buyerEmail,
-    // Prefer the snapshot saved at booking time — falls back to the
-    // live populated event only for older bookings created before this
-    // snapshot existed. This is why "Unknown" can still show up for
-    // bookings made before this fix; new bookings will always have it.
-    eventName: b.eventName || b.eventId?.name || "Unknown",
-    eventDate: b.eventDateTime || b.eventId?.dateTime || null,
-    eventId: b.eventId?._id || b.eventId || null,
+    eventName: b.eventName || "Unknown",
+    eventDate: b.eventDateTime || null,
+    eventId: b.eventId || null,
     totalAmount: b.totalAmount,
     originalAmount: b.originalAmount || b.totalAmount,
     status: b.status,
@@ -235,12 +270,12 @@ const getOwnerAnalytics = async (organizationId) => {
     createdAt: b.createdAt,
   }));
 
-  return {
+  const result = {
     metrics: {
       totalBookings: totalBookingsResult,
       totalRevenue,
       netRevenue,
-      totalTicketsSold: totalTicketsSold,
+      totalTicketsSold,
       totalEvents: eventsCountResult,
       totalVenues: venuesCountResult,
       totalRefunds,
@@ -253,6 +288,9 @@ const getOwnerAnalytics = async (organizationId) => {
     revenueByDay: filledRevenueByDay,
     refundsByEvent,
   };
+
+  setCache(cacheKey, result);
+  return result;
 };
 
 const getEventAnalytics = async (organizationId, eventId) => {
@@ -310,8 +348,11 @@ const getEventAnalytics = async (organizationId, eventId) => {
       },
     ]),
 
-    // Recent bookings for this event
-    Booking.find({ eventId: evId, organizationId: orgId, status: { $in: ["confirmed", "refunded"] } })
+    // Recent bookings for this event — no populate, use projection
+    Booking.find(
+      { eventId: evId, organizationId: orgId, status: { $in: ["confirmed", "refunded"] } },
+      { buyerName: 1, buyerEmail: 1, totalAmount: 1, status: 1, paymentStatus: 1, verified: 1, verifiedAt: 1, createdAt: 1 }
+    )
       .sort({ createdAt: -1 })
       .limit(10)
       .lean(),
@@ -400,4 +441,4 @@ const getEventAnalytics = async (organizationId, eventId) => {
   };
 };
 
-module.exports = { getOwnerAnalytics, getEventAnalytics };
+module.exports = { getOwnerAnalytics, getEventAnalytics, invalidateOrgCache };

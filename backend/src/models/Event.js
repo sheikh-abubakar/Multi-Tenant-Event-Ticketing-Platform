@@ -87,6 +87,11 @@ const eventSchema = new mongoose.Schema(
       required: true,
       default: "Asia/Karachi",
     },
+    accessCode: {
+      type: String,
+      default: null,
+      trim: true,
+    },
   },
   { timestamps: true }
 );

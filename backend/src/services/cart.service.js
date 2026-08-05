@@ -123,16 +123,35 @@ const addItem = async (req, organizationId, eventId, data) => {
   return cart;
 };
 
-const addSeat = async (req, organizationId, eventId, { blockId, seatId }) => {
+const addSeat = async (req, organizationId, eventId, { blockId, seatId, overridePrice, bundleId }) => {
   const event = await Event.findOne({ _id: eventId, organizationId });
   if (!event) { const error = new Error("Event not found"); error.statusCode = 404; throw error; }
   if (event.purchaseMode !== "seatmap" || !event.selectedSeatMap) { const error = new Error("This event does not use seat selection"); error.statusCode = 400; throw error; }
+
+  if (bundleId) {
+    const EventBundle = require("../models/EventBundle");
+    const bundle = await EventBundle.findOne({ _id: bundleId, organizationId });
+    if (bundle && bundle.allowedSections?.length) {
+      const restriction = bundle.allowedSections.find(
+        (r) => r.eventId.toString() === eventId.toString()
+      );
+      if (restriction && restriction.blockId && restriction.blockId !== blockId) {
+        const error = new Error(`Only seats in the "${restriction.blockName}" section are allowed for this bundle.`);
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+  }
+
   const block = event.selectedSeatMap.blocks?.find((item) => item.id === blockId);
   const seat = block?.seats?.find((item) => item.id === seatId);
   if (!seat || !block) { const error = new Error("Seat not found"); error.statusCode = 404; throw error; }
   if (seat.status !== "available") { const error = new Error("This seat is no longer available"); error.statusCode = 409; throw error; }
   const cart = getOrCreateCart(req, organizationId, eventId);
-  if (!cart.items.some((item) => item.blockId === blockId && item.seatId === seatId)) cart.items.push({ blockId, seatId, seatName: seat.seatName, sectionName: block.name, category: block.category || null, quantity: 1, unitPrice: Number(block.price || 0) });
+  if (!cart.items.some((item) => item.blockId === blockId && item.seatId === seatId)) {
+    const finalPrice = overridePrice !== undefined && overridePrice !== null ? Number(overridePrice) : Number(block.price || 0);
+    cart.items.push({ blockId, seatId, seatName: seat.seatName, sectionName: block.name, category: block.category || null, quantity: 1, unitPrice: finalPrice });
+  }
   saveCart(req, organizationId, eventId, cart); return cart;
 };
 

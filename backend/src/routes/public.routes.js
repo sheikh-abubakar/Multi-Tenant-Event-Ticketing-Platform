@@ -6,6 +6,7 @@ const router = express.Router();
 
 // Public endpoints — no authentication required
 router.get("/events", publicController.getAllPublicEvents);
+router.get("/bundles", publicController.getAllPublicBundles);
 router.get("/organizations/public", publicController.getAllOrganizations);
 
 // Route for testing the updated Booking Confirmation template layout locally

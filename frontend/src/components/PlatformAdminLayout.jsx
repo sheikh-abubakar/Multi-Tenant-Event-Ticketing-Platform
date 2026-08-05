@@ -11,6 +11,7 @@ const PlatformAdminLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = () => {
+    sessionStorage.removeItem("unlockedCodes");
     logout();
     navigate("/platform-admin/login");
   };

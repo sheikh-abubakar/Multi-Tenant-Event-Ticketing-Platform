@@ -1,7 +1,50 @@
 const cartService = require("../services/cart.service");
 
+const verifyAccessForEvent = async (req, eventId, organizationId) => {
+  const Event = require("../models/Event");
+  const EventBundle = require("../models/EventBundle");
+  
+  const event = await Event.findOne({ _id: eventId, organizationId }).lean();
+  if (!event) {
+    const err = new Error("Event not found.");
+    err.statusCode = 404;
+    throw err;
+  }
+  
+  if (event.accessCode) {
+    const eventCode = (req.headers["x-event-access-code"] || req.query.accessCode || "").trim();
+    const bundleCode = (req.headers["x-bundle-access-code"] || req.query.bundleAccessCode || "").trim();
+    
+    let unlocked = false;
+    
+    // 1. Direct event access code check
+    if (eventCode && eventCode === event.accessCode) {
+      unlocked = true;
+    }
+    
+    // 2. Bundle access code override check (Case 2)
+    if (!unlocked && bundleCode) {
+      const bundle = await EventBundle.findOne({
+        eventIds: event._id,
+        organizationId,
+        accessCode: bundleCode,
+      });
+      if (bundle) {
+        unlocked = true;
+      }
+    }
+    
+    if (!unlocked) {
+      const err = new Error("This event is protected. A valid access code is required.");
+      err.statusCode = 403;
+      throw err;
+    }
+  }
+};
+
 const getCart = async (req, res) => {
   try {
+    await verifyAccessForEvent(req, req.params.eventId, req.organizationId);
     const result = await cartService.getCartByEvent(
       req,
       req.organizationId,
@@ -15,6 +58,7 @@ const getCart = async (req, res) => {
 
 const addItem = async (req, res) => {
   try {
+    await verifyAccessForEvent(req, req.params.eventId, req.organizationId);
     const cart = await cartService.addItem(
       req,
       req.organizationId,
@@ -29,6 +73,7 @@ const addItem = async (req, res) => {
 
 const updateItem = async (req, res) => {
   try {
+    await verifyAccessForEvent(req, req.params.eventId, req.organizationId);
     const cart = await cartService.updateItem(
       req,
       req.organizationId,

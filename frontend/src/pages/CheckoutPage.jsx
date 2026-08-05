@@ -110,12 +110,15 @@ const CheckoutPage = () => {
         },
       );
 
-      const { stripeUrl } = res.data;
+      const { stripeUrl, success, confirmationUrl } = res.data;
 
       if (stripeUrl) {
         // Clear referral code from sessionStorage after successful checkout initiation
         sessionStorage.removeItem("referralCode");
         window.location.href = stripeUrl;
+      } else if (success && confirmationUrl) {
+        sessionStorage.removeItem("referralCode");
+        window.location.href = confirmationUrl;
       } else {
         setError("Stripe checkout URL not returned. Please try again.");
       }

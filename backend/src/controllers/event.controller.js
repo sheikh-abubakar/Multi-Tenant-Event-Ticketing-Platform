@@ -1,6 +1,7 @@
 const eventService = require("../services/event.service");
 const { uploadBufferToS3 } = require("../utils/s3Upload");
 const { recordPlatformAudit } = require("../utils/platformAudit");
+const EventBundle = require("../models/EventBundle");
 
 // If a file was uploaded (req.file.buffer, set by multer's
 // memoryStorage), streams it to Cloudinary and returns the hosted
@@ -46,7 +47,51 @@ const listPublic = async (req, res) => {
 const getOne = async (req, res) => {
   try {
     const event = await eventService.getEventById(req.params.eventId, req.organizationId);
-    return res.json({ event });
+    
+    // Check if event is protected by an access code
+    if (event.accessCode) {
+      const clientCode = (req.headers["x-event-access-code"] || req.query.accessCode || "").trim();
+      const bundleCode = (req.headers["x-bundle-access-code"] || req.query.bundleAccessCode || "").trim();
+      
+      let unlocked = false;
+      if (clientCode && clientCode === event.accessCode) {
+        unlocked = true;
+      }
+      
+      if (!unlocked && bundleCode) {
+        const bundle = await EventBundle.findOne({
+          eventIds: event._id,
+          organizationId: req.organizationId,
+          accessCode: bundleCode,
+        });
+        if (bundle) {
+          unlocked = true;
+        }
+      }
+      
+      // If code is missing or incorrect, lock the event details (hide ticketTypes)
+      if (!unlocked) {
+        const lockedEvent = {
+          _id: event._id,
+          name: event.name,
+          description: event.description,
+          dateTime: event.dateTime,
+          bannerImageUrl: event.bannerImageUrl,
+          venueId: event.venueId,
+          timezone: event.timezone,
+          purchaseMode: event.purchaseMode,
+          isProtected: true,
+        };
+        return res.json({ event: lockedEvent });
+      }
+    }
+
+    // Unlocked or public: return it but remove accessCode from response for security
+    const cleanEvent = { ...event };
+    delete cleanEvent.accessCode;
+    cleanEvent.isProtected = false;
+
+    return res.json({ event: cleanEvent });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
@@ -78,4 +123,23 @@ const remove = async (req, res) => {
   }
 };
 
-module.exports = { create, list, listPublic, getOne, update, remove };
+const verifyAccess = async (req, res) => {
+  try {
+    const { accessCode } = req.body;
+    if (!accessCode) {
+      return res.status(400).json({ message: "Access code is required." });
+    }
+    const event = await eventService.getEventById(req.params.eventId, req.organizationId);
+    if (!event.accessCode) {
+      return res.json({ success: true, message: "Event is not private." });
+    }
+    if (accessCode.trim() !== event.accessCode.trim()) {
+      return res.status(403).json({ message: "Invalid access code." });
+    }
+    return res.json({ success: true, message: "Access code verified." });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+module.exports = { create, list, listPublic, getOne, update, remove, verifyAccess };

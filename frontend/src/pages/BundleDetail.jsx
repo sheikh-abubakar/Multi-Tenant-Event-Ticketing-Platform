@@ -103,7 +103,7 @@ export default function BundleDetail() {
       }}
     >
       <div
-        className="card"
+        className="unlock-modal-card"
         style={{
           width: "100%",
           maxWidth: 420,

@@ -25,6 +25,7 @@ const getEventMap = async (req, res) => {
     if (event.accessCode) {
       const eventCode = (req.headers["x-event-access-code"] || req.query.accessCode || "").trim();
       const bundleCode = (req.headers["x-bundle-access-code"] || req.query.bundleAccessCode || "").trim();
+      const queryBookingId = req.query.bookingId || req.headers["x-booking-id"];
 
       let unlocked = false;
 
@@ -41,6 +42,77 @@ const getEventMap = async (req, res) => {
           accessCode: bundleCode,
         });
         if (bundle) {
+          unlocked = true;
+        }
+      }
+
+      // 3. Bypass if the user has a confirmed booking for this event
+      if (!unlocked) {
+        const Booking = require("../models/Booking");
+        let bookingExists = false;
+
+        if (queryBookingId) {
+          const booking = await Booking.findOne({
+            _id: queryBookingId,
+            eventId: event._id,
+            status: "confirmed"
+          });
+          if (booking) {
+            const authHeader = req.headers.authorization;
+            if (authHeader && authHeader.startsWith("Bearer ")) {
+              try {
+                const { verifyToken } = require("../utils/jwt");
+                const User = require("../models/User");
+                const token = authHeader.split(" ")[1];
+                const decoded = verifyToken(token);
+                if (decoded && decoded.userId) {
+                  const dbUser = await User.findById(decoded.userId).lean();
+                  const userEmail = (dbUser?.email || "").toLowerCase();
+                  const isOwner = (booking.userId && String(booking.userId) === String(decoded.userId)) ||
+                                  (booking.buyerEmail && booking.buyerEmail.toLowerCase() === userEmail);
+                  if (isOwner) {
+                    bookingExists = true;
+                  }
+                }
+              } catch (e) {
+                // Ignore token verify error
+              }
+            } else {
+              bookingExists = true;
+            }
+          }
+        }
+
+        if (!bookingExists) {
+          const authHeader = req.headers.authorization;
+          if (authHeader && authHeader.startsWith("Bearer ")) {
+            try {
+              const { verifyToken } = require("../utils/jwt");
+              const User = require("../models/User");
+              const token = authHeader.split(" ")[1];
+              const decoded = verifyToken(token);
+              if (decoded && decoded.userId) {
+                const dbUser = await User.findById(decoded.userId).lean();
+                const userEmail = (dbUser?.email || "").toLowerCase();
+                const booking = await Booking.findOne({
+                  $or: [
+                    { userId: decoded.userId },
+                    { buyerEmail: userEmail }
+                  ],
+                  eventId: event._id,
+                  status: "confirmed"
+                });
+                if (booking) {
+                  bookingExists = true;
+                }
+              }
+            } catch (e) {
+              // Ignore token verify error
+            }
+          }
+        }
+
+        if (bookingExists) {
           unlocked = true;
         }
       }

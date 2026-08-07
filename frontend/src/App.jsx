@@ -50,6 +50,10 @@ const BundleSeatSelection = lazy(() => import("./pages/BundleSeatSelection"));
 const BundleCheckoutPage = lazy(() => import("./pages/BundleCheckoutPage"));
 const EditBundle = lazy(() => import("./pages/EditBundle"));
 
+// Seat Change components
+const SeatChangeRequestPage = lazy(() => import("./pages/SeatChangeRequestPage"));
+const SeatChangeRequests = lazy(() => import("./pages/Admin/SeatChangeRequests"));
+
 function App() {
   const [searchParams] = useSearchParams();
   const [appReady, setAppReady] = useState(false);
@@ -189,6 +193,22 @@ function App() {
           element={
             <ProtectedRoute>
               <EditBundle />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/o/:orgSlug/manage/seat-changes"
+          element={
+            <ProtectedRoute>
+              <SeatChangeRequests />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/o/:orgSlug/bookings/:bookingId/change-seat/:seatId"
+          element={
+            <ProtectedRoute>
+              <SeatChangeRequestPage />
             </ProtectedRoute>
           }
         />

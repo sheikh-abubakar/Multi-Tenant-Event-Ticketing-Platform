@@ -405,6 +405,7 @@ const Analytics = () => {
         <StatCard label="Venues" value={metrics.totalVenues} />
         <StatCard label="Refunds Issued" value={metrics.totalRefunds} />
         <StatCard label="Refunded Amount" value={formatUSD(metrics.totalRefundedAmount)} />
+        <StatCard label="Seat Swaps Approved" value={metrics.approvedSwaps || 0} />
       </div>
 
       {/* ── Event List section ── */}
@@ -754,7 +755,7 @@ const Analytics = () => {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
                     gap: 16,
                     marginBottom: 32,
                   }}
@@ -778,6 +779,10 @@ const Analytics = () => {
                   <div style={{ padding: "16px 12px", border: "1px solid #e8e0d0", borderRadius: 8, textAlign: "center" }}>
                     <div style={{ fontSize: 11, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Unverified</div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: "#b45309" }}>{eventAnalyticsData.metrics.unverifiedTickets}</div>
+                  </div>
+                  <div style={{ padding: "16px 12px", border: "1px solid #e8e0d0", borderRadius: 8, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Seat Swaps</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "var(--gold)" }}>{eventAnalyticsData.metrics.approvedSwaps || 0}</div>
                   </div>
                 </div>
 
@@ -816,6 +821,7 @@ const Analytics = () => {
                       <thead>
                         <tr style={{ borderBottom: "2px solid #e8e0d0" }}>
                           <th style={{ textAlign: "left", padding: "6px 4px", color: "#666" }}>Attendee</th>
+                          <th style={{ textAlign: "left", padding: "6px 4px", color: "#666" }}>Seats</th>
                           <th style={{ textAlign: "right", padding: "6px 4px", color: "#666" }}>Amount</th>
                           <th style={{ textAlign: "center", padding: "6px 4px", color: "#666" }}>Status</th>
                           <th style={{ textAlign: "center", padding: "6px 4px", color: "#666" }}>Check-in</th>
@@ -827,6 +833,20 @@ const Analytics = () => {
                             <td style={{ padding: "8px 4px" }}>
                               <div style={{ fontWeight: 600, color: "#333" }}>{b.buyerName}</div>
                               <div style={{ fontSize: 11, color: "#888" }}>{b.buyerEmail}</div>
+                            </td>
+                            <td style={{ padding: "8px 4px", color: "#333" }}>
+                              <div>
+                                {b.selectedSeats && b.selectedSeats.length > 0 ? (
+                                  b.selectedSeats.map((s) => `${s.seatName} (${s.sectionName || "General"})`).join(", ")
+                                ) : (
+                                  "—"
+                                )}
+                              </div>
+                              {b.isSwapped && (
+                                <span style={{ fontSize: 9, background: "#e0f2fe", color: "#0369a1", padding: "1px 6px", borderRadius: 4, display: "inline-block", marginTop: 4, fontWeight: 700 }}>
+                                  🔄 Seat Swapped
+                                </span>
+                              )}
                             </td>
                             <td style={{ padding: "8px 4px", textAlign: "right", fontWeight: 600, color: "#333" }}>
                               {formatUSD(b.totalAmount)}
@@ -1204,7 +1224,13 @@ const Analytics = () => {
                   <div style={{ marginTop: 16, textAlign: "left", borderTop: "1px solid rgba(22,163,74,0.2)", paddingTop: 12, fontSize: 13, color: "#444" }}>
                     <div style={{ marginBottom: 4 }}><strong>Buyer:</strong> {scanResult.booking.buyerName}</div>
                     <div style={{ marginBottom: 4 }}><strong>Email:</strong> {scanResult.booking.buyerEmail}</div>
-                    <div><strong>Confirmation:</strong> {scanResult.booking.confirmationCode}</div>
+                    <div style={{ marginBottom: 4 }}><strong>Confirmation:</strong> {scanResult.booking.confirmationCode}</div>
+                    {scanResult.booking.selectedSeats && scanResult.booking.selectedSeats.length > 0 && (
+                      <div>
+                        <strong>Seat(s):</strong>{" "}
+                        {scanResult.booking.selectedSeats.map((s) => `${s.seatName} (${s.sectionName || "General"})`).join(", ")}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1244,7 +1270,9 @@ const getIconForLabel = (label) => {
   }
   if (normalized.includes("event")) return <Calendar size={size} color={color} />;
   if (normalized.includes("venue")) return <MapPin size={size} color={color} />;
-  if (normalized.includes("refund")) return <RefreshCw size={size} color={color} />;
+  if (normalized.includes("refund") || normalized.includes("swap") || normalized.includes("change")) {
+    return <RefreshCw size={size} color={color} />;
+  }
   return <Layers size={size} color={color} />;
 };
 

@@ -878,10 +878,42 @@ const getBundleBookings = async (bundleBookingId, organizationId) => {
 const handleStripeWebhook = async (event) => {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
+
+    // Check if session belongs to a seat change request
+    const SeatChangeRequest = require("../models/SeatChangeRequest");
+    const seatRequest = await SeatChangeRequest.findOne({ stripeSessionId: session.id });
+    if (seatRequest) {
+      seatRequest.paymentStatus = "paid";
+      await seatRequest.save();
+
+      // Hold new seat on the event seatmap
+      const Event = require("../models/Event");
+      const eventDoc = await Event.findById(seatRequest.eventId);
+      if (eventDoc && eventDoc.selectedSeatMap) {
+        const block = eventDoc.selectedSeatMap.blocks?.find((b) => b.id === seatRequest.newSeat.blockId);
+        const seat = block?.seats?.find((s) => s.id === seatRequest.newSeat.seatId);
+        if (seat) {
+          seat.status = "transfer-held";
+          eventDoc.markModified("selectedSeatMap");
+          await eventDoc.save();
+        }
+      }
+      return;
+    }
+
     return confirmBooking(session.id);
   }
   if (event.type === "checkout.session.expired") {
     const session = event.data.object;
+
+    const SeatChangeRequest = require("../models/SeatChangeRequest");
+    const seatRequest = await SeatChangeRequest.findOne({ stripeSessionId: session.id });
+    if (seatRequest) {
+      seatRequest.paymentStatus = "failed";
+      await seatRequest.save();
+      return;
+    }
+
     const booking = await Booking.findOne({ stripeSessionId: session.id });
     if (booking) {
       return expireBookingIfStillPending(booking);

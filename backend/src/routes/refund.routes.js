@@ -1,6 +1,7 @@
 const express = require("express");
 const authenticate = require("../middlewares/authenticate");
 const refundController = require("../controllers/refund.controller");
+const seatChangeController = require("../controllers/seatChange.controller");
 
 const router = express.Router();
 
@@ -8,5 +9,6 @@ const router = express.Router();
 router.get("/bookings/mine", authenticate, refundController.getMyBookings);
 router.post("/bookings/refund", authenticate, refundController.requestRefund);
 router.get("/wallet", authenticate, refundController.getWallet);
+router.get("/seat-change/my", authenticate, seatChangeController.getMyRequestsGlobal);
 
 module.exports = router;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { ShoppingCart, WalletCards, User, Menu, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings } from "lucide-react";
+import { ShoppingCart, WalletCards, User, Menu, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "./Logo";
 import AICopilot from "./ai/AICopilot";
@@ -53,6 +53,7 @@ const Layout = ({ children }) => {
       ["Events", `/o/${orgSlug}/manage/events`, Calendar],
       ["Venues", `/o/${orgSlug}/manage/venues`, MapPin],
       ["Bundles", `/o/${orgSlug}/manage/bundles`, Package],
+      ["Seat Changes", `/o/${orgSlug}/manage/seat-changes`, RefreshCw],
       ["Analytics", `/o/${orgSlug}/manage/analytics`, BarChart3],
       ["Team", `/o/${orgSlug}/manage/team`, Users2],
       ["Settings", `/o/${orgSlug}/manage/settings`, Settings],

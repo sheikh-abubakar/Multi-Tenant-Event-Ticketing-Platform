@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
 const Event = require("../models/Event");
 const Venue = require("../models/Venue");
+const SeatChangeRequest = require("../models/SeatChangeRequest");
 
 /**
  * Analytics service — all queries are tenant-scoped by organizationId.
@@ -55,6 +56,7 @@ const getOwnerAnalytics = async (organizationId) => {
     refundsByDay,
     refundStats,
     refundsByEvent,
+    approvedSwapsCount,
   ] = await Promise.all([
     // Total confirmed bookings
     Booking.countDocuments({ organizationId: orgId, status: "confirmed" }),
@@ -214,6 +216,7 @@ const getOwnerAnalytics = async (organizationId) => {
         },
       },
     ]),
+    SeatChangeRequest.countDocuments({ organizationId: orgId, status: "approved" }),
   ]);
 
   // ── 2. Shape the response ─────────────────────────────────────
@@ -282,6 +285,7 @@ const getOwnerAnalytics = async (organizationId) => {
       totalRefundedAmount,
       totalDeduction,
       totalOrgRevenue,
+      approvedSwaps: approvedSwapsCount || 0,
     },
     bookingsPerEvent,
     recentBookings: shapedRecentBookings,
@@ -313,6 +317,8 @@ const getEventAnalytics = async (organizationId, eventId) => {
     refundStats,
     recentBookings,
     revenueByDay,
+    approvedSwapsCount,
+    approvedSwapsList,
   ] = await Promise.all([
     // Total confirmed bookings
     Booking.countDocuments({ eventId: evId, organizationId: orgId, status: "confirmed" }),
@@ -351,7 +357,7 @@ const getEventAnalytics = async (organizationId, eventId) => {
     // Recent bookings for this event — no populate, use projection
     Booking.find(
       { eventId: evId, organizationId: orgId, status: { $in: ["confirmed", "refunded"] } },
-      { buyerName: 1, buyerEmail: 1, totalAmount: 1, status: 1, paymentStatus: 1, verified: 1, verifiedAt: 1, createdAt: 1 }
+      { buyerName: 1, buyerEmail: 1, totalAmount: 1, status: 1, paymentStatus: 1, verified: 1, verifiedAt: 1, createdAt: 1, selectedSeats: 1 }
     )
       .sort({ createdAt: -1 })
       .limit(10)
@@ -384,6 +390,8 @@ const getEventAnalytics = async (organizationId, eventId) => {
         },
       },
     ]),
+    SeatChangeRequest.countDocuments({ eventId: evId, organizationId: orgId, status: "approved" }),
+    SeatChangeRequest.find({ eventId: evId, status: "approved" }).lean(),
   ]);
 
   const totalRevenue = totalRevenueResult[0]?.total || 0;
@@ -407,17 +415,22 @@ const getEventAnalytics = async (organizationId, eventId) => {
     });
   }
 
-  const shapedRecentBookings = recentBookings.map((b) => ({
-    id: b._id,
-    buyerName: b.buyerName,
-    buyerEmail: b.buyerEmail,
-    totalAmount: b.totalAmount,
-    status: b.status,
-    paymentStatus: b.paymentStatus,
-    verified: b.verified || false,
-    verifiedAt: b.verifiedAt || null,
-    createdAt: b.createdAt,
-  }));
+  const shapedRecentBookings = recentBookings.map((b) => {
+    const isSwapped = (approvedSwapsList || []).some((swap) => swap.bookingId.toString() === b._id.toString());
+    return {
+      id: b._id,
+      buyerName: b.buyerName,
+      buyerEmail: b.buyerEmail,
+      totalAmount: b.totalAmount,
+      status: b.status,
+      paymentStatus: b.paymentStatus,
+      verified: b.verified || false,
+      verifiedAt: b.verifiedAt || null,
+      createdAt: b.createdAt,
+      selectedSeats: b.selectedSeats || [],
+      isSwapped,
+    };
+  });
 
   return {
     event: {
@@ -435,6 +448,7 @@ const getEventAnalytics = async (organizationId, eventId) => {
       unverifiedTickets: unverifiedCount,
       totalRefunds: refundsInfo.totalRefunds,
       totalRefundedAmount: refundsInfo.totalRefundedAmount,
+      approvedSwaps: approvedSwapsCount || 0,
     },
     recentBookings: shapedRecentBookings,
     revenueByDay: filledRevenueByDay,

@@ -8,6 +8,7 @@ const BuyerDashboard = () => {
   const [wallet, setWallet] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [referralData, setReferralData] = useState(null);
+  const [seatChangeRequests, setSeatChangeRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -19,14 +20,16 @@ const BuyerDashboard = () => {
     setLoading(true);
     setError("");
     try {
-      const [walletRes, bookingsRes, referralRes] = await Promise.all([
+      const [walletRes, bookingsRes, referralRes, seatChangeRes] = await Promise.all([
         apiClient.get("/wallet"),
         apiClient.get("/bookings/mine"),
         apiClient.get("/referrals/me").catch(() => null),
+        apiClient.get("/seat-change/my").catch(() => ({ data: { requests: [] } })),
       ]);
       setWallet(walletRes.data.wallet);
       setBookings(bookingsRes.data.bookings || []);
       if (referralRes) setReferralData(referralRes.data.data);
+      setSeatChangeRequests(seatChangeRes.data.requests || []);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to load data");
     } finally {
@@ -393,6 +396,37 @@ const BuyerDashboard = () => {
                     <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--muted)" }}>
                       Code: {booking.confirmationCode} • {formatDate(booking.createdAt)}
                     </p>
+
+                    {/* Associated Seat Change Requests */}
+                    {(() => {
+                      const myRequests = seatChangeRequests.filter(
+                        (r) => String(r.bookingId?._id || r.bookingId) === String(booking._id)
+                      );
+                      if (myRequests.length === 0) return null;
+                      return (
+                        <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(201, 154, 60, 0.05)", borderLeft: "3px solid var(--gold)", borderRadius: 6 }}>
+                          {myRequests.map((req) => (
+                            <div key={req._id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, gap: 10, color: "var(--paper)" }}>
+                              <span>
+                                🔄 Seat Change: <strong>{req.oldSeat?.seatName}</strong> &rarr; <strong style={{ color: "#10b981" }}>{req.newSeat?.seatName}</strong>
+                              </span>
+                              <span style={{
+                                fontWeight: 700,
+                                textTransform: "uppercase",
+                                fontSize: 9,
+                                padding: "2px 6px",
+                                borderRadius: 4,
+                                background: req.status === "approved" ? "rgba(16, 185, 129, 0.15)" : req.status === "rejected" ? "rgba(239, 68, 68, 0.15)" : "rgba(252, 196, 62, 0.15)",
+                                color: req.status === "approved" ? "#10b981" : req.status === "rejected" ? "#ef4444" : "#fcc43e",
+                                whiteSpace: "nowrap"
+                              }}>
+                                {req.status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <Link
@@ -441,6 +475,126 @@ const BuyerDashboard = () => {
                       }}>
                         ↩️ {booking.refundInfo.method === "wallet" ? "Wallet" : "Stripe"}
                       </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Seat Change Requests */}
+      <div className="buyer-dashboard__bookings" style={{ marginTop: 40 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+          <Clock size={20} color="#c99a3c" />
+          <h2 style={{ color: "var(--paper)", margin: 0, fontSize: 22, fontWeight: 600 }}>
+            Seat Change Requests
+          </h2>
+          <span style={{
+            background: "var(--gold)",
+            color: "var(--paper)",
+            padding: "2px 10px",
+            borderRadius: 12,
+            fontSize: 12,
+            fontWeight: 600,
+          }}>
+            {seatChangeRequests.length}
+          </span>
+        </div>
+
+        {seatChangeRequests.length === 0 ? (
+          <div className="buyer-dashboard__empty" style={{
+            textAlign: "center",
+            padding: 40,
+            background: "var(--card)",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+          }}>
+            <Clock size={32} style={{ margin: "0 auto 12px", opacity: 0.3 }} />
+            <p style={{ color: "var(--muted)", fontSize: 15, margin: 0 }}>
+              No seat change requests found
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {seatChangeRequests.map((req) => {
+              const event = req.eventId || {};
+              const isCheaper = req.priceDifference < 0;
+              const isPriceEqual = req.priceDifference === 0;
+
+              return (
+                <div key={req._id} className="buyer-dashboard__booking" style={{
+                  background: "var(--card)",
+                  borderRadius: 12,
+                  padding: "18px 20px",
+                  border: "1px solid var(--border)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 16,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <h3 style={{ margin: 0, color: "var(--paper)", fontSize: 16, fontWeight: 600 }}>
+                        {event.name || "Unknown Event"}
+                      </h3>
+                      <span style={{
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        background: req.status === "approved" ? "#e6f7e6" : req.status === "rejected" ? "#fce8e6" : "#fff3cd",
+                        color: req.status === "approved" ? "#1a7d1a" : req.status === "rejected" ? "#c01e1e" : "#856404",
+                      }}>
+                        {req.status}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 13, color: "var(--muted)", alignItems: "center" }}>
+                      <span>Swap: <strong>{req.oldSeat?.seatName}</strong> &rarr; <strong style={{ color: "#10b981" }}>{req.newSeat?.seatName}</strong></span>
+                      <span>• Difference: 
+                        <strong style={{ color: isCheaper ? "#10b981" : isPriceEqual ? "inherit" : "var(--gold)" }}>
+                          {isCheaper ? ` Refund $${Math.abs(req.priceDifference).toFixed(2)}` : isPriceEqual ? " $0.00" : ` +$${req.priceDifference.toFixed(2)}`}
+                        </strong>
+                      </span>
+                      <span>• Payment: {req.paymentStatus}</span>
+                    </div>
+                    <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--muted)" }}>
+                      Submitted: {formatDate(req.createdAt)}
+                    </p>
+
+                    {req.paymentStatus === "pending" && req.status === "pending" && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const orgSlug = req.bookingId?.organizationId?.slug || req.bookingId?.organizationId || "dev";
+                            await apiClient.post(`/o/${orgSlug}/seat-change/requests/${req._id}/dev-simulate-pay`);
+                            setSuccess("⚡ Offline dev payment simulated successfully! Reloading...");
+                            setTimeout(() => {
+                              setSuccess("");
+                              loadData();
+                            }, 1500);
+                          } catch (err) {
+                            setError(err.response?.data?.message || "Failed to simulate payment.");
+                          }
+                        }}
+                        style={{
+                          marginTop: 10,
+                          padding: "6px 12px",
+                          background: "var(--gold)",
+                          color: "var(--ink)",
+                          border: "none",
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center"
+                        }}
+                      >
+                        ⚡ Simulate Stripe Payment (Dev Mode)
+                      </button>
                     )}
                   </div>
                 </div>

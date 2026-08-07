@@ -6,9 +6,12 @@ const BookingConfirmation = () => {
   const { orgSlug, bookingId } = useParams();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session_id");
+  const isSeatChangeSuccess = searchParams.get("seat_change_success") === "1";
+  const isSeatChangeCancel = searchParams.get("seat_change_cancel") === "1";
 
   const [booking, setBooking] = useState(null);
   const [bundleBookings, setBundleBookings] = useState([]);
+  const [seatChangeRequests, setSeatChangeRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -67,9 +70,19 @@ const BookingConfirmation = () => {
             }
           }
         }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
+
+      // Fetch seat change requests
+      try {
+        const reqsRes = await apiClient.get("/seat-change/my");
+        if (!cancelled) {
+          setSeatChangeRequests(reqsRes.data.requests || []);
+        }
+      } catch (reqsErr) {
+        console.warn("Could not load seat change requests:", reqsErr);
+      }
+
+      if (!cancelled) setLoading(false);
     };
 
     if (bookingId) {
@@ -80,15 +93,11 @@ const BookingConfirmation = () => {
 
   if (loading) {
     return (
-      <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center" }}>
-        <div className="card">
-          <p style={{ color: "var(--muted)", fontSize: 18 }}>
-            Confirming your payment…
-          </p>
-          <p style={{ color: "var(--muted)", fontSize: 14 }}>
-            Please wait while we process your booking.
-          </p>
-        </div>
+      <div style={{ textAlign: "center", padding: 60 }}>
+        <div style={{ display: "inline-block", border: "4px solid rgba(255,255,255,0.1)", borderLeftColor: "var(--gold)", borderRadius: "50%", width: 36, height: 36, animation: "spin 1s linear infinite" }} />
+        <p style={{ color: "var(--muted)", marginTop: 12 }}>
+          Please wait while we process your booking.
+        </p>
       </div>
     );
   }
@@ -143,6 +152,18 @@ const BookingConfirmation = () => {
             : "Your booking is being processed. Check your email for updates."}
         </p>
       </div>
+
+      {isSeatChangeSuccess && (
+        <div style={{ background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: 8, padding: 16, color: "#10b981", marginBottom: 16, textAlign: "center" }}>
+          <strong>✓ Seat change request submitted successfully!</strong> The organizer has been notified to review your seat swap.
+        </div>
+      )}
+
+      {isSeatChangeCancel && (
+        <div style={{ background: "rgba(220, 38, 38, 0.08)", border: "1px solid rgba(220, 38, 38, 0.2)", borderRadius: 8, padding: 16, color: "#dc2626", marginBottom: 16, textAlign: "center" }}>
+          <strong>⚠️ Seat change upgrade fee payment was cancelled.</strong>
+        </div>
+      )}
 
       {/* ── Booking Details ── */}
       <div className="card confirmation-details-card" style={{ marginBottom: 16 }}>
@@ -205,9 +226,42 @@ const BookingConfirmation = () => {
                 </p>
                 <div style={{ marginTop: 12 }}>
                   <p style={styles.label}>Selected Seats</p>
-                  <p style={{ ...styles.value, fontWeight: 700 }}>
-                    {b.selectedSeats?.map(s => `${s.sectionName} — ${s.seatName}`).join(", ")}
-                  </p>
+                  <div style={{ display: "grid", gap: 8, marginTop: 4 }}>
+                    {b.selectedSeats?.map((s) => {
+                      const isPendingChange = seatChangeRequests.some(
+                        (r) => String(r.bookingId?._id || r.bookingId) === String(b._id) && r.oldSeat?.seatId === s.seatId && r.status === "pending"
+                      );
+                      return (
+                        <div key={`${s.blockId}-${s.seatId}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontWeight: 700, color: "var(--text)", fontSize: 14 }}>
+                            {s.sectionName} — {s.seatName}
+                          </span>
+                          {isPendingChange ? (
+                            <span style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600 }}>
+                              🔄 Change Pending
+                            </span>
+                          ) : (
+                            isConfirmed && !((b.eventId?.dateTime || b.eventDateTime) && new Date(b.eventId?.dateTime || b.eventDateTime) < new Date()) && (
+                              <Link
+                                to={`/o/${orgSlug}/bookings/${b._id}/change-seat/${s.seatId}`}
+                                style={{
+                                  padding: "4px 8px",
+                                  background: "var(--gold)",
+                                  color: "var(--paper)",
+                                  borderRadius: 4,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  textDecoration: "none",
+                                }}
+                              >
+                                Change Seat
+                              </Link>
+                            )
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
               {b.qrCodeUrl && (
@@ -261,6 +315,53 @@ const BookingConfirmation = () => {
               </tbody>
             </table>
           </div>
+
+          {booking.selectedSeats && booking.selectedSeats.length > 0 && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <h3 style={{ marginTop: 0, color: "var(--text)" }}>Your Seats</h3>
+              <div style={{ display: "grid", gap: 12 }}>
+                {booking.selectedSeats.map((seat) => {
+                  const isPendingChange = seatChangeRequests.some(
+                    (r) => String(r.bookingId?._id || r.bookingId) === String(booking._id) && r.oldSeat?.seatId === seat.seatId && r.status === "pending"
+                  );
+                  return (
+                    <div key={`${seat.blockId}-${seat.seatId}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <strong style={{ display: "block", color: "var(--text)", fontSize: 14 }}>
+                          {seat.seatName} ({seat.sectionName || "General"})
+                        </strong>
+                        <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                          Price: ${seat.unitPrice}
+                        </span>
+                      </div>
+                      {isPendingChange ? (
+                        <span style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600 }}>
+                          🔄 Change Pending
+                        </span>
+                      ) : (
+                        isConfirmed && !((booking.eventId?.dateTime || booking.eventDateTime) && new Date(booking.eventId?.dateTime || booking.eventDateTime) < new Date()) && (
+                          <Link
+                            to={`/o/${orgSlug}/bookings/${booking._id}/change-seat/${seat.seatId}`}
+                            style={{
+                              padding: "6px 12px",
+                              background: "var(--gold)",
+                              color: "var(--paper)",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              textDecoration: "none",
+                            }}
+                          >
+                            Change Seat
+                          </Link>
+                        )
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {booking.qrCodeUrl && (
             <div className="card confirmation-qr-card" style={{ marginBottom: 16, textAlign: "center" }}>

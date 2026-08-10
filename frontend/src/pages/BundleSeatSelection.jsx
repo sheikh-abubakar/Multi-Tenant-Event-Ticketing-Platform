@@ -27,6 +27,9 @@ export default function BundleSeatSelection() {
   const [unlockCodeInput, setUnlockCodeInput] = useState("");
   const [unlockError, setUnlockError] = useState("");
   const [verifyingCode, setVerifyingCode] = useState(false);
+  const [selectedSessionIds, setSelectedSessionIds] = useState({});
+  const [activeEventSessions, setActiveEventSessions] = useState([]);
+  const [resolvedEvent, setResolvedEvent] = useState(null);
 
   const loadBundle = async () => {
     try {
@@ -41,35 +44,52 @@ export default function BundleSeatSelection() {
     loadBundle();
   }, [orgSlug, bundleId]);
 
+  useEffect(() => {
+    setResolvedEvent(null);
+  }, [currentEventIdx]);
+
   const activeEvent = bundle?.eventIds?.[currentEventIdx];
+  const displayEvent = resolvedEvent || activeEvent;
 
   const loadActiveEventMapAndCart = async () => {
     if (!activeEvent) return;
 
+    const resolvedEventId = activeEvent._id;
+    const sessionId = selectedSessionIds[activeEvent._id] || "";
+
     // Check if code was already unlocked in this session
     const saved = JSON.parse(sessionStorage.getItem("unlockedCodes") || "{}");
-    const isUnlocked = saved[activeEvent._id] || localUnlockedEvents[activeEvent._id];
+    const isUnlocked = saved[resolvedEventId] || localUnlockedEvents[resolvedEventId];
 
-    const isLocked = activeEvent.isProtected && !bundle?.accessCode && !isUnlocked;
+    const isLocked = displayEvent?.isProtected && !bundle?.accessCode && !isUnlocked;
     if (isLocked) {
-      setLockedEventId(activeEvent._id);
+      setLockedEventId(resolvedEventId);
       setLoading(false);
       return;
     }
 
     setLoading(true);
     setError("");
+    setActiveEventMap(null);
+    setActiveCart({ items: [] });
     try {
-      const [mapRes, cartRes] = await Promise.all([
-        apiClient.get(`/o/${orgSlug}/events/${activeEvent._id}/seatmap`),
-        apiClient.get(`/o/${orgSlug}/cart/${activeEvent._id}`),
+      const [eventRes, mapRes, cartRes] = await Promise.all([
+        apiClient.get(`/o/${orgSlug}/events/${resolvedEventId}`),
+        apiClient.get(`/o/${orgSlug}/events/${resolvedEventId}/seatmap?sessionId=${sessionId}`, { params: { bundleId } }),
+        apiClient.get(`/o/${orgSlug}/cart/${resolvedEventId}?sessionId=${sessionId}`, { params: { bundleId } }),
       ]);
+      setResolvedEvent(eventRes.data.event);
+      const upcoming = (eventRes.data.sessions || []).filter(s => new Date(s.dateTime) >= new Date());
+      setActiveEventSessions(upcoming);
+      if (upcoming.length === 0) {
+        setError("This event is no longer active as all of its session dates have passed.");
+      }
       setActiveEventMap(mapRes.data.seatmap);
       setActiveCart(cartRes.data.cart);
       setLockedEventId(null);
     } catch (err) {
       if (err.response?.status === 403 && err.response?.data?.isProtected) {
-        setLockedEventId(activeEvent._id);
+        setLockedEventId(resolvedEventId);
       } else {
         setError("Could not load seat map or cart reservation.");
       }
@@ -78,23 +98,26 @@ export default function BundleSeatSelection() {
     }
   };
 
+  const activeSessionId = activeEvent ? (selectedSessionIds[activeEvent._id] || "") : "";
+
   useEffect(() => {
     loadActiveEventMapAndCart();
-  }, [activeEvent]);
+  }, [activeEvent, activeSessionId]);
 
   const handleUnlockEventSubmit = async (e) => {
     e.preventDefault();
     setVerifyingCode(true);
     setUnlockError("");
+    const targetId = selectedSessionIds[activeEvent.parentEventId || activeEvent._id] || activeEvent._id;
     try {
-      await apiClient.post(`/o/${orgSlug}/events/${activeEvent._id}/verify-access`, {
+      await apiClient.post(`/o/${orgSlug}/events/${targetId}/verify-access`, {
         accessCode: unlockCodeInput,
       });
       const saved = JSON.parse(sessionStorage.getItem("unlockedCodes") || "{}");
-      saved[activeEvent._id] = unlockCodeInput;
+      saved[targetId] = unlockCodeInput;
       sessionStorage.setItem("unlockedCodes", JSON.stringify(saved));
 
-      setLocalUnlockedEvents((prev) => ({ ...prev, [activeEvent._id]: true }));
+      setLocalUnlockedEvents((prev) => ({ ...prev, [targetId]: true }));
       setLockedEventId(null);
       setUnlockCodeInput("");
       
@@ -150,10 +173,11 @@ export default function BundleSeatSelection() {
     }
 
     setBusy(true);
+    const sessionId = selectedSessionIds[activeEvent._id] || "";
     try {
       const res = exists
-        ? await apiClient.delete(`/o/${orgSlug}/cart/${activeEvent._id}/seats/${block.id}/${seat.id}`)
-        : await apiClient.post(`/o/${orgSlug}/cart/${activeEvent._id}/items`, {
+        ? await apiClient.delete(`/o/${orgSlug}/cart/${activeEvent._id}/seats/${block.id}/${seat.id}?sessionId=${sessionId}`)
+        : await apiClient.post(`/o/${orgSlug}/cart/${activeEvent._id}/items?sessionId=${sessionId}`, {
             blockId: block.id,
             seatId: seat.id,
             overridePrice: bundle.pricePerSeat,
@@ -162,6 +186,40 @@ export default function BundleSeatSelection() {
       setActiveCart(res.data.cart);
     } catch (err) {
       setError(err.response?.data?.message || "Could not update selection.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changeGaQuantity = async (block, increment) => {
+    if (busy) return;
+    const current = activeCart.items.filter((item) => item.blockId === block.id);
+    const cartSeatIds = new Set(current.map((item) => item.seatId));
+    const candidate = increment
+      ? block.seats?.find((seat) => seat.status === "available" && !cartSeatIds.has(seat.id))
+      : current.at(-1);
+    if (!candidate) return;
+
+    if (increment && activeCart.items.length >= requiredQty) {
+      setError(`You can only select up to ${requiredQty} seats for this event.`);
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    const sessionId = selectedSessionIds[activeEvent._id] || "";
+    try {
+      const res = increment
+        ? await apiClient.post(`/o/${orgSlug}/cart/${activeEvent._id}/items?sessionId=${sessionId}`, {
+            blockId: block.id,
+            seatId: candidate.id,
+            overridePrice: bundle.pricePerSeat,
+            bundleId: bundle._id,
+          })
+        : await apiClient.delete(`/o/${orgSlug}/cart/${activeEvent._id}/seats/${block.id}/${candidate.seatId || candidate.id}?sessionId=${sessionId}`);
+      setActiveCart(res.data.cart);
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not update General Admission quantity.");
     } finally {
       setBusy(false);
     }
@@ -186,9 +244,7 @@ export default function BundleSeatSelection() {
       setError(`Please select exactly ${requiredQty} seats for this event.`);
       return;
     }
-    // Gather all reservations across the session carts for checkout redirection.
-    // The redirect goes to our checkout form with selections structured by event.
-    navigate(`/o/${orgSlug}/checkout/bundle?bundleId=${bundleId}&qty=${requiredQty}`);
+    navigate(`/o/${orgSlug}/checkout/bundle?bundleId=${bundleId}&qty=${requiredQty}`, { state: { selectedSessionIds } });
   };
 
   if (!bundle || loading) {
@@ -201,6 +257,15 @@ export default function BundleSeatSelection() {
   }
 
   const isLastEvent = currentEventIdx === (bundle.eventIds?.length || 1) - 1;
+
+  const individualItems = activeCart.items.filter(
+    (item) => !activeEventMap?.blocks?.find((block) => block.id === item.blockId && block.type === "general-admission"),
+  );
+
+  const gaBlocks = filteredEventMap?.blocks?.filter((block) => block.type === "general-admission") || [];
+
+  const currentSessionId = selectedSessionIds[activeEvent?._id] || (activeEventSessions[0]?._id) || "";
+  const activeSession = activeEventSessions.find(s => String(s._id) === String(currentSessionId));
 
   return (
     <div className="ss-page">
@@ -215,9 +280,49 @@ export default function BundleSeatSelection() {
             <span className="ss-eyebrow">
               EVENT {currentEventIdx + 1} OF {bundle.eventIds?.length}
             </span>
-            <h1 className="ss-title">{activeEvent?.name}</h1>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+              <h1 className="ss-title" style={{ margin: 0 }}>{displayEvent?.name}</h1>
+              {activeEventSessions.length > 1 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>Session:</span>
+                  <select
+                    value={currentSessionId}
+                    onChange={(e) => {
+                      const newSessionId = e.target.value;
+                      setSelectedSessionIds({
+                        ...selectedSessionIds,
+                        [activeEvent._id]: newSessionId
+                      });
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      background: "#111326",
+                      color: "#fff",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      outline: "none"
+                    }}
+                  >
+                    {activeEventSessions.map((s) => (
+                      <option key={s._id} value={s._id}>
+                        {new Date(s.dateTime).toLocaleString("en-US", {
+                          weekday: "short",
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit"
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
             <p className="ss-subtitle">
-              📅 {new Date(activeEvent?.dateTime).toLocaleDateString()} · {bundle.venueId?.name}
+              📅 {activeSession ? new Date(activeSession.dateTime).toLocaleString() : (displayEvent?.dateTime ? new Date(displayEvent.dateTime).toLocaleString() : "")} · {bundle.venueId?.name}
             </p>
           </div>
 
@@ -236,7 +341,7 @@ export default function BundleSeatSelection() {
             </div>
           )}
 
-          {((activeEvent?.isProtected || lockedEventId === activeEvent?._id) && !localUnlockedEvents[activeEvent?._id]) ? (
+          {((displayEvent?.isProtected || lockedEventId === displayEvent?._id) && !localUnlockedEvents[displayEvent?._id]) ? (
             <div
               style={{
                 background: "rgba(255, 255, 255, 0.03)",
@@ -289,6 +394,7 @@ export default function BundleSeatSelection() {
                   map={filteredEventMap}
                   selectedIds={selectedIds}
                   onSeatClick={toggleSeat}
+                  onGaClick={(block) => changeGaQuantity(block, true)}
                 />
               </div>
             )
@@ -305,15 +411,53 @@ export default function BundleSeatSelection() {
               </span>
             </div>
 
+            {/* GA blocks */}
+            {gaBlocks.length > 0 && (
+              <div className="ss-ga-blocks" style={{ marginBottom: 20 }}>
+                {gaBlocks.map((block) => {
+                  const quantity = activeCart.items.filter((item) => item.blockId === block.id).length;
+                  return (
+                    <div key={block.id} className="ss-ga-row">
+                      <div className="ss-ga-row__info">
+                        <p className="ss-ga-row__name">{block.name}</p>
+                        <p className="ss-ga-row__price">Included in Bundle</p>
+                      </div>
+                      <div className="ss-ga-row__counter">
+                        <button
+                          type="button"
+                          onClick={() => changeGaQuantity(block, false)}
+                          disabled={!quantity || busy}
+                          aria-label={`Remove one ${block.name}`}
+                          className="ss-ga-row__btn"
+                        >
+                          −
+                        </button>
+                        <span className="ss-ga-row__qty">{quantity}</span>
+                        <button
+                          type="button"
+                          onClick={() => changeGaQuantity(block, true)}
+                          disabled={busy}
+                          aria-label={`Add one ${block.name}`}
+                          className="ss-ga-row__btn"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="ss-seat-list">
-              {activeCart.items.length === 0 ? (
+              {individualItems.length === 0 && gaBlocks.length === 0 ? (
                 <div className="ss-empty-state">
                   <div className="ss-empty-state__icon">🎟</div>
                   <p>Click seats on the map to add them here.</p>
                 </div>
               ) : (
                 <div style={{ display: "grid", gap: 8 }}>
-                  {activeCart.items.map((item) => (
+                  {individualItems.map((item) => (
                     <div key={seatKey(item.blockId, item.seatId)} className="ss-seat-row">
                       <div className="ss-seat-row__info">
                         <span className="ss-seat-row__name">{item.seatName}</span>

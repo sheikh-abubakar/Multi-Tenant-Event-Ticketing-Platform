@@ -22,7 +22,8 @@ const getEventMap = async (req, res) => {
       return res.status(404).json({ message: "Event not found." });
     }
 
-    if (event.accessCode) {
+    const isEventProtected = event.accessCode && (!event.privateCodeExpiry || new Date(event.privateCodeExpiry) > new Date());
+    if (isEventProtected) {
       const eventCode = (req.headers["x-event-access-code"] || req.query.accessCode || "").trim();
       const bundleCode = (req.headers["x-bundle-access-code"] || req.query.bundleAccessCode || "").trim();
       const queryBookingId = req.query.bookingId || req.headers["x-booking-id"];
@@ -35,14 +36,22 @@ const getEventMap = async (req, res) => {
       }
 
       // 2. Check if accessed via an unlocked bundle (Case 1 & 2)
-      if (!unlocked && bundleCode) {
-        const bundle = await EventBundle.findOne({
-          eventIds: event._id,
-          organizationId: req.organizationId,
-          accessCode: bundleCode,
-        });
+      const queryBundleId = req.query.bundleId || req.headers["x-bundle-id"];
+      if (!unlocked && (queryBundleId || bundleCode)) {
+        let bundleFilter = { eventIds: event._id, organizationId: req.organizationId };
+        if (queryBundleId) {
+          bundleFilter._id = queryBundleId;
+        } else {
+          bundleFilter.accessCode = bundleCode;
+        }
+        const bundle = await EventBundle.findOne(bundleFilter);
         if (bundle) {
-          unlocked = true;
+          const isBundleProtected = bundle.accessCode && (!bundle.privateCodeExpiry || new Date(bundle.privateCodeExpiry) > new Date());
+          if (!isBundleProtected) {
+            unlocked = true;
+          } else if (bundleCode && bundleCode === bundle.accessCode) {
+            unlocked = true;
+          }
         }
       }
 
@@ -126,13 +135,21 @@ const getEventMap = async (req, res) => {
       }
     }
 
-    const seatmap = await seatmapService.getEventSeatmap(req.params.eventId, req.organizationId);
+    let sessionId = req.query.sessionId;
+    if (!sessionId && (req.query.bookingId || req.headers["x-booking-id"])) {
+      const Booking = require("../models/Booking");
+      const booking = await Booking.findById(req.query.bookingId || req.headers["x-booking-id"]);
+      if (booking) {
+        sessionId = booking.sessionId;
+      }
+    }
+    const seatmap = await seatmapService.getEventSeatmap(req.params.eventId, req.organizationId, sessionId);
     return res.json({ seatmap });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
-const saveEventMap = respond(async (req) => ({ seatmap: await seatmapService.saveEventSeatmap(req.params.eventId, req.organizationId, req.body.seatmap || req.body) }));
-const seedEventMap = respond(async (req) => ({ seatmap: await seatmapService.seedEventSeatmapFromTemplate(req.params.eventId, req.organizationId, req.body.seatmapId) }));
+const saveEventMap = respond(async (req) => ({ seatmap: await seatmapService.saveEventSeatmap(req.params.eventId, req.organizationId, req.body.seatmap || req.body, req.query.sessionId || req.body.sessionId) }));
+const seedEventMap = respond(async (req) => ({ seatmap: await seatmapService.seedEventSeatmapFromTemplate(req.params.eventId, req.organizationId, req.body.seatmapId, req.body.sessionId) }));
 
 module.exports = { listTemplates, createTemplate, updateTemplate, removeTemplate, getEventMap, saveEventMap, seedEventMap };

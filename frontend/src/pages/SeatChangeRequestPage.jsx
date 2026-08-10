@@ -15,6 +15,8 @@ export default function SeatChangeRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [selectedSessionId, setSelectedSessionId] = useState(null);
 
   // Selection states
   const [selectedSeat, setSelectedSeat] = useState(null); // { block, seat }
@@ -22,7 +24,7 @@ export default function SeatChangeRequestPage() {
   const [paymentMethod, setPaymentMethod] = useState("wallet");
 
   // Format seat keys
-  const seatKey = (blockId, seatId) => `${blockId}-${seatId}`;
+  const seatKey = (blockId, seatId) => `${blockId}:${seatId}`;
 
   // Find the user's current seat in the booking
   const originalSeat = useMemo(() => {
@@ -49,7 +51,14 @@ export default function SeatChangeRequestPage() {
         setWallet(walletRes.data.wallet);
 
         const eventId = bk.eventId?._id || bk.eventId;
-        const mapRes = await apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?bookingId=${bookingId}`);
+        const [eventRes, mapRes] = await Promise.all([
+          apiClient.get(`/o/${orgSlug}/events/${eventId}`),
+          apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?bookingId=${bookingId}`)
+        ]);
+
+        const sess = eventRes.data.sessions || [];
+        setSessions(sess);
+        setSelectedSessionId(bk.sessionId || sess[0]?._id || "");
         setEventMap(mapRes.data.seatmap);
       } catch (err) {
         setError(err.response?.data?.message || "Could not load booking details.");
@@ -59,6 +68,22 @@ export default function SeatChangeRequestPage() {
     };
     loadDetails();
   }, [orgSlug, bookingId]);
+
+  const handleSessionChange = async (newSessionId) => {
+    setSelectedSessionId(newSessionId);
+    setSelectedSeat(null);
+    try {
+      setLoading(true);
+      setError("");
+      const eventId = booking.eventId?._id || booking.eventId;
+      const mapRes = await apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?bookingId=${bookingId}&sessionId=${newSessionId}`);
+      setEventMap(mapRes.data.seatmap);
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not load seat map for this session.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const selectedIds = useMemo(() => {
     const s = new Set();
@@ -91,6 +116,16 @@ export default function SeatChangeRequestPage() {
     }
   };
 
+  const handleGaClick = (block) => {
+    setError("");
+    const availableSeat = block.seats?.find((s) => s.status === "available");
+    if (!availableSeat) {
+      setError("No available General Admission slots left in this section.");
+      return;
+    }
+    handleSeatClick(block, availableSeat);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedSeat) {
@@ -120,6 +155,7 @@ export default function SeatChangeRequestPage() {
         },
         reason,
         paymentMethod,
+        newSessionId: selectedSessionId,
       };
 
       const res = await apiClient.post(`/o/${orgSlug}/seat-change/requests`, payload);
@@ -187,9 +223,44 @@ export default function SeatChangeRequestPage() {
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         {/* Top: Interactive Seat Map */}
         <section className="rounded-2xl bg-paper p-6 shadow-xl" style={{ border: "1px solid rgba(255, 255, 255, 0.05)" }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--gold-soft)", marginBottom: 12 }}>
-            Interactive Seat Map — {booking.eventName}
-          </h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16, marginBottom: 12 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--gold-soft)", margin: 0 }}>
+              Interactive Seat Map — {booking.eventName}
+            </h2>
+            
+            {sessions.length > 1 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>Event Date/Session:</span>
+                <select
+                  value={selectedSessionId || ""}
+                  onChange={(e) => handleSessionChange(e.target.value)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    background: "#111326",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    outline: "none"
+                  }}
+                >
+                  {sessions.map((s) => (
+                    <option key={s._id} value={s._id}>
+                      {new Date(s.dateTime).toLocaleString("en-US", {
+                        weekday: "short",
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
           <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 20 }}>
             Legend: Dark seats are sold or unavailable. Gold border indicates your selected seat.
           </p>
@@ -200,6 +271,7 @@ export default function SeatChangeRequestPage() {
                 map={eventMap}
                 selectedIds={selectedIds}
                 onSeatClick={handleSeatClick}
+                onGaClick={handleGaClick}
                 className="ss-canvas"
               />
             </div>

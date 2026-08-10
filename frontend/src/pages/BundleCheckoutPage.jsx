@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import apiClient from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
 export default function BundleCheckoutPage() {
   const { orgSlug } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const bundleId = searchParams.get("bundleId");
   const qty = Number(searchParams.get("qty") || 2);
   const { user } = useAuth();
+
+  const selectedSessionIds = location.state?.selectedSessionIds || {};
 
   const [bundle, setBundle] = useState(null);
   const [eventCarts, setEventCarts] = useState({}); // eventId -> cart items
@@ -43,7 +46,8 @@ export default function BundleCheckoutPage() {
         // 2. Fetch all event carts in this bundle
         const carts = {};
         for (const event of bundleData.eventIds) {
-          const cartRes = await apiClient.get(`/o/${orgSlug}/cart/${event._id}`);
+          const sessionId = selectedSessionIds[event._id] || "";
+          const cartRes = await apiClient.get(`/o/${orgSlug}/cart/${event._id}?sessionId=${sessionId}`, { params: { bundleId } });
           carts[event._id] = cartRes.data.cart.items || [];
         }
         setEventCarts(carts);
@@ -95,6 +99,7 @@ export default function BundleCheckoutPage() {
         buyerName: form.buyerName,
         buyerEmail: form.buyerEmail,
         selections,
+        selectedSessionIds,
         useWallet,
         walletDeduction: useWallet ? walletDeduction : 0,
         refCode: refCode || undefined,

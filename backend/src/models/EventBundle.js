@@ -44,6 +44,10 @@ const eventBundleSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    privateCodeExpiry: {
+      type: Date,
+      default: null,
+    },
     allowedSections: [
       {
         eventId: {

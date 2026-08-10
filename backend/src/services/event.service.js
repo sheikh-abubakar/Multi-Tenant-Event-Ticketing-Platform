@@ -2,7 +2,7 @@ const Event = require("../models/Event");
 const Venue = require("../models/Venue");
 
 const createEvent = async (data, organizationId, bannerImageUrl) => {
-  const { name, description, dateTime, venueId, accessCode } = data;
+  const { name, description, dateTime, venueId, accessCode, privateCodeExpiry, sessionDates } = data;
 
   if (!name || !dateTime || !venueId) {
     const error = new Error("name, dateTime and venueId are required");
@@ -16,11 +16,15 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     throw error;
   }
 
-  // Cross-check: the venue being attached to this event must belong
-  // to THE SAME org as the event. Without this check, someone could
-  // create an event in Org A that points at a venueId belonging to
-  // Org B — a subtle cross-tenant data link. Same guard pattern as
-  // before: filter by _id AND organizationId together.
+  let parsedSessionDates = [];
+  if (sessionDates) {
+    try {
+      parsedSessionDates = typeof sessionDates === "string" ? JSON.parse(sessionDates) : sessionDates;
+    } catch (e) {
+      parsedSessionDates = [];
+    }
+  }
+
   const venue = await Venue.findOne({ _id: venueId, organizationId });
   if (!venue) {
     const error = new Error("Venue not found in this organization");
@@ -28,8 +32,17 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     throw error;
   }
 
-  // Inherit timezone from venue
   const eventTimezone = venue.timezone || "Asia/Karachi";
+
+  const sessionsList = [];
+  sessionsList.push({ dateTime, selectedSeatMap: null });
+
+  if (Array.isArray(parsedSessionDates) && parsedSessionDates.length > 0) {
+    for (const sDate of parsedSessionDates) {
+      if (new Date(sDate) < new Date()) continue;
+      sessionsList.push({ dateTime: sDate, selectedSeatMap: null });
+    }
+  }
 
   return Event.create({
     organizationId,
@@ -42,6 +55,8 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     ticketTypes: [],
     timezone: eventTimezone,
     accessCode: accessCode ? String(accessCode).trim() || null : null,
+    privateCodeExpiry: privateCodeExpiry ? new Date(privateCodeExpiry) || null : null,
+    sessions: sessionsList,
   });
 };
 
@@ -84,7 +99,7 @@ const listEvents = async (organizationId, assignedVenueIds = null, { includeSeat
 
 const getEventById = async (eventId, organizationId) => {
   const event = await Event.findOne({ _id: eventId, organizationId })
-    .select("name description dateTime bannerImageUrl ticketTypes purchaseMode venueId timezone accessCode createdAt updatedAt")
+    .select("name description dateTime bannerImageUrl ticketTypes purchaseMode venueId timezone accessCode privateCodeExpiry sessions createdAt updatedAt")
     .populate("venueId", "name city")
     .lean();
   if (!event) {
@@ -96,20 +111,46 @@ const getEventById = async (eventId, organizationId) => {
 };
 
 const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => {
-  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode"];
+  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode", "privateCodeExpiry", "sessionDates"];
   const safeUpdates = {};
 
   for (const field of allowedFields) {
     if (updates[field] !== undefined) {
       if (field === "accessCode") {
         safeUpdates[field] = updates[field] ? String(updates[field]).trim() || null : null;
+      } else if (field === "privateCodeExpiry") {
+        safeUpdates[field] = updates[field] ? new Date(updates[field]) || null : null;
       } else {
         safeUpdates[field] = updates[field];
       }
     }
   }
 
-  if (safeUpdates.dateTime && new Date(safeUpdates.dateTime) < new Date()) {
+  const event = await Event.findOne({ _id: eventId, organizationId });
+  if (!event) {
+    const error = new Error("Event not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const primaryDateTime = safeUpdates.dateTime || event.dateTime;
+  let sessionsToCheck = [primaryDateTime];
+  if (updates.sessionDates !== undefined) {
+    let parsedSessionDates = [];
+    try {
+      parsedSessionDates = typeof updates.sessionDates === "string" ? JSON.parse(updates.sessionDates) : updates.sessionDates;
+    } catch (e) {
+      parsedSessionDates = [];
+    }
+    if (Array.isArray(parsedSessionDates)) {
+      sessionsToCheck = [...sessionsToCheck, ...parsedSessionDates];
+    }
+  } else if (event.sessions && event.sessions.length > 0) {
+    sessionsToCheck = event.sessions.map(s => s.dateTime);
+  }
+
+  const hasFutureSession = sessionsToCheck.some(sDate => new Date(sDate) >= new Date());
+  if (!hasFutureSession) {
     const error = new Error("Event date and time cannot be in the past");
     error.statusCode = 400;
     throw error;
@@ -125,21 +166,65 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
     }
   }
 
+  const mongoose = require("mongoose");
+  Object.entries(safeUpdates).forEach(([key, val]) => {
+    event[key] = val;
+  });
+
   if (bannerImageUrl) {
-    safeUpdates.bannerImageUrl = bannerImageUrl;
+    event.bannerImageUrl = bannerImageUrl;
   }
 
-  const event = await Event.findOneAndUpdate(
-    { _id: eventId, organizationId },
-    safeUpdates,
-    { new: true, runValidators: true }
-  );
+  // Parse and update sessions array if sessionDates is provided
+  if (updates.sessionDates !== undefined) {
+    let parsedSessionDates = [];
+    try {
+      parsedSessionDates = typeof updates.sessionDates === "string" ? JSON.parse(updates.sessionDates) : updates.sessionDates;
+    } catch (e) {
+      parsedSessionDates = [];
+    }
 
-  if (!event) {
-    const error = new Error("Event not found");
-    error.statusCode = 404;
-    throw error;
+    const newSessionsList = [];
+    const primaryDateTime = safeUpdates.dateTime || event.dateTime;
+
+    // Preserve primary session's seatmap if possible
+    const existingPrimary = event.sessions && event.sessions.length > 0
+      ? (event.sessions.find(s => String(s.dateTime) === String(primaryDateTime)) || event.sessions[0])
+      : null;
+
+    newSessionsList.push({
+      _id: existingPrimary ? existingPrimary._id : new mongoose.Types.ObjectId(),
+      dateTime: primaryDateTime,
+      selectedSeatMap: existingPrimary ? existingPrimary.selectedSeatMap : null
+    });
+
+    if (Array.isArray(parsedSessionDates)) {
+      for (const sDate of parsedSessionDates) {
+        const existingSession = event.sessions && event.sessions.length > 0
+          ? event.sessions.find(s => String(new Date(s.dateTime)) === String(new Date(sDate)))
+          : null;
+
+        if (!existingSession && new Date(sDate) < new Date()) {
+          // Only skip if it's a NEW session date in the past
+          continue;
+        }
+
+        newSessionsList.push({
+          _id: existingSession ? existingSession._id : new mongoose.Types.ObjectId(),
+          dateTime: sDate,
+          selectedSeatMap: existingSession ? existingSession.selectedSeatMap : null
+        });
+      }
+    }
+
+    event.sessions = newSessionsList;
+    event.markModified("sessions");
+  } else if (safeUpdates.dateTime && event.sessions && event.sessions.length > 0) {
+    event.sessions[0].dateTime = safeUpdates.dateTime;
+    event.markModified("sessions");
   }
+
+  await event.save();
   return event;
 };
 

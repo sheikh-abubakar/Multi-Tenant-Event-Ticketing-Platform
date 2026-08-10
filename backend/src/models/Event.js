@@ -35,6 +35,17 @@ const ticketTypeSchema = new mongoose.Schema({
   },
 });
 
+const eventSessionSchema = new mongoose.Schema({
+  dateTime: {
+    type: Date,
+    required: true,
+  },
+  selectedSeatMap: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+  },
+});
+
 const eventSchema = new mongoose.Schema(
   {
     organizationId: {
@@ -82,6 +93,10 @@ const eventSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: null,
     },
+    sessions: {
+      type: [eventSessionSchema],
+      default: [],
+    },
     timezone: {
       type: String,
       required: true,
@@ -91,6 +106,10 @@ const eventSchema = new mongoose.Schema(
       type: String,
       default: null,
       trim: true,
+    },
+    privateCodeExpiry: {
+      type: Date,
+      default: null,
     },
   },
   { timestamps: true }

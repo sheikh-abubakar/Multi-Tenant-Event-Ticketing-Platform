@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
+import { Link, useParams, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
@@ -7,6 +7,8 @@ const CheckoutPage = () => {
   const { orgSlug, eventId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get("sessionId") || "";
   const { user } = useAuth();
   const [cart, setCart] = useState(null);
   const [event, setEvent] = useState(null);
@@ -40,7 +42,7 @@ const CheckoutPage = () => {
       setLoading(true);
       setError("");
       try {
-        const cartRes = await apiClient.get(`/o/${orgSlug}/cart/${eventId}`);
+        const cartRes = await apiClient.get(`/o/${orgSlug}/cart/${eventId}?sessionId=${sessionId}`);
         let walletBalanceVal = 0;
         let refStatsVal = null;
 
@@ -105,8 +107,8 @@ const CheckoutPage = () => {
           refCode: refCode || undefined,
           rewardsToApply: rewardsToApply > 0 ? rewardsToApply : undefined,
           couponCode: appliedCoupon?.code || undefined,
-          // auth service returns `id` (not `_id`) — needed for referral reward discount lookup
           userId: user?.id,
+          sessionId,
         },
       );
 

@@ -222,7 +222,7 @@ const BookingConfirmation = () => {
                 </span>
                 <h3 style={{ margin: "0 0 6px", color: "var(--text)" }}>{b.eventName}</h3>
                 <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                  📅 {b.eventId?.dateTime ? new Date(b.eventId.dateTime).toLocaleString() : "TBD"}
+                  📅 {b.eventDateTime ? new Date(b.eventDateTime).toLocaleString() : b.eventId?.dateTime ? new Date(b.eventId.dateTime).toLocaleString() : "TBD"}
                 </p>
                 <div style={{ marginTop: 12 }}>
                   <p style={styles.label}>Selected Seats</p>
@@ -241,7 +241,7 @@ const BookingConfirmation = () => {
                               🔄 Change Pending
                             </span>
                           ) : (
-                            isConfirmed && !((b.eventId?.dateTime || b.eventDateTime) && new Date(b.eventId?.dateTime || b.eventDateTime) < new Date()) && (
+                            isConfirmed && !((b.eventDateTime || b.eventId?.dateTime) && new Date(b.eventDateTime || b.eventId?.dateTime) < new Date()) && (
                               <Link
                                 to={`/o/${orgSlug}/bookings/${b._id}/change-seat/${s.seatId}`}
                                 style={{
@@ -339,7 +339,7 @@ const BookingConfirmation = () => {
                           🔄 Change Pending
                         </span>
                       ) : (
-                        isConfirmed && !((booking.eventId?.dateTime || booking.eventDateTime) && new Date(booking.eventId?.dateTime || booking.eventDateTime) < new Date()) && (
+                        isConfirmed && !((booking.eventDateTime || booking.eventId?.dateTime) && new Date(booking.eventDateTime || booking.eventId?.dateTime) < new Date()) && (
                           <Link
                             to={`/o/${orgSlug}/bookings/${booking._id}/change-seat/${seat.seatId}`}
                             style={{

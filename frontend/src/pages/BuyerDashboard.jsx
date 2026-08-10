@@ -386,7 +386,7 @@ const BuyerDashboard = () => {
                       </span>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 13, color: "var(--muted)" }}>
-                      <span>📅 {event.dateTime ? formatDate(event.dateTime) : "TBD"}</span>
+                      <span>📅 {booking.eventDateTime ? formatDate(booking.eventDateTime) : event.dateTime ? formatDate(event.dateTime) : "TBD"}</span>
                       <span>📍 {venue.name || "TBA"}{venue.city ? `, ${venue.city}` : ""}</span>
                       <span>🎫 {booking.items?.reduce((s, i) => s + i.quantity, 0)} tickets</span>
                       <span style={{ color: "var(--gold)", fontWeight: 600 }}>

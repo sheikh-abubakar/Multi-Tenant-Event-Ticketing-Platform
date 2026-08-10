@@ -11,9 +11,11 @@ const verifyAccessForEvent = async (req, eventId, organizationId) => {
     throw err;
   }
   
-  if (event.accessCode) {
+  const isEventProtected = event.accessCode && (!event.privateCodeExpiry || new Date(event.privateCodeExpiry) > new Date());
+  if (isEventProtected) {
     const eventCode = (req.headers["x-event-access-code"] || req.query.accessCode || "").trim();
     const bundleCode = (req.headers["x-bundle-access-code"] || req.query.bundleAccessCode || "").trim();
+    const queryBundleId = req.body?.bundleId || req.query?.bundleId || req.headers["x-bundle-id"];
     
     let unlocked = false;
     
@@ -22,21 +24,30 @@ const verifyAccessForEvent = async (req, eventId, organizationId) => {
       unlocked = true;
     }
     
-    // 2. Bundle access code override check (Case 2)
-    if (!unlocked && bundleCode) {
-      const bundle = await EventBundle.findOne({
-        eventIds: event._id,
-        organizationId,
-        accessCode: bundleCode,
-      });
+    // 2. Bundle access check
+    if (!unlocked && (queryBundleId || bundleCode)) {
+      let bundleFilter = { eventIds: event._id, organizationId };
+      if (queryBundleId) {
+        bundleFilter._id = queryBundleId;
+      } else {
+        bundleFilter.accessCode = bundleCode;
+      }
+      
+      const bundle = await EventBundle.findOne(bundleFilter);
       if (bundle) {
-        unlocked = true;
+        const isBundleProtected = bundle.accessCode && (!bundle.privateCodeExpiry || new Date(bundle.privateCodeExpiry) > new Date());
+        if (!isBundleProtected) {
+          unlocked = true;
+        } else if (bundleCode && bundleCode === bundle.accessCode) {
+          unlocked = true;
+        }
       }
     }
     
     if (!unlocked) {
       const err = new Error("This event is protected. A valid access code is required.");
       err.statusCode = 403;
+      err.isProtected = true;
       throw err;
     }
   }
@@ -49,10 +60,11 @@ const getCart = async (req, res) => {
       req,
       req.organizationId,
       req.params.eventId,
+      req.query.sessionId
     );
     return res.json(result);
   } catch (error) {
-    return res.status(error.statusCode || 500).json({ message: error.message });
+    return res.status(error.statusCode || 500).json({ message: error.message, isProtected: error.isProtected });
   }
 };
 
@@ -63,11 +75,11 @@ const addItem = async (req, res) => {
       req,
       req.organizationId,
       req.params.eventId,
-      req.body,
+      { ...req.body, sessionId: req.query.sessionId || req.body.sessionId }
     );
     return res.status(200).json({ cart });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({ message: error.message });
+    return res.status(error.statusCode || 500).json({ message: error.message, isProtected: error.isProtected });
   }
 };
 
@@ -82,7 +94,7 @@ const updateItem = async (req, res) => {
     );
     return res.status(200).json({ cart });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({ message: error.message });
+    return res.status(error.statusCode || 500).json({ message: error.message, isProtected: error.isProtected });
   }
 };
 
@@ -106,6 +118,7 @@ const clearCart = async (req, res) => {
       req,
       req.organizationId,
       req.params.eventId,
+      req.query.sessionId || req.body.sessionId
     );
     return res.status(200).json({ cart });
   } catch (error) {
@@ -114,7 +127,7 @@ const clearCart = async (req, res) => {
 };
 
 const removeSeat = async (req, res) => {
-  try { const cart = cartService.removeSeat(req, req.organizationId, req.params.eventId, req.params.blockId, req.params.seatId); return res.json({ cart }); }
+  try { const cart = cartService.removeSeat(req, req.organizationId, req.params.eventId, req.params.blockId, req.params.seatId, req.query.sessionId); return res.json({ cart }); }
   catch (error) { return res.status(error.statusCode || 500).json({ message: error.message }); }
 };
 

@@ -104,26 +104,136 @@ const deleteVenueSeatmap = async (venueId, seatmapId, organizationId) => {
   await venue.save();
 };
 
-const getEventSeatmap = async (eventId, organizationId) => {
-  const event = await Event.findOne({ _id: eventId, organizationId }).select("selectedSeatMap purchaseMode name");
+const getEventSeatmap = async (eventId, organizationId, sessionId) => {
+  const event = await Event.findOne({ _id: eventId, organizationId });
   if (!event) fail("Event not found", 404);
-  if (event.purchaseMode !== "seatmap" || !event.selectedSeatMap) fail("This event does not have a seat map", 404);
-  return event.selectedSeatMap;
+
+  // If no sessions exist (legacy single session event), return root map
+  if (!event.sessions || event.sessions.length === 0) {
+    if (event.purchaseMode !== "seatmap" || !event.selectedSeatMap) {
+      fail("This event does not have a seat map", 404);
+    }
+    return event.selectedSeatMap;
+  }
+
+  // Find the requested session
+  const session = event.sessions.find(s => String(s._id) === String(sessionId)) ||
+                  event.sessions.find(s => new Date(s.dateTime) >= new Date()) ||
+                  event.sessions[0];
+  if (!session) fail("Session not found", 404);
+
+  // Self-healing fallback: if target session map is empty, clone from first configured session or event root map
+  if (!session.selectedSeatMap || !session.selectedSeatMap.blocks || session.selectedSeatMap.blocks.length === 0) {
+    const configuredSister = event.sessions.find(s => s.selectedSeatMap && s.selectedSeatMap.blocks && s.selectedSeatMap.blocks.length > 0) || { selectedSeatMap: event.selectedSeatMap };
+    if (configuredSister && configuredSister.selectedSeatMap && configuredSister.selectedSeatMap.blocks && configuredSister.selectedSeatMap.blocks.length > 0) {
+      const cleanClone = JSON.parse(JSON.stringify(configuredSister.selectedSeatMap));
+      if (cleanClone.blocks) {
+        cleanClone.blocks.forEach((block) => {
+          if (block.seats) {
+            block.seats.forEach((seat) => {
+              seat.status = "available";
+            });
+          }
+        });
+      }
+      session.selectedSeatMap = cleanClone;
+      event.markModified("sessions");
+      await event.save();
+      return cleanClone;
+    }
+  }
+
+  if (!session.selectedSeatMap) {
+    fail("This event session does not have a seat map configured", 404);
+  }
+
+  return session.selectedSeatMap;
 };
 
-const saveEventSeatmap = async (eventId, organizationId, rawMap) => {
+const propagateMapToSessions = (event, map, sourceSessionId) => {
+  if (!event.sessions || event.sessions.length <= 1) return;
+
+  event.sessions.forEach((session) => {
+    // Skip the session that was just saved/edited
+    if (sourceSessionId && String(session._id) === String(sourceSessionId)) {
+      return;
+    }
+
+    const cleanClone = JSON.parse(JSON.stringify(map));
+    
+    // If the session already has a seat map, let's preserve the seat statuses
+    if (session.selectedSeatMap && session.selectedSeatMap.blocks) {
+      // Map of existing seat statuses: "blockId:seatId" -> status
+      const existingStatusMap = {};
+      session.selectedSeatMap.blocks.forEach((block) => {
+        if (block.seats) {
+          block.seats.forEach((seat) => {
+            existingStatusMap[`${block.id}:${seat.id}`] = seat.status;
+          });
+        }
+      });
+
+      // Apply preserved statuses to cleanClone
+      if (cleanClone.blocks) {
+        cleanClone.blocks.forEach((block) => {
+          if (block.seats) {
+            block.seats.forEach((seat) => {
+              const prevStatus = existingStatusMap[`${block.id}:${seat.id}`];
+              if (prevStatus && ["sold", "checkout-held", "transfer-held"].includes(prevStatus)) {
+                seat.status = prevStatus;
+              } else {
+                seat.status = "available";
+              }
+            });
+          }
+        });
+      }
+    } else {
+      // No existing seatmap, so all seats are available
+      if (cleanClone.blocks) {
+        cleanClone.blocks.forEach((block) => {
+          if (block.seats) {
+            block.seats.forEach((seat) => {
+              seat.status = "available";
+            });
+          }
+        });
+      }
+    }
+
+    session.selectedSeatMap = cleanClone;
+  });
+};
+
+const saveEventSeatmap = async (eventId, organizationId, rawMap, sessionId) => {
   const event = await Event.findOne({ _id: eventId, organizationId });
   if (!event) fail("Event not found", 404);
   const map = normaliseMap(rawMap, { eventMode: true });
-  assertProtectedInventory(event.selectedSeatMap, map);
+
   event.purchaseMode = "seatmap";
-  event.selectedSeatMap = map;
-  event.markModified("selectedSeatMap");
+
+  if (!event.sessions || event.sessions.length === 0) {
+    assertProtectedInventory(event.selectedSeatMap, map);
+    event.selectedSeatMap = map;
+    event.markModified("selectedSeatMap");
+  } else {
+    const session = event.sessions.find(s => String(s._id) === String(sessionId)) || event.sessions[0];
+    assertProtectedInventory(session.selectedSeatMap, map);
+    session.selectedSeatMap = map;
+    
+    // Also save to root as default fallback
+    event.selectedSeatMap = map;
+    
+    propagateMapToSessions(event, map, session._id);
+    event.markModified("sessions");
+    event.markModified("selectedSeatMap");
+  }
+
   await event.save();
   return map;
 };
 
-const seedEventSeatmapFromTemplate = async (eventId, organizationId, seatmapId) => {
+const seedEventSeatmapFromTemplate = async (eventId, organizationId, seatmapId, sessionId) => {
   const event = await Event.findOne({ _id: eventId, organizationId });
   if (!event) fail("Event not found", 404);
   const venue = await Venue.findOne({ _id: event.venueId, organizationId });
@@ -131,9 +241,24 @@ const seedEventSeatmapFromTemplate = async (eventId, organizationId, seatmapId) 
   const template = venue.seatmaps.find((map) => String(map.id) === String(seatmapId));
   if (!template) fail("Seatmap template not found", 404);
   const clone = normaliseMap(JSON.parse(JSON.stringify(template)), { eventMode: true });
-  event.selectedSeatMap = clone;
+
   event.purchaseMode = "seatmap";
-  event.markModified("selectedSeatMap");
+
+  if (!event.sessions || event.sessions.length === 0) {
+    event.selectedSeatMap = clone;
+    event.markModified("selectedSeatMap");
+  } else {
+    const session = event.sessions.find(s => String(s._id) === String(sessionId)) || event.sessions[0];
+    session.selectedSeatMap = clone;
+    
+    // Also save to root as default fallback
+    event.selectedSeatMap = clone;
+
+    propagateMapToSessions(event, clone, session._id);
+    event.markModified("sessions");
+    event.markModified("selectedSeatMap");
+  }
+
   await event.save();
   return clone;
 };

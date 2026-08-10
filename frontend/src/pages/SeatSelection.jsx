@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
 import { cachedGet } from "../api/requestCache";
 import SeatMapCanvas from "../components/seatmap/SeatMapCanvas";
@@ -17,6 +17,8 @@ const formatUSD = (value) =>
 export default function SeatSelection() {
   const { orgSlug, eventId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get("sessionId") || "";
   const [map, setMap] = useState(null);
   const [event, setEvent] = useState(null);
   const [cart, setCart] = useState({ items: [] });
@@ -26,9 +28,9 @@ export default function SeatSelection() {
   const load = async () => {
     try {
       const [mapResponse, cartResponse, eventResponse] = await Promise.all([
-        cachedGet(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000),
-        apiClient.get(`/o/${orgSlug}/cart/${eventId}`),
-        cachedGet(`/o/${orgSlug}/events/${eventId}`, 10_000),
+        apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${sessionId}`),
+        apiClient.get(`/o/${orgSlug}/cart/${eventId}?sessionId=${sessionId}`),
+        apiClient.get(`/o/${orgSlug}/events/${eventId}?sessionId=${sessionId}`),
       ]);
       setMap(mapResponse.data.seatmap);
       setCart(cartResponse.data.cart);
@@ -38,7 +40,7 @@ export default function SeatSelection() {
     }
   };
 
-  useEffect(() => { load(); }, [orgSlug, eventId]);
+  useEffect(() => { load(); }, [orgSlug, eventId, sessionId]);
 
   const selected = useMemo(
     () => new Set(cart.items.map((item) => seatKey(item.blockId, item.seatId))),
@@ -56,8 +58,8 @@ export default function SeatSelection() {
     try {
       const exists = selected.has(seatKey(block.id, seat.id));
       const response = exists
-        ? await apiClient.delete(`/o/${orgSlug}/cart/${eventId}/seats/${block.id}/${seat.id}`)
-        : await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items`, { blockId: block.id, seatId: seat.id });
+        ? await apiClient.delete(`/o/${orgSlug}/cart/${eventId}/seats/${block.id}/${seat.id}?sessionId=${sessionId}`)
+        : await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items?sessionId=${sessionId}`, { blockId: block.id, seatId: seat.id });
       setCart(response.data.cart);
     } catch (err) {
       setError(err.response?.data?.message || "Could not update your selection.");
@@ -79,8 +81,8 @@ export default function SeatSelection() {
     setError("");
     try {
       const response = increment
-        ? await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items`, { blockId: block.id, seatId: candidate.id })
-        : await apiClient.delete(`/o/${orgSlug}/cart/${eventId}/seats/${block.id}/${candidate.seatId}`);
+        ? await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items?sessionId=${sessionId}`, { blockId: block.id, seatId: candidate.id })
+        : await apiClient.delete(`/o/${orgSlug}/cart/${eventId}/seats/${block.id}/${candidate.seatId}?sessionId=${sessionId}`);
       setCart(response.data.cart);
     } catch (err) {
       setError(err.response?.data?.message || "Could not update General Admission quantity.");
@@ -248,7 +250,7 @@ export default function SeatSelection() {
               <button
                 type="button"
                 disabled={!hasSelections || busy}
-                onClick={() => navigate(`/o/${orgSlug}/checkout/${eventId}`)}
+                onClick={() => navigate(`/o/${orgSlug}/checkout/${eventId}?sessionId=${sessionId}`)}
                 className="ss-btn ss-btn--primary"
               >
                 {busy ? "Processing…" : "Proceed to Payment →"}

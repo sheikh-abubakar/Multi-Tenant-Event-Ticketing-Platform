@@ -2,6 +2,18 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import apiClient from "../api/client";
 
+const formatLocalDateForInput = (dateStr) => {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
 export default function EditBundle() {
   const { orgSlug, bundleId } = useParams();
   const navigate = useNavigate();
@@ -17,6 +29,7 @@ export default function EditBundle() {
   const [description, setDescription] = useState("");
   const [pricePerSeat, setPricePerSeat] = useState("");
   const [accessCode, setAccessCode] = useState("");
+  const [privateCodeExpiry, setPrivateCodeExpiry] = useState("");
   const [bannerFile, setBannerFile] = useState(null);
   const [existingBannerUrl, setExistingBannerUrl] = useState("");
 
@@ -34,17 +47,12 @@ export default function EditBundle() {
         ]);
         setVenues(venuesRes.data.venues || []);
         
-        const seatmapEvents = (eventsRes.data.events || []).filter(
-          (e) => e.purchaseMode === "seatmap" && e.selectedSeatMap
-        );
-        setAllEvents(seatmapEvents);
-
-        // Prepopulate bundle data
         const b = bundleRes.data.bundle;
         setName(b.name || "");
         setDescription(b.description || "");
         setPricePerSeat(b.pricePerSeat || "");
         setAccessCode(b.accessCode || "");
+        setPrivateCodeExpiry(formatLocalDateForInput(b.privateCodeExpiry));
         setExistingBannerUrl(b.bannerImageUrl || "");
         
         const initialVenueId = b.venueId?._id || b.venueId || "";
@@ -52,6 +60,12 @@ export default function EditBundle() {
         
         const initialEventIds = b.eventIds?.map(e => e._id || e) || [];
         setSelectedEvents(initialEventIds);
+
+        const seatmapEvents = (eventsRes.data.events || []).filter(
+          (e) => e.purchaseMode === "seatmap" && e.selectedSeatMap &&
+                 ((!e.parentEventId || String(e.parentEventId) === String(e._id)) || initialEventIds.includes(e._id))
+        );
+        setAllEvents(seatmapEvents);
 
         const initialSections = {};
         if (b.allowedSections) {
@@ -101,6 +115,7 @@ export default function EditBundle() {
       body.append("eventIds", JSON.stringify(selectedEvents));
       body.append("pricePerSeat", Number(pricePerSeat));
       body.append("accessCode", accessCode.trim());
+      body.append("privateCodeExpiry", privateCodeExpiry ? new Date(privateCodeExpiry).toISOString() : "");
 
       const filteredAllowedSections = Object.values(allowedSections).filter(
         (sec) => selectedEvents.includes(sec.eventId)
@@ -315,6 +330,47 @@ export default function EditBundle() {
           </div>
           <span className="text-xs text-muted font-normal block mt-0.5">If set, buyers must enter this code to select seats/tickets for this bundle.</span>
         </div>
+
+        {accessCode && (
+          <div>
+            <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Private Code Expiry (Optional)</label>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <input
+                type="datetime-local"
+                value={privateCodeExpiry}
+                onChange={(e) => setPrivateCodeExpiry(e.target.value)}
+                className="w-full rounded-md border border-black/15 px-3 py-2 text-ink-text bg-white"
+                style={{ color: "#111326" }}
+              />
+              {privateCodeExpiry && (
+                <button
+                  type="button"
+                  onClick={() => setPrivateCodeExpiry("")}
+                  style={{
+                    padding: "8px 12px",
+                    background: "rgba(220, 38, 38, 0.08)",
+                    border: "1px solid rgba(220, 38, 38, 0.3)",
+                    borderRadius: "6px",
+                    color: "var(--danger, #dc2626)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  title="Clear expiry date"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+              )}
+            </div>
+            <span className="text-xs text-muted font-normal block mt-0.5">If set, the bundle will automatically become public after this date/time.</span>
+          </div>
+        )}
 
         <div>
           <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Banner Image</label>

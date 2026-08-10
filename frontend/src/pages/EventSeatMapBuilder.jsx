@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
 import SeatMapBuilder from "../components/seatmap/SeatMapBuilder";
 
 export default function EventSeatMapBuilder() {
   const { orgSlug, eventId } = useParams();
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get("sessionId") || "";
+
   const [map, setMap] = useState(null);
   const [event, setEvent] = useState(null);
   const [templates, setTemplates] = useState([]);
@@ -26,7 +29,7 @@ export default function EventSeatMapBuilder() {
         setEvent(loadedEvent);
         const venueId = loadedEvent.venueId?._id || loadedEvent.venueId;
         const [mapResult, templateResult] = await Promise.allSettled([
-          apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap`),
+          apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${sessionId}`),
           apiClient.get(`/o/${orgSlug}/venues/${venueId}/seatmaps`),
         ]);
         if (mapResult.status === "fulfilled") {
@@ -43,11 +46,11 @@ export default function EventSeatMapBuilder() {
         setError(err.response?.data?.message || "Could not load event seat map.");
       }
     })();
-  }, [orgSlug, eventId]);
+  }, [orgSlug, eventId, sessionId]);
 
   const save = async (seatmap) => {
     try {
-      const { data } = await apiClient.put(`/o/${orgSlug}/events/${eventId}/seatmap`, { seatmap });
+      const { data } = await apiClient.put(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${sessionId}`, { seatmap });
       setMap(data.seatmap);
       showToast("Seat map saved successfully!");
     } catch (err) {
@@ -58,7 +61,7 @@ export default function EventSeatMapBuilder() {
   const seed = async (seatmapId) => {
     if (map && !window.confirm("Replace the current unsaved layout with this venue template?")) return;
     try {
-      const { data } = await apiClient.post(`/o/${orgSlug}/events/${eventId}/seatmap/seed`, { seatmapId });
+      const { data } = await apiClient.post(`/o/${orgSlug}/events/${eventId}/seatmap/seed`, { seatmapId, sessionId });
       setMap(data.seatmap);
       showToast("Seat map template loaded successfully!");
     } catch (err) {

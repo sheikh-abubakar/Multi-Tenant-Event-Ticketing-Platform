@@ -55,6 +55,10 @@ const bookingSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    sessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
     // Snapshot of the event's name/date AT THE TIME OF BOOKING. The
     // live `eventId` populate is still used where available (e.g. the
     // event's current banner image), but analytics/history views prefer

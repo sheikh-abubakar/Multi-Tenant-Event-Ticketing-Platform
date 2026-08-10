@@ -118,7 +118,7 @@ const calculateDiscounts = async (organizationId, eventId, totalAmount, data) =>
 };
 
 const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => {
-  const { buyerName, buyerEmail, items, useWallet, walletDeduction, refCode, couponCode, rewardsToApply, userId } = data;
+  const { buyerName, buyerEmail, items, useWallet, walletDeduction, refCode, couponCode, rewardsToApply, userId, sessionId } = data;
   if (!buyerName || !buyerEmail || !Array.isArray(items) || !items.length) {
     const error = new Error("buyerName, buyerEmail and selected seats are required");
     error.statusCode = 400;
@@ -128,7 +128,24 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
   try {
     dbSession.startTransaction();
     const event = await Event.findOne({ _id: eventId, organizationId, purchaseMode: "seatmap" }).session(dbSession);
-    if (!event?.selectedSeatMap) {
+    if (!event) {
+      const error = new Error("Event not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    let targetSeatMap = event.selectedSeatMap;
+    let sessionDoc = null;
+    if (event.sessions && event.sessions.length > 0) {
+      sessionDoc = event.sessions.find(s => String(s._id) === String(sessionId)) ||
+                   event.sessions.find(s => new Date(s.dateTime) >= new Date()) ||
+                   event.sessions[0];
+      if (sessionDoc) {
+        targetSeatMap = sessionDoc.selectedSeatMap;
+      }
+    }
+
+    if (!targetSeatMap) {
       const error = new Error("Seat map is not configured for this event");
       error.statusCode = 400;
       throw error;
@@ -140,7 +157,7 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
       const key = `${request.blockId}:${request.seatId}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const block = event.selectedSeatMap.blocks?.find((item) => item.id === request.blockId);
+      const block = targetSeatMap.blocks?.find((item) => item.id === request.blockId);
       const seat = block?.seats?.find((item) => item.id === request.seatId);
       if (!block || !seat || seat.status !== "available") {
         const error = new Error("One or more seats are no longer available");
@@ -182,8 +199,9 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
         {
           organizationId,
           eventId,
+          sessionId: sessionDoc ? sessionDoc._id : null,
           eventName: event.name,
-          eventDateTime: event.dateTime,
+          eventDateTime: sessionDoc ? sessionDoc.dateTime : event.dateTime,
           buyerName: buyerName.trim(),
           buyerEmail: buyerEmail.trim().toLowerCase(),
           items: selectedSeats.map((seat) => ({
@@ -212,7 +230,13 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
       ],
       { session: dbSession },
     );
-    event.markModified("selectedSeatMap");
+    if (sessionDoc) {
+      sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+      event.markModified("sessions");
+    } else {
+      event.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+      event.markModified("selectedSeatMap");
+    }
     await event.save({ session: dbSession });
 
     if (finalAmount === 0) {
@@ -233,12 +257,16 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
 
       if (booking.selectedSeats?.length) {
         for (const reference of booking.selectedSeats) {
-          const seat = event.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+          const seat = targetSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
           if (seat) {
             seat.status = "sold";
           }
         }
-        event.markModified("selectedSeatMap");
+        if (sessionDoc) {
+          event.markModified("sessions");
+        } else {
+          event.markModified("selectedSeatMap");
+        }
         await event.save({ session: dbSession });
       }
 
@@ -727,11 +755,28 @@ const confirmBooking = async (stripeSessionId) => {
     booking.qrCodeUrl = qrCodeUrl;
     if (booking.selectedSeats?.length) {
       const seatEvent = await Event.findOne({ _id: booking.eventId, organizationId: booking.organizationId });
-      for (const reference of booking.selectedSeats) {
-        const seat = seatEvent?.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
-        if (seat?.status === "checkout-held") seat.status = "sold";
+      if (seatEvent) {
+        let targetSeatMap = seatEvent.selectedSeatMap;
+        let sessionDoc = null;
+        if (booking.sessionId && seatEvent.sessions && seatEvent.sessions.length > 0) {
+          sessionDoc = seatEvent.sessions.find(s => String(s._id) === String(booking.sessionId));
+          if (sessionDoc) {
+            targetSeatMap = sessionDoc.selectedSeatMap;
+          }
+        }
+        for (const reference of booking.selectedSeats) {
+          const seat = targetSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+          if (seat?.status === "checkout-held") seat.status = "sold";
+        }
+        if (sessionDoc) {
+          sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+          seatEvent.markModified("sessions");
+        } else {
+          seatEvent.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+          seatEvent.markModified("selectedSeatMap");
+        }
+        await seatEvent.save();
       }
-      if (seatEvent) { seatEvent.markModified("selectedSeatMap"); await seatEvent.save(); }
     }
     await booking.save();
 
@@ -828,11 +873,25 @@ const expireBookingIfStillPending = async (booking) => {
 
     if (event) {
       if (freshBooking.selectedSeats?.length) {
+        let targetSeatMap = event.selectedSeatMap;
+        let sessionDoc = null;
+        if (freshBooking.sessionId && event.sessions && event.sessions.length > 0) {
+          sessionDoc = event.sessions.find(s => String(s._id) === String(freshBooking.sessionId));
+          if (sessionDoc) {
+            targetSeatMap = sessionDoc.selectedSeatMap;
+          }
+        }
         for (const reference of freshBooking.selectedSeats) {
-          const seat = event.selectedSeatMap?.blocks?.find((b) => b.id === reference.blockId)?.seats?.find((s) => s.id === reference.seatId);
+          const seat = targetSeatMap?.blocks?.find((b) => b.id === reference.blockId)?.seats?.find((s) => s.id === reference.seatId);
           if (seat?.status === "checkout-held") seat.status = "available";
         }
-        event.markModified("selectedSeatMap");
+        if (sessionDoc) {
+          sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+          event.markModified("sessions");
+        } else {
+          event.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+          event.markModified("selectedSeatMap");
+        }
       } else {
         for (const item of freshBooking.items) {
           const ticketType = event.ticketTypes[item.ticketTypeIndex];
@@ -889,12 +948,26 @@ const handleStripeWebhook = async (event) => {
       // Hold new seat on the event seatmap
       const Event = require("../models/Event");
       const eventDoc = await Event.findById(seatRequest.eventId);
-      if (eventDoc && eventDoc.selectedSeatMap) {
-        const block = eventDoc.selectedSeatMap.blocks?.find((b) => b.id === seatRequest.newSeat.blockId);
+      let targetSeatMap = eventDoc.selectedSeatMap;
+      let sessionDoc = null;
+      if (seatRequest.newSessionId && eventDoc.sessions && eventDoc.sessions.length > 0) {
+        sessionDoc = eventDoc.sessions.find(s => String(s._id) === String(seatRequest.newSessionId));
+        if (sessionDoc) {
+          targetSeatMap = sessionDoc.selectedSeatMap;
+        }
+      }
+      if (eventDoc && targetSeatMap) {
+        const block = targetSeatMap.blocks?.find((b) => b.id === seatRequest.newSeat.blockId);
         const seat = block?.seats?.find((s) => s.id === seatRequest.newSeat.seatId);
         if (seat) {
           seat.status = "transfer-held";
-          eventDoc.markModified("selectedSeatMap");
+          if (sessionDoc) {
+            sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+            eventDoc.markModified("sessions");
+          } else {
+            eventDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+            eventDoc.markModified("selectedSeatMap");
+          }
           await eventDoc.save();
         }
       }
@@ -966,7 +1039,8 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
   }
 
   // 1. Check if the bundle is protected (Case 1)
-  if (bundle.accessCode) {
+  const isBundleProtected = bundle.accessCode && (!bundle.privateCodeExpiry || new Date(bundle.privateCodeExpiry) > new Date());
+  if (isBundleProtected) {
     if (!bundleAccessCode || bundleAccessCode.trim() !== bundle.accessCode.trim()) {
       const error = new Error("This event bundle is protected. A valid access code is required.");
       error.statusCode = 403;
@@ -975,14 +1049,15 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
   }
 
   // 2. Validate event-level access codes (Case 2 and Case 3)
-  const isBundleUnlocked = bundle.accessCode && bundleAccessCode && bundleAccessCode.trim() === bundle.accessCode.trim();
+  const isBundleUnlocked = isBundleProtected && bundleAccessCode && bundleAccessCode.trim() === bundle.accessCode.trim();
 
   // Load events to check accessCode
   const events = await Event.find({ _id: { $in: bundle.eventIds }, organizationId });
   for (const event of events) {
-    if (event.accessCode) {
+    const isEventProtected = event.accessCode && (!event.privateCodeExpiry || new Date(event.privateCodeExpiry) > new Date());
+    if (isEventProtected) {
       // Bypassed if bundle override is active (Case 2), otherwise requires correct event code (Case 3)
-      const isUnlocked = isBundleUnlocked || (eventAccessCodes && eventAccessCodes[event._id.toString()] && eventAccessCodes[event._id.toString()].trim() === event.accessCode.trim());
+      const isUnlocked = (!isBundleProtected) || isBundleUnlocked || (eventAccessCodes && eventAccessCodes[event._id.toString()] && eventAccessCodes[event._id.toString()].trim() === event.accessCode.trim());
       if (!isUnlocked) {
         const error = new Error(`The event "${event.name}" is protected. A valid access code is required.`);
         error.statusCode = 403;
@@ -1011,8 +1086,17 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
     // The number of events does NOT multiply the price.
 
     // First pass: validate selections and determine qty
-    const firstEventId = bundle.eventIds[0].toString();
-    const firstSelections = selections[firstEventId];
+    let firstSelections = null;
+    let resolvedFirstEventId = null;
+
+    for (const eventId of bundle.eventIds) {
+      firstSelections = selections[eventId.toString()];
+      if (firstSelections) {
+        resolvedFirstEventId = eventId;
+        break;
+      }
+    }
+
     if (!firstSelections || !Array.isArray(firstSelections) || firstSelections.length === 0) {
       throw new Error("Please select seats for all events in the bundle.");
     }
@@ -1028,13 +1112,31 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
     const unitPricePerSeat = eventShare / qty;
 
     // ── Main loop: validate seats ──────────────────────────────────────────
+    const selectedSessionIds = data.selectedSessionIds || {};
     for (const eventId of bundle.eventIds) {
+      const eventSelections = selections[eventId.toString()];
+
       const event = await Event.findOne({ _id: eventId, organizationId }).session(dbSession);
-      if (!event || !event.selectedSeatMap) {
-        throw new Error(`Event ${eventId} not found or seat map not configured.`);
+      if (!event) {
+        throw new Error(`Event not found.`);
       }
 
-      const eventSelections = selections[eventId.toString()];
+      const sessionId = selectedSessionIds[eventId.toString()];
+      let targetSeatMap = event.selectedSeatMap;
+      let sessionDoc = null;
+      if (event.sessions && event.sessions.length > 0) {
+        sessionDoc = event.sessions.find(s => String(s._id) === String(sessionId)) ||
+                     event.sessions.find(s => new Date(s.dateTime) >= new Date()) ||
+                     event.sessions[0];
+        if (sessionDoc) {
+          targetSeatMap = sessionDoc.selectedSeatMap;
+        }
+      }
+
+      if (!targetSeatMap) {
+        throw new Error(`Seat map not configured for event ${event.name}.`);
+      }
+
       if (!eventSelections || !Array.isArray(eventSelections) || eventSelections.length === 0) {
         throw new Error(`Please select seats for all events in the bundle.`);
       }
@@ -1050,7 +1152,7 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
         if (seen.has(key)) continue;
         seen.add(key);
 
-        const block = event.selectedSeatMap.blocks?.find((b) => b.id === item.blockId);
+        const block = targetSeatMap.blocks?.find((b) => b.id === item.blockId);
         const seat = block?.seats?.find((s) => s.id === item.seatId);
 
         if (!block || !seat || seat.status !== "available") {
@@ -1069,13 +1171,14 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
         });
       }
 
-      eventsToUpdate.push(event);
+      eventsToUpdate.push({ event, sessionDoc });
 
       bookingsData.push({
         organizationId,
-        eventId,
+        eventId: event._id,
+        sessionId: sessionDoc ? sessionDoc._id : null,
         eventName: event.name,
-        eventDateTime: event.dateTime,
+        eventDateTime: sessionDoc ? sessionDoc.dateTime : event.dateTime,
         buyerName: buyerName.trim(),
         buyerEmail: normalizedEmail,
         items: selectedSeats.map((seat) => ({
@@ -1103,8 +1206,14 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
     totalAmount = bundleTotalAmount;
 
     // Save event seat states
-    for (const event of eventsToUpdate) {
-      event.markModified("selectedSeatMap");
+    for (const { event, sessionDoc } of eventsToUpdate) {
+      if (sessionDoc) {
+        sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(sessionDoc.selectedSeatMap));
+        event.markModified("sessions");
+      } else {
+        event.selectedSeatMap = JSON.parse(JSON.stringify(event.selectedSeatMap));
+        event.markModified("selectedSeatMap");
+      }
       await event.save({ session: dbSession });
     }
 
@@ -1171,15 +1280,26 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
         }
 
         if (booking.selectedSeats?.length) {
-          const seatEvent = eventsToUpdate.find((evt) => evt._id.toString() === booking.eventId.toString());
-          if (seatEvent) {
+          const seatEventObj = eventsToUpdate.find((item) => item.event._id.toString() === booking.eventId.toString());
+          if (seatEventObj) {
+            const { event: seatEvent, sessionDoc } = seatEventObj;
+            let targetSeatMap = seatEvent.selectedSeatMap;
+            if (sessionDoc) {
+              targetSeatMap = sessionDoc.selectedSeatMap;
+            }
             for (const reference of booking.selectedSeats) {
-              const seat = seatEvent.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+              const seat = targetSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
               if (seat) {
                 seat.status = "sold";
               }
             }
-            seatEvent.markModified("selectedSeatMap");
+            if (sessionDoc) {
+              sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+              seatEvent.markModified("sessions");
+            } else {
+              seatEvent.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+              seatEvent.markModified("selectedSeatMap");
+            }
             await seatEvent.save({ session: dbSession });
           }
         }

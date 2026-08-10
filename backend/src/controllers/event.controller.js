@@ -2,6 +2,7 @@ const eventService = require("../services/event.service");
 const { uploadBufferToS3 } = require("../utils/s3Upload");
 const { recordPlatformAudit } = require("../utils/platformAudit");
 const EventBundle = require("../models/EventBundle");
+const Event = require("../models/Event");
 
 // If a file was uploaded (req.file.buffer, set by multer's
 // memoryStorage), streams it to Cloudinary and returns the hosted
@@ -49,7 +50,13 @@ const getOne = async (req, res) => {
     const event = await eventService.getEventById(req.params.eventId, req.organizationId);
     
     // Check if event is protected by an access code
-    if (event.accessCode) {
+    const isEventProtected = event.accessCode && (!event.privateCodeExpiry || new Date(event.privateCodeExpiry) > new Date());
+    // Fetch all session dates linked to this event group
+    const sessions = event.sessions && event.sessions.length > 0
+      ? event.sessions
+      : [{ _id: event._id, dateTime: event.dateTime }];
+
+    if (isEventProtected) {
       const clientCode = (req.headers["x-event-access-code"] || req.query.accessCode || "").trim();
       const bundleCode = (req.headers["x-bundle-access-code"] || req.query.bundleAccessCode || "").trim();
       
@@ -81,8 +88,9 @@ const getOne = async (req, res) => {
           timezone: event.timezone,
           purchaseMode: event.purchaseMode,
           isProtected: true,
+          privateCodeExpiry: event.privateCodeExpiry,
         };
-        return res.json({ event: lockedEvent });
+        return res.json({ event: lockedEvent, sessions });
       }
     }
 
@@ -91,7 +99,7 @@ const getOne = async (req, res) => {
     delete cleanEvent.accessCode;
     cleanEvent.isProtected = false;
 
-    return res.json({ event: cleanEvent });
+    return res.json({ event: cleanEvent, sessions });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
@@ -130,7 +138,8 @@ const verifyAccess = async (req, res) => {
       return res.status(400).json({ message: "Access code is required." });
     }
     const event = await eventService.getEventById(req.params.eventId, req.organizationId);
-    if (!event.accessCode) {
+    const isEventProtected = event.accessCode && (!event.privateCodeExpiry || new Date(event.privateCodeExpiry) > new Date());
+    if (!isEventProtected) {
       return res.json({ success: true, message: "Event is not private." });
     }
     if (accessCode.trim() !== event.accessCode.trim()) {

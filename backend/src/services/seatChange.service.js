@@ -6,7 +6,7 @@ const walletService = require("./wallet.service");
 const stripe = require("../config/stripe");
 
 const createRequest = async (userId, organizationId, data, options) => {
-  const { bookingId, oldSeatId, newSeat, reason, paymentMethod } = data;
+  const { bookingId, oldSeatId, newSeat, reason, paymentMethod, newSessionId } = data;
   const { orgSlug, protocol, host } = options;
 
   const user = await User.findById(userId);
@@ -58,13 +58,31 @@ const createRequest = async (userId, organizationId, data, options) => {
     throw error;
   }
 
-  if (event.dateTime && new Date(event.dateTime) < new Date()) {
-    const error = new Error("Cannot change seats for an event that has already occurred or started");
+  let targetSeatMap = event.selectedSeatMap;
+  let targetSessionDoc = null;
+  if (event.sessions && event.sessions.length > 0) {
+    targetSessionDoc = event.sessions.find(s => String(s._id) === String(newSessionId)) ||
+                       event.sessions.find(s => new Date(s.dateTime) >= new Date()) ||
+                       event.sessions[0];
+    if (targetSessionDoc) {
+      targetSeatMap = targetSessionDoc.selectedSeatMap;
+    }
+  }
+
+  const checkDateTime = targetSessionDoc ? targetSessionDoc.dateTime : event.dateTime;
+  if (checkDateTime && new Date(checkDateTime) < new Date()) {
+    const error = new Error("Cannot change seats for an event session that has already occurred or started");
     error.statusCode = 400;
     throw error;
   }
 
-  const block = event.selectedSeatMap?.blocks?.find((b) => b.id === newSeat.blockId);
+  if (!targetSeatMap) {
+    const error = new Error("Target seat map not configured");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const block = targetSeatMap.blocks?.find((b) => b.id === newSeat.blockId);
   const seat = block?.seats?.find((s) => s.id === newSeat.seatId);
   if (!block || !seat) {
     const error = new Error("Target seat not found in event seatmap");
@@ -87,12 +105,13 @@ const createRequest = async (userId, organizationId, data, options) => {
     priceDifference = 0;
   }
 
-  // 5. Create SeatChangeRequest document
-  const request = new SeatChangeRequest({
+  // 5. Create request
+  const request = await SeatChangeRequest.create({
+    userId,
     organizationId,
     bookingId,
-    userId,
     eventId: booking.eventId,
+    newSessionId: targetSessionDoc ? targetSessionDoc._id : null,
     oldSeat: {
       blockId: oldSeat.blockId,
       seatId: oldSeat.seatId,
@@ -104,11 +123,12 @@ const createRequest = async (userId, organizationId, data, options) => {
       blockId: newSeat.blockId,
       seatId: newSeat.seatId,
       seatName: newSeat.seatName,
-      sectionName: newSeat.sectionName,
+      sectionName: block.name,
       unitPrice: newSeatPrice,
     },
+    reason: reason ? String(reason).trim() : null,
     priceDifference,
-    reason: reason || "",
+    paymentStatus: priceDifference <= 0 ? "paid" : "pending",
     status: "pending",
   });
 
@@ -198,7 +218,15 @@ const approveRequest = async (requestId, organizationId) => {
     error.statusCode = 400;
     throw error;
   }
-  // 1. Load Event and modify seat statuses
+
+  const booking = await Booking.findOne({ _id: request.bookingId, organizationId });
+  if (!booking) {
+    const error = new Error("Booking not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // 1. Release old seat on the original event
   const event = await Event.findOne({ _id: request.eventId, organizationId });
   if (!event) {
     const error = new Error("Event not found");
@@ -206,15 +234,40 @@ const approveRequest = async (requestId, organizationId) => {
     throw error;
   }
 
-  // Release old seat
-  const oldBlock = event.selectedSeatMap?.blocks?.find((b) => b.id === request.oldSeat.blockId);
-  const oldSeat = oldBlock?.seats?.find((s) => s.id === request.oldSeat.seatId);
-  if (oldSeat) {
-    oldSeat.status = "available";
+  let sourceSeatMap = event.selectedSeatMap;
+  let sourceSessionDoc = null;
+  if (booking.sessionId && event.sessions && event.sessions.length > 0) {
+    sourceSessionDoc = event.sessions.find(s => String(s._id) === String(booking.sessionId));
+    if (sourceSessionDoc) {
+      sourceSeatMap = sourceSessionDoc.selectedSeatMap;
+    }
   }
 
-  // Mark new seat as sold
-  const newBlock = event.selectedSeatMap?.blocks?.find((b) => b.id === request.newSeat.blockId);
+  if (sourceSeatMap) {
+    const oldBlock = sourceSeatMap.blocks?.find((b) => b.id === request.oldSeat.blockId);
+    const oldSeat = oldBlock?.seats?.find((s) => s.id === request.oldSeat.seatId);
+    if (oldSeat) {
+      oldSeat.status = "available";
+    }
+  }
+
+  // Mark new seat as sold on target event
+  let targetSeatMap = event.selectedSeatMap;
+  let targetSessionDoc = null;
+  if (request.newSessionId && event.sessions && event.sessions.length > 0) {
+    targetSessionDoc = event.sessions.find(s => String(s._id) === String(request.newSessionId));
+    if (targetSessionDoc) {
+      targetSeatMap = targetSessionDoc.selectedSeatMap;
+    }
+  }
+
+  if (!targetSeatMap) {
+    const error = new Error("Target seat map not configured");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const newBlock = targetSeatMap.blocks?.find((b) => b.id === request.newSeat.blockId);
   const newSeat = newBlock?.seats?.find((s) => s.id === request.newSeat.seatId);
   if (!newSeat) {
     const error = new Error("Target seat not found in event map");
@@ -223,15 +276,29 @@ const approveRequest = async (requestId, organizationId) => {
   }
   newSeat.status = "sold";
 
-  event.markModified("selectedSeatMap");
+  if (sourceSessionDoc) {
+    sourceSessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(sourceSeatMap));
+  } else if (!event.sessions || event.sessions.length === 0) {
+    event.selectedSeatMap = JSON.parse(JSON.stringify(sourceSeatMap));
+  }
+
+  if (targetSessionDoc) {
+    targetSessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+  } else if (!event.sessions || event.sessions.length === 0) {
+    event.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+  }
+
+  if (event.sessions && event.sessions.length > 0) {
+    event.markModified("sessions");
+  } else {
+    event.markModified("selectedSeatMap");
+  }
   await event.save();
 
   // 2. Update Booking selected seats
-  const booking = await Booking.findOne({ _id: request.bookingId, organizationId });
-  if (!booking) {
-    const error = new Error("Booking not found");
-    error.statusCode = 404;
-    throw error;
+  if (request.newSessionId) {
+    booking.sessionId = request.newSessionId;
+    booking.eventDateTime = targetSessionDoc ? targetSessionDoc.dateTime : event.dateTime;
   }
 
   booking.selectedSeats = booking.selectedSeats.map((seat) => {
@@ -309,12 +376,26 @@ const rejectRequest = async (requestId, organizationId) => {
   if (request.paymentStatus === "paid" || request.priceDifference <= 0) {
     const event = await Event.findOne({ _id: request.eventId, organizationId });
     if (event) {
-      const block = event.selectedSeatMap?.blocks?.find((b) => b.id === request.newSeat.blockId);
-      const seat = block?.seats?.find((s) => s.id === request.newSeat.seatId);
-      if (seat && seat.status === "transfer-held") {
-        seat.status = "available";
-        event.markModified("selectedSeatMap");
-        await event.save();
+      let targetSeatMap = event.selectedSeatMap;
+      let sessionDoc = null;
+      if (request.newSessionId && event.sessions && event.sessions.length > 0) {
+        sessionDoc = event.sessions.find(s => String(s._id) === String(request.newSessionId));
+        if (sessionDoc) {
+          targetSeatMap = sessionDoc.selectedSeatMap;
+        }
+      }
+      if (targetSeatMap) {
+        const block = targetSeatMap.blocks?.find((b) => b.id === request.newSeat.blockId);
+        const seat = block?.seats?.find((s) => s.id === request.newSeat.seatId);
+        if (seat && seat.status === "transfer-held") {
+          seat.status = "available";
+          if (sessionDoc) {
+            event.markModified("sessions");
+          } else {
+            event.markModified("selectedSeatMap");
+          }
+          await event.save();
+        }
       }
     }
   }
@@ -354,7 +435,22 @@ const devSimulatePay = async (requestId, organizationId) => {
     throw error;
   }
 
-  const block = event.selectedSeatMap?.blocks?.find((b) => b.id === request.newSeat.blockId);
+  let targetSeatMap = event.selectedSeatMap;
+  let sessionDoc = null;
+  if (request.newSessionId && event.sessions && event.sessions.length > 0) {
+    sessionDoc = event.sessions.find(s => String(s._id) === String(request.newSessionId));
+    if (sessionDoc) {
+      targetSeatMap = sessionDoc.selectedSeatMap;
+    }
+  }
+
+  if (!targetSeatMap) {
+    const error = new Error("Target seat map not configured");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const block = targetSeatMap.blocks?.find((b) => b.id === request.newSeat.blockId);
   const seat = block?.seats?.find((s) => s.id === request.newSeat.seatId);
   if (!block || !seat) {
     const error = new Error("Target seat not found in event seatmap");
@@ -368,7 +464,11 @@ const devSimulatePay = async (requestId, organizationId) => {
   }
 
   seat.status = "transfer-held";
-  event.markModified("selectedSeatMap");
+  if (sessionDoc) {
+    event.markModified("sessions");
+  } else {
+    event.markModified("selectedSeatMap");
+  }
   await event.save();
 
   request.paymentStatus = "paid";

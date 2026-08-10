@@ -7,14 +7,14 @@ const buildBannerUrl = async (req) => {
   const result = await uploadBufferToS3({
     buffer: req.file.buffer,
     mimetype: req.file.mimetype,
-    folder: "bundle-banners",
+    folder: "event-banners",
   });
   return result.url;
 };
 
 const create = async (req, res) => {
   try {
-    const { name, description, venueId, eventIds, pricePerSeat, accessCode, allowedSections } = req.body;
+    const { name, description, venueId, eventIds, pricePerSeat, accessCode, privateCodeExpiry, allowedSections } = req.body;
 
     let parsedEventIds = eventIds;
     if (typeof eventIds === "string") {
@@ -68,6 +68,7 @@ const create = async (req, res) => {
       pricePerSeat: Number(pricePerSeat),
       bannerImageUrl: bannerImageUrl || null,
       accessCode: accessCode ? String(accessCode).trim() || null : null,
+      privateCodeExpiry: privateCodeExpiry ? new Date(privateCodeExpiry) || null : null,
       allowedSections: Array.isArray(parsedAllowedSections) ? parsedAllowedSections : [],
     });
 
@@ -104,7 +105,7 @@ const getOne = async (req, res) => {
     })
       .populate({
         path: "eventIds",
-        select: "name description dateTime bannerImageUrl selectedSeatMap purchaseMode venueId accessCode",
+        select: "name description dateTime bannerImageUrl selectedSeatMap purchaseMode venueId accessCode privateCodeExpiry",
         populate: { path: "venueId", select: "name city address" }
       })
       .populate("venueId", "name city address seatmaps")
@@ -115,7 +116,8 @@ const getOne = async (req, res) => {
     }
 
     // Check if the bundle is protected
-    if (bundle.accessCode) {
+    const isBundleProtected = bundle.accessCode && (!bundle.privateCodeExpiry || new Date(bundle.privateCodeExpiry) > new Date());
+    if (isBundleProtected) {
       const isUnlocked = clientBundleCode === bundle.accessCode;
       if (!isUnlocked) {
         const lockedBundle = {
@@ -126,18 +128,20 @@ const getOne = async (req, res) => {
           pricePerSeat: bundle.pricePerSeat,
           bannerImageUrl: bundle.bannerImageUrl,
           isProtected: true,
+          privateCodeExpiry: bundle.privateCodeExpiry,
         };
         return res.json({ bundle: lockedBundle });
       }
     }
 
     // Unlocked or public bundle: process eventIds for event-level protection
-    const isBundleUnlocked = bundle.accessCode && clientBundleCode === bundle.accessCode;
+    const isBundleUnlocked = isBundleProtected && clientBundleCode === bundle.accessCode;
     const cleanEventIds = (bundle.eventIds || []).map((event) => {
       const cleanEvt = { ...event };
-      if (cleanEvt.accessCode) {
+      const isEventProtected = cleanEvt.accessCode && (!cleanEvt.privateCodeExpiry || new Date(cleanEvt.privateCodeExpiry) > new Date());
+      if (isEventProtected) {
         // Unlocked if either bundle is unlocked (Case 2) or direct event code matches
-        const isUnlocked = isBundleUnlocked || (clientEventCode === cleanEvt.accessCode);
+        const isUnlocked = (!isBundleProtected) || isBundleUnlocked || (clientEventCode === cleanEvt.accessCode);
         cleanEvt.isProtected = !isUnlocked;
       } else {
         cleanEvt.isProtected = false;
@@ -158,7 +162,7 @@ const getOne = async (req, res) => {
 
 const update = async (req, res) => {
   try {
-    const { name, description, venueId, eventIds, pricePerSeat, accessCode, allowedSections } = req.body;
+    const { name, description, venueId, eventIds, pricePerSeat, accessCode, privateCodeExpiry, allowedSections } = req.body;
 
     const bundle = await EventBundle.findOne({
       _id: req.params.bundleId,
@@ -183,6 +187,9 @@ const update = async (req, res) => {
     if (pricePerSeat !== undefined) bundle.pricePerSeat = Number(pricePerSeat);
     if (accessCode !== undefined) {
       bundle.accessCode = accessCode ? String(accessCode).trim() || null : null;
+    }
+    if (privateCodeExpiry !== undefined) {
+      bundle.privateCodeExpiry = privateCodeExpiry ? new Date(privateCodeExpiry) || null : null;
     }
 
     if (allowedSections !== undefined) {

@@ -85,15 +85,16 @@ const sendBookingConfirmation = async (booking, event, qrCodeUrl, organizationId
   const venueName = venue.name || "TBA";
   const venueAddress = [venue.address, venue.city].filter(Boolean).join(", ") || "Address TBA";
   const timezone = event.timezone || "Asia/Karachi";
-  const eventDate = new Date(event.dateTime);
+  const targetDate = booking.eventDateTime || event.dateTime;
+  const eventDate = new Date(targetDate);
   
   const formattedDate = moment.tz(eventDate, timezone).format("dddd, MMMM D, YYYY [at] h:mm A");
 
   const mapsQuery = encodeURIComponent(`${venueName} ${venueAddress}`);
   const mapsLink = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
 
-  const eventStart = formatDateForGoogle(event.dateTime, timezone);
-  const eventEnd = formatDateForGoogle(new Date(new Date(event.dateTime).getTime() + 3 * 60 * 60 * 1000), timezone);
+  const eventStart = formatDateForGoogle(targetDate, timezone);
+  const eventEnd = formatDateForGoogle(new Date(new Date(targetDate).getTime() + 3 * 60 * 60 * 1000), timezone);
   const location = encodeURIComponent(`${venueName}, ${venueAddress}`);
   const details = encodeURIComponent(
     [

@@ -17,6 +17,7 @@ export default function CreateBundle() {
   const [description, setDescription] = useState("");
   const [pricePerSeat, setPricePerSeat] = useState("");
   const [accessCode, setAccessCode] = useState("");
+  const [privateCodeExpiry, setPrivateCodeExpiry] = useState("");
   const [bannerFile, setBannerFile] = useState(null);
 
   const [loading, setLoading] = useState(false);
@@ -30,8 +31,10 @@ export default function CreateBundle() {
           apiClient.get(`/o/${orgSlug}/events/manage`),
         ]);
         setVenues(venuesRes.data.venues || []);
-        // Only bundle seatmap events
-        const seatmapEvents = (eventsRes.data.events || []).filter(e => e.purchaseMode === "seatmap" && e.selectedSeatMap);
+        // Only bundle seatmap events and display primary sessions
+        const seatmapEvents = (eventsRes.data.events || []).filter(
+          e => e.purchaseMode === "seatmap" && e.selectedSeatMap && (!e.parentEventId || String(e.parentEventId) === String(e._id))
+        );
         setAllEvents(seatmapEvents);
       } catch (err) {
         setError("Could not load venues or events details.");
@@ -68,6 +71,7 @@ export default function CreateBundle() {
       body.append("eventIds", JSON.stringify(selectedEvents));
       body.append("pricePerSeat", Number(pricePerSeat));
       body.append("accessCode", accessCode.trim());
+      body.append("privateCodeExpiry", privateCodeExpiry ? new Date(privateCodeExpiry).toISOString() : "");
       
       const filteredAllowedSections = Object.values(allowedSections).filter(
         (sec) => selectedEvents.includes(sec.eventId)
@@ -280,6 +284,47 @@ export default function CreateBundle() {
           </div>
           <span className="text-xs text-muted font-normal block mt-0.5">If set, buyers must enter this code to select seats/tickets for this bundle.</span>
         </div>
+
+        {accessCode && (
+          <div>
+            <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Private Code Expiry (Optional)</label>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <input
+                type="datetime-local"
+                value={privateCodeExpiry}
+                onChange={(e) => setPrivateCodeExpiry(e.target.value)}
+                className="w-full rounded-md border border-black/15 px-3 py-2 text-ink-text bg-white"
+                style={{ color: "#111326" }}
+              />
+              {privateCodeExpiry && (
+                <button
+                  type="button"
+                  onClick={() => setPrivateCodeExpiry("")}
+                  style={{
+                    padding: "8px 12px",
+                    background: "rgba(220, 38, 38, 0.08)",
+                    border: "1px solid rgba(220, 38, 38, 0.3)",
+                    borderRadius: "6px",
+                    color: "var(--danger, #dc2626)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  title="Clear expiry date"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+              )}
+            </div>
+            <span className="text-xs text-muted font-normal block mt-0.5">If set, the bundle will automatically become public after this date/time.</span>
+          </div>
+        )}
 
         <div>
           <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Banner Image</label>

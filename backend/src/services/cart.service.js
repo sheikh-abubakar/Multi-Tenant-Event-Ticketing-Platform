@@ -1,20 +1,23 @@
 const Event = require("../models/Event");
 
-const getSessionCartKey = (organizationId, eventId) => {
-  return `cart:${organizationId}:${eventId}`;
+const getSessionCartKey = (organizationId, eventId, sessionId = null) => {
+  return sessionId 
+    ? `cart:${organizationId}:${eventId}:${sessionId}`
+    : `cart:${organizationId}:${eventId}`;
 };
 
-const getOrCreateCart = (req, organizationId, eventId) => {
+const getOrCreateCart = (req, organizationId, eventId, sessionId = null) => {
   if (!req.session.carts) {
     req.session.carts = {};
   }
 
-  const cartKey = getSessionCartKey(organizationId, eventId);
+  const cartKey = getSessionCartKey(organizationId, eventId, sessionId);
 
   if (!req.session.carts[cartKey]) {
     req.session.carts[cartKey] = {
       organizationId,
       eventId,
+      sessionId,
       items: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -24,21 +27,21 @@ const getOrCreateCart = (req, organizationId, eventId) => {
   return req.session.carts[cartKey];
 };
 
-const saveCart = (req, organizationId, eventId, cart) => {
+const saveCart = (req, organizationId, eventId, cart, sessionId = null) => {
   if (!req.session.carts) {
     req.session.carts = {};
   }
 
-  const cartKey = getSessionCartKey(organizationId, eventId);
+  const cartKey = getSessionCartKey(organizationId, eventId, sessionId);
   req.session.carts[cartKey] = {
     ...cart,
     updatedAt: new Date().toISOString(),
   };
 };
 
-const getCartByEvent = async (req, organizationId, eventId) => {
+const getCartByEvent = async (req, organizationId, eventId, sessionId) => {
   const event = await Event.findOne({ _id: eventId, organizationId })
-    .select("name description dateTime bannerImageUrl ticketTypes purchaseMode venueId timezone")
+    .select("name description dateTime bannerImageUrl ticketTypes purchaseMode venueId timezone sessions")
     .populate("venueId", "name city")
     .lean();
 
@@ -48,7 +51,14 @@ const getCartByEvent = async (req, organizationId, eventId) => {
     throw error;
   }
 
-  const cart = getOrCreateCart(req, organizationId, eventId);
+  if (sessionId && event.sessions && event.sessions.length > 0) {
+    const sessionDoc = event.sessions.find(s => String(s._id) === String(sessionId));
+    if (sessionDoc) {
+      event.dateTime = sessionDoc.dateTime;
+    }
+  }
+
+  const cart = getOrCreateCart(req, organizationId, eventId, sessionId);
 
   return {
     event,
@@ -123,10 +133,21 @@ const addItem = async (req, organizationId, eventId, data) => {
   return cart;
 };
 
-const addSeat = async (req, organizationId, eventId, { blockId, seatId, overridePrice, bundleId }) => {
+const addSeat = async (req, organizationId, eventId, { blockId, seatId, overridePrice, bundleId, sessionId }) => {
   const event = await Event.findOne({ _id: eventId, organizationId });
   if (!event) { const error = new Error("Event not found"); error.statusCode = 404; throw error; }
-  if (event.purchaseMode !== "seatmap" || !event.selectedSeatMap) { const error = new Error("This event does not use seat selection"); error.statusCode = 400; throw error; }
+
+  let targetSeatMap = event.selectedSeatMap;
+  if (event.sessions && event.sessions.length > 0) {
+    const session = event.sessions.find(s => String(s._id) === String(sessionId)) ||
+                    event.sessions.find(s => new Date(s.dateTime) >= new Date()) ||
+                    event.sessions[0];
+    if (session) {
+      targetSeatMap = session.selectedSeatMap;
+    }
+  }
+
+  if (event.purchaseMode !== "seatmap" || !targetSeatMap) { const error = new Error("This event does not use seat selection"); error.statusCode = 400; throw error; }
 
   if (bundleId) {
     const EventBundle = require("../models/EventBundle");
@@ -143,22 +164,22 @@ const addSeat = async (req, organizationId, eventId, { blockId, seatId, override
     }
   }
 
-  const block = event.selectedSeatMap.blocks?.find((item) => item.id === blockId);
+  const block = targetSeatMap.blocks?.find((item) => item.id === blockId);
   const seat = block?.seats?.find((item) => item.id === seatId);
   if (!seat || !block) { const error = new Error("Seat not found"); error.statusCode = 404; throw error; }
   if (seat.status !== "available") { const error = new Error("This seat is no longer available"); error.statusCode = 409; throw error; }
-  const cart = getOrCreateCart(req, organizationId, eventId);
+  const cart = getOrCreateCart(req, organizationId, eventId, sessionId);
   if (!cart.items.some((item) => item.blockId === blockId && item.seatId === seatId)) {
     const finalPrice = overridePrice !== undefined && overridePrice !== null ? Number(overridePrice) : Number(block.price || 0);
     cart.items.push({ blockId, seatId, seatName: seat.seatName, sectionName: block.name, category: block.category || null, quantity: 1, unitPrice: finalPrice });
   }
-  saveCart(req, organizationId, eventId, cart); return cart;
+  saveCart(req, organizationId, eventId, cart, sessionId); return cart;
 };
 
-const removeSeat = (req, organizationId, eventId, blockId, seatId) => {
-  const cart = getOrCreateCart(req, organizationId, eventId);
+const removeSeat = (req, organizationId, eventId, blockId, seatId, sessionId) => {
+  const cart = getOrCreateCart(req, organizationId, eventId, sessionId);
   cart.items = cart.items.filter((item) => item.blockId !== blockId || item.seatId !== seatId);
-  saveCart(req, organizationId, eventId, cart); return cart;
+  saveCart(req, organizationId, eventId, cart, sessionId); return cart;
 };
 
 const updateItem = async (req, organizationId, eventId, data) => {
@@ -252,8 +273,8 @@ const removeItem = (req, organizationId, eventId, ticketTypeIndex) => {
   return cart;
 };
 
-const clearCart = (req, organizationId, eventId) => {
-  const cartKey = getSessionCartKey(organizationId, eventId);
+const clearCart = (req, organizationId, eventId, sessionId) => {
+  const cartKey = getSessionCartKey(organizationId, eventId, sessionId);
 
   if (req.session.carts && req.session.carts[cartKey]) {
     delete req.session.carts[cartKey];
@@ -262,6 +283,7 @@ const clearCart = (req, organizationId, eventId) => {
   return {
     organizationId,
     eventId,
+    sessionId,
     items: [],
   };
 };

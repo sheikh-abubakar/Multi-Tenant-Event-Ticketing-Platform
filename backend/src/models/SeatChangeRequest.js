@@ -24,6 +24,10 @@ const seatChangeRequestSchema = new mongoose.Schema(
       ref: "Event",
       required: true,
     },
+    newSessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
     oldSeat: {
       blockId: { type: String, required: true },
       seatId: { type: String, required: true },

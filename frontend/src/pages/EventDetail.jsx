@@ -21,6 +21,7 @@ const EventDetail = () => {
   const [shareLinkData, setShareLinkData] = useState(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sessions, setSessions] = useState([]);
 
   // Protected Event states
   const [showUnlockModal, setShowUnlockModal] = useState(false);
@@ -49,6 +50,11 @@ const EventDetail = () => {
         if (!cancelled) {
           setOrganization(infoRes.data.organization);
           setEvent(eventRes.data.event);
+          const upcomingSessions = (eventRes.data.sessions || []).filter(s => new Date(s.dateTime) >= new Date());
+          setSessions(upcomingSessions);
+          if (upcomingSessions.length === 0) {
+            setError("This event is no longer active as all of its session dates have passed.");
+          }
         }
       } catch (err) {
         if (!cancelled) setError(err.response?.data?.message || "Could not load this event.");
@@ -233,7 +239,9 @@ const EventDetail = () => {
     </div>
   );
 
-  const { full: dateStr, time } = formatEventDate(event.dateTime);
+  const selectedSessionId = searchParams.get("sessionId") || (sessions[0]?._id) || "";
+  const activeSession = sessions.find(s => String(s._id) === String(selectedSessionId)) || sessions[0] || event;
+  const { full: dateStr, time } = formatEventDate(activeSession.dateTime || event.dateTime);
 
   if (event.isProtected) {
     return (
@@ -269,6 +277,41 @@ const EventDetail = () => {
             margin: "0 auto 40px",
           }}
         >
+          {sessions.length > 1 && (
+            <div style={{ marginBottom: 24, textAlign: "left" }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gold)", marginBottom: 8, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                Select Session Date
+              </label>
+              <select
+                value={selectedSessionId}
+                onChange={(e) => navigate(`/o/${orgSlug}/events/${eventId}?sessionId=${e.target.value}`)}
+                style={{
+                  width: "100%",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  background: "#14162b",
+                  color: "#fff",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  outline: "none"
+                }}
+              >
+                {sessions.map((s) => (
+                  <option key={s._id} value={s._id}>
+                    {new Date(s.dateTime).toLocaleString("en-US", {
+                      weekday: "short",
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit"
+                    })}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
           <h2 className="font-display text-3xl" style={{ color: "var(--paper)", margin: "0 0 12px" }}>Protected Event</h2>
           <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.6, margin: "0 0 24px" }}>
@@ -344,11 +387,53 @@ const EventDetail = () => {
               <p className="ed-sm-desc">{event.description}</p>
             )}
 
+            {sessions.length > 1 && (
+              <div style={{
+                background: "rgba(255, 255, 255, 0.05)",
+                padding: "16px 20px",
+                borderRadius: "12px",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                marginBottom: "24px"
+              }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#c99a3c", marginBottom: 8, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                  Select Session Date
+                </label>
+                <select
+                  value={selectedSessionId}
+                  onChange={(e) => navigate(`/o/${orgSlug}/events/${eventId}?sessionId=${e.target.value}`)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    background: "#14162b",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    outline: "none"
+                  }}
+                >
+                  {sessions.map((s) => (
+                    <option key={s._id} value={s._id}>
+                      {new Date(s.dateTime).toLocaleString("en-US", {
+                        weekday: "short",
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <Link
-              to={`/o/${orgSlug}/events/${eventId}/seats`}
+              to={`/o/${orgSlug}/events/${eventId}/seats?sessionId=${selectedSessionId}`}
               className="ed-sm-cta"
-              onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000)}
-              onFocus={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap`, 3_000)}
+              onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${selectedSessionId}`, 3_000)}
+              onFocus={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${selectedSessionId}`, 3_000)}
             >
               <span className="ed-sm-cta-icon">🗺️</span>
               Choose Your Seats
@@ -413,6 +498,47 @@ const EventDetail = () => {
 
       {/* Ticket panel */}
       <div className="ed-ticket-panel">
+        {sessions.length > 1 && (
+          <div style={{
+            background: "rgba(255, 255, 255, 0.05)",
+            padding: "16px 20px",
+            borderRadius: "12px",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            marginBottom: "24px"
+          }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#c99a3c", marginBottom: 8, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+              Select Session Date
+            </label>
+            <select
+              value={eventId}
+              onChange={(e) => navigate(`/o/${orgSlug}/events/${e.target.value}`)}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                background: "#14162b",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.15)",
+                fontSize: "14px",
+                fontWeight: 600,
+                outline: "none"
+              }}
+            >
+              {sessions.map((s) => (
+                <option key={s._id} value={s._id}>
+                  {new Date(s.dateTime).toLocaleString("en-US", {
+                    weekday: "short",
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  })}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="ed-ticket-panel-header">
           <h2 className="ed-ticket-panel-title">🎟️ Select Tickets</h2>
           {event.ticketTypes?.length > 0 && (

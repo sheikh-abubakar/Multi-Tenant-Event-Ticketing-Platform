@@ -11,8 +11,13 @@ const getAllPublicEvents = async (req, res) => {
     const now = new Date();
 
     // Fetch events — populate orgId ONLY if org is NOT soft-deleted
-    const allEvents = await Event.find({ dateTime: { $gte: now } })
-      .select("name description dateTime bannerImageUrl ticketTypes venueId organizationId purchaseMode selectedSeatMap createdAt updatedAt")
+    const allEvents = await Event.find({
+      $or: [
+        { dateTime: { $gte: now } },
+        { "sessions.dateTime": { $gte: now } }
+      ]
+    })
+      .select("name description dateTime bannerImageUrl ticketTypes venueId organizationId purchaseMode selectedSeatMap sessions createdAt updatedAt")
       .populate({
         path: "organizationId",
         match: { isDeleted: { $ne: true } },
@@ -27,6 +32,15 @@ const getAllPublicEvents = async (req, res) => {
 
     // Shape the response
     const shapedEvents = validEvents.map((event) => {
+      let displayDateTime = event.dateTime;
+      if (event.sessions && event.sessions.length > 0) {
+        const upcoming = event.sessions.filter(s => new Date(s.dateTime) >= now)
+                                       .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+        if (upcoming.length > 0) {
+          displayDateTime = upcoming[0].dateTime;
+        }
+      }
+
       let remainingTickets = 0;
       if (event.purchaseMode === "seatmap") {
         if (event.selectedSeatMap && event.selectedSeatMap.blocks) {
@@ -49,7 +63,7 @@ const getAllPublicEvents = async (req, res) => {
         _id: event._id,
         name: event.name,
         description: event.description,
-        dateTime: event.dateTime,
+        dateTime: displayDateTime,
         bannerImageUrl: event.bannerImageUrl,
         ticketTypes: event.ticketTypes,
         purchaseMode: event.purchaseMode,
@@ -96,12 +110,24 @@ const getAllPublicBundles = async (req, res) => {
         match: { isDeleted: { $ne: true } },
         select: "name slug",
       })
-      .populate("eventIds", "name dateTime bannerImageUrl selectedSeatMap purchaseMode")
+      .populate("eventIds", "name dateTime bannerImageUrl selectedSeatMap purchaseMode sessions")
       .populate("venueId", "name city address")
       .sort({ createdAt: -1 })
       .lean();
 
-    const validBundles = bundles.filter((b) => b.organizationId !== null);
+    const now = new Date();
+    const validBundles = bundles.filter((b) => {
+      if (b.organizationId === null) return false;
+      // At least one event in the bundle must have an upcoming date or session
+      return b.eventIds?.some((event) => {
+        if (!event) return false;
+        if (new Date(event.dateTime) >= now) return true;
+        if (event.sessions && event.sessions.length > 0) {
+          return event.sessions.some(s => new Date(s.dateTime) >= now);
+        }
+        return false;
+      });
+    });
 
     return res.json({ bundles: validBundles });
   } catch (error) {

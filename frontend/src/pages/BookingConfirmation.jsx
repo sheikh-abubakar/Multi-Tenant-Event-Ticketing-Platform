@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
+import { ArrowLeft } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import "./BuyerContextPages.css";
 
 const BookingConfirmation = () => {
+  const { user } = useAuth();
   const { orgSlug, bookingId } = useParams();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session_id");
@@ -120,9 +124,11 @@ const BookingConfirmation = () => {
 
   const isConfirmed =
     booking.status === "confirmed" && booking.paymentStatus === "paid";
+  const bookedEventDateTime = booking.eventDateTime || booking.eventId?.dateTime;
 
   return (
-    <div className="confirmation-page" style={{ maxWidth: 740, margin: "0 auto" }}>
+    <div className="confirmation-page buyer-context-page" style={{ maxWidth: 820, margin: "0 auto" }}>
+      <Link to={user ? "/my/bookings" : `/o/${orgSlug}/events`} className="buyer-hub-back"><ArrowLeft size={15} /> {user ? "Back to my bookings" : "Back to events"}</Link>
       {/* ── Header ── */}
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <div
@@ -206,6 +212,18 @@ const BookingConfirmation = () => {
           <div>
             <p style={styles.label}>Buyer Email</p>
             <p style={styles.value}>{booking.buyerEmail}</p>
+          </div>
+          <div>
+            <p style={styles.label}>Event</p>
+            <p style={styles.value}>{booking.eventName || booking.eventId?.name || "Event"}</p>
+          </div>
+          <div>
+            <p style={styles.label}>Event Date &amp; Time</p>
+            <p style={styles.value}>
+              {bookedEventDateTime
+                ? new Date(bookedEventDateTime).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" })
+                : "To be announced"}
+            </p>
           </div>
         </div>
       </div>

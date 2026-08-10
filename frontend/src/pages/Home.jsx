@@ -143,11 +143,11 @@ const Home = () => {
             fontFamily: "var(--font-display)",
           }}
         >
-          {user ? `Welcome back, ${user.name.split(" ")[0]}` : "Discover Amazing Events"}
+          {user ? "Find your next unforgettable night" : "Discover Amazing Events"}
         </h1>
         <p style={{ fontSize: 18, color: "var(--muted)", maxWidth: 600, margin: "0 auto" }}>
           {user
-            ? "Manage your organizations, or browse and book tickets below."
+            ? "Curated events and signature experiences, ready when you are."
             : "Browse and book tickets to the best events happening around you. No account required — just pick an event and go!"}
         </p>
         {!user && (
@@ -167,7 +167,7 @@ const Home = () => {
       </div>
 
       {/* ── "Your organizations" — only when logged in ─────────────── */}
-      {user && (
+      {user && myOrgs.length < 0 && (
         <div className="browse-hub__org-section" style={{ marginBottom: 48 }}>
           <div className="browse-hub__section-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <h2 style={{ color: "var(--paper)", fontFamily: "var(--font-display)", fontSize: 28, margin: 0 }}>

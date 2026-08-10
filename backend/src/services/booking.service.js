@@ -926,6 +926,34 @@ const getBooking = async (bookingId, organizationId) => {
   return booking;
 };
 
+const lookupBooking = async (identifier, organizationId) => {
+  const cleanIdentifier = String(identifier || "").trim();
+  if (!cleanIdentifier) {
+    const error = new Error("Confirmation code or booking ID is required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const identifierFilter = [{ confirmationCode: cleanIdentifier.toUpperCase() }];
+  if (mongoose.Types.ObjectId.isValid(cleanIdentifier)) identifierFilter.push({ _id: cleanIdentifier });
+
+  const booking = await Booking.findOne({
+    organizationId,
+    $or: identifierFilter,
+  }).populate({
+    path: "eventId",
+    select: "name dateTime timezone bannerImageUrl venueId",
+    populate: { path: "venueId", select: "name address city" },
+  });
+
+  if (!booking) {
+    const error = new Error("No booking found for this organization");
+    error.statusCode = 404;
+    throw error;
+  }
+  return booking;
+};
+
 const getEventBookings = async (eventId, organizationId) => {
   return Booking.find({ eventId, organizationId }).sort({ createdAt: -1 });
 };
@@ -1394,6 +1422,7 @@ module.exports = {
   confirmBooking,
   expireBookingIfStillPending,
   getBooking,
+  lookupBooking,
   getEventBookings,
   getBundleBookings,
   handleStripeWebhook,

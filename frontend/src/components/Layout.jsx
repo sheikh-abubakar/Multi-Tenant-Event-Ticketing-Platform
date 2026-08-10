@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { ShoppingCart, WalletCards, User, Menu, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw, Image } from "lucide-react";
+import { ShoppingCart, WalletCards, User, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw, Image, SearchCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "./Logo";
 import AICopilot from "./ai/AICopilot";
+import BuyerLayout from "./BuyerLayout";
 import "./Layout.css";
 import "./PageVisuals.css";
 
@@ -46,6 +47,10 @@ const Layout = ({ children }) => {
 
   if (location.pathname.startsWith("/platform-admin")) return children;
 
+  const isBuyerConfirmation = /^\/o\/[^/]+\/bookings\/[^/]+\/confirmation$/.test(location.pathname);
+  const isBuyerHubPath = location.pathname === "/browse" || location.pathname === "/cart" || location.pathname === "/profile" || location.pathname === "/create-organization" || location.pathname.startsWith("/my/") || isBuyerConfirmation;
+  if (user && isBuyerHubPath) return <BuyerLayout>{children}</BuyerLayout>;
+
   // ── ORGANIZER CONSOLE LAYOUT ──────────────────────────────────
   if (orgSlug && user) {
     const organizationLinks = [
@@ -54,6 +59,7 @@ const Layout = ({ children }) => {
       ["Venues", `/o/${orgSlug}/manage/venues`, MapPin],
       ["Bundles", `/o/${orgSlug}/manage/bundles`, Package],
       ["Seat Changes", `/o/${orgSlug}/manage/seat-changes`, RefreshCw],
+      ["Booking Lookup", `/o/${orgSlug}/manage/booking-lookup`, SearchCheck],
       ["Media Gallery", `/o/${orgSlug}/manage/media`, Image],
       ["Analytics", `/o/${orgSlug}/manage/analytics`, BarChart3],
       ["Team", `/o/${orgSlug}/manage/team`, Users2],

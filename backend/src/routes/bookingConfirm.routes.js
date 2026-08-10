@@ -21,6 +21,16 @@ router.get("/bundle/:bundleBookingId", resolveTenant, bookingController.getBundl
 const authenticate = require("../middlewares/authenticate");
 const loadMembership = require("../middlewares/loadMembership");
 const checkPermission = require("../middlewares/checkPermission");
+const checkRole = require("../middlewares/checkRole");
+
+router.get(
+  "/lookup/:identifier",
+  authenticate,
+  resolveTenant,
+  loadMembership,
+  checkRole(["owner", "admin"]),
+  bookingController.lookup,
+);
 
 router.post(
   "/:bookingId/verify",

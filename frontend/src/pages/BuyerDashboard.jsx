@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Wallet, Ticket, ArrowLeft, ArrowRight, Clock, CreditCard, TrendingUp, ChevronDown, X, Gift } from "lucide-react";
+import { Wallet, Ticket, ArrowLeft, Clock, X, Gift } from "lucide-react";
 import apiClient from "../api/client";
 import "./BuyerDashboard.css";
 
-const BuyerDashboard = () => {
+const BuyerDashboard = ({ bookingsOnly = false }) => {
   const [wallet, setWallet] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [referralData, setReferralData] = useState(null);
@@ -15,6 +15,7 @@ const BuyerDashboard = () => {
   const [refundModal, setRefundModal] = useState(null); // booking object or null
   const [refunding, setRefunding] = useState(false);
   const [referralCopied, setReferralCopied] = useState(false);
+  const [bookingFilter, setBookingFilter] = useState("all");
 
   const loadData = async () => {
     setLoading(true);
@@ -92,17 +93,17 @@ const BuyerDashboard = () => {
   }
 
   return (
-    <div className="buyer-dashboard-page" style={{ maxWidth: 900, margin: "0 auto" }}>
+    <div className={`buyer-dashboard-page${bookingsOnly ? " buyer-dashboard--bookings" : ""}`} style={{ maxWidth: 900, margin: "0 auto" }}>
       {/* Header */}
       <div className="buyer-dashboard__masthead" style={{ marginBottom: 40 }}>
         <Link to="/browse" className="buyer-dashboard__back" aria-label="Back to browse events">
           <ArrowLeft size={15} /> Back to browse
         </Link>
         <h1 style={{ color: "var(--paper)", fontSize: 36, margin: "0 0 8px" }}>
-          My Dashboard
+          {bookingsOnly ? "My Bookings" : "My Dashboard"}
         </h1>
         <p style={{ color: "var(--muted)", fontSize: 15 }}>
-          Manage your bookings, wallet, and refunds
+          {bookingsOnly ? "Review tickets, refunds, and seat change requests" : "Manage your bookings, wallet, and refunds"}
         </p>
       </div>
 
@@ -218,7 +219,7 @@ const BuyerDashboard = () => {
 
       {/* Referrals & Rewards Card */}
       {referralData && (
-        <div style={{
+        <div className="buyer-dashboard__referrals" style={{
           background: "linear-gradient(135deg, rgba(201,154,60,0.07), rgba(25,36,54,0.85))",
           borderRadius: 16,
           padding: "28px 32px",
@@ -334,7 +335,17 @@ const BuyerDashboard = () => {
           </span>
         </div>
 
-        {bookings.length === 0 ? (
+        {bookingsOnly && bookings.length > 0 && (
+          <div className="buyer-booking-filters" aria-label="Filter bookings by status">
+            {["all", "confirmed", "refunded"].map((status) => (
+              <button key={status} type="button" className={bookingFilter === status ? "is-active" : ""} onClick={() => setBookingFilter(status)}>
+                {status[0].toUpperCase() + status.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {bookings.length === 0 || (bookingFilter !== "all" && !bookings.some((booking) => booking.status === bookingFilter)) ? (
           <div className="buyer-dashboard__empty" style={{
             textAlign: "center",
             padding: 40,
@@ -352,7 +363,7 @@ const BuyerDashboard = () => {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {bookings.map((booking) => {
+            {bookings.filter((booking) => bookingFilter === "all" || booking.status === bookingFilter).map((booking) => {
               const event = booking.eventId || {};
               const venue = event.venueId || {};
               const canRefund = booking.status === "confirmed" && isWithinRefundWindow(booking);

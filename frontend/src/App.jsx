@@ -26,10 +26,14 @@ const EventDetail = lazy(() => import("./pages/EventDetail"));
 const CartPage = lazy(() => import("./pages/CartPage"));
 const CheckoutPage = lazy(() => import("./pages/CheckoutPage"));
 const BookingConfirmation = lazy(() => import("./pages/BookingConfirmation"));
+const BookingLookup = lazy(() => import("./pages/BookingLookup"));
 const OrgSettings = lazy(() => import("./pages/OrgSettings"));
 const TeamManagement = lazy(() => import("./pages/TeamManagement"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const BuyerDashboard = lazy(() => import("./pages/BuyerDashboard"));
+const BuyerOverview = lazy(() => import("./pages/BuyerOverview"));
+const MyWallet = lazy(() => import("./pages/MyWallet"));
+const MyReferrals = lazy(() => import("./pages/MyReferrals"));
 const VenueSeatMapBuilder = lazy(() => import("./pages/VenueSeatMapBuilder"));
 const EventSeatMapBuilder = lazy(() => import("./pages/EventSeatMapBuilder"));
 const SeatSelection = lazy(() => import("./pages/SeatSelection"));
@@ -208,6 +212,14 @@ function App() {
           }
         />
         <Route
+          path="/o/:orgSlug/manage/booking-lookup"
+          element={
+            <ProtectedRoute>
+              <BookingLookup />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/o/:orgSlug/manage/media"
           element={
             <ProtectedRoute>
@@ -246,10 +258,13 @@ function App() {
           path="/my/dashboard"
           element={
             <ProtectedRoute>
-              <BuyerDashboard />
+              <BuyerOverview />
             </ProtectedRoute>
           }
         />
+        <Route path="/my/wallet" element={<ProtectedRoute><MyWallet /></ProtectedRoute>} />
+        <Route path="/my/referrals" element={<ProtectedRoute><MyReferrals /></ProtectedRoute>} />
+        <Route path="/my/bookings" element={<ProtectedRoute><BuyerDashboard bookingsOnly /></ProtectedRoute>} />
       </Routes>
       </Suspense>
     </Layout>

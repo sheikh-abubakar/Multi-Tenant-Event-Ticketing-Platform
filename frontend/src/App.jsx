@@ -54,6 +54,9 @@ const EditBundle = lazy(() => import("./pages/EditBundle"));
 const SeatChangeRequestPage = lazy(() => import("./pages/SeatChangeRequestPage"));
 const SeatChangeRequests = lazy(() => import("./pages/Admin/SeatChangeRequests"));
 
+// Media Gallery
+const MediaGalleryPage = lazy(() => import("./pages/Admin/MediaGalleryPage"));
+
 function App() {
   const [searchParams] = useSearchParams();
   const [appReady, setAppReady] = useState(false);
@@ -201,6 +204,14 @@ function App() {
           element={
             <ProtectedRoute>
               <SeatChangeRequests />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/o/:orgSlug/manage/media"
+          element={
+            <ProtectedRoute>
+              <MediaGalleryPage />
             </ProtectedRoute>
           }
         />

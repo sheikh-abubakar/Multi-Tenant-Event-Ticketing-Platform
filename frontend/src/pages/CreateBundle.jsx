@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import apiClient from "../api/client";
+import MediaGalleryPickerModal from "../components/media/MediaGalleryPickerModal";
 
 export default function CreateBundle() {
   const { orgSlug } = useParams();
@@ -19,6 +20,8 @@ export default function CreateBundle() {
   const [accessCode, setAccessCode] = useState("");
   const [privateCodeExpiry, setPrivateCodeExpiry] = useState("");
   const [bannerFile, setBannerFile] = useState(null);
+  const [bannerGalleryUrl, setBannerGalleryUrl] = useState("");
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -80,6 +83,8 @@ export default function CreateBundle() {
 
       if (bannerFile) {
         body.append("banner", bannerFile);
+      } else if (bannerGalleryUrl) {
+        body.append("bannerImageUrl", bannerGalleryUrl);
       }
 
       await apiClient.post(`/o/${orgSlug}/bundles`, body, {
@@ -331,9 +336,38 @@ export default function CreateBundle() {
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
-            onChange={(e) => setBannerFile(e.target.files[0])}
+            onChange={(e) => { setBannerFile(e.target.files[0]); setBannerGalleryUrl(""); }}
             className="w-full text-sm"
           />
+          <button
+            type="button"
+            onClick={() => setGalleryOpen(true)}
+            style={{
+              marginTop: 8,
+              padding: "6px 14px",
+              background: "rgba(245, 178, 52, 0.1)",
+              border: "1px solid rgba(245, 178, 52, 0.4)",
+              borderRadius: 8,
+              color: "var(--gold)",
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            🖼️ Choose from Gallery
+          </button>
+          {(bannerFile || bannerGalleryUrl) && (
+            <div style={{ marginTop: 10 }}>
+              <img
+                src={bannerFile ? URL.createObjectURL(bannerFile) : bannerGalleryUrl}
+                alt="Banner preview"
+                style={{ maxHeight: 90, borderRadius: 8, border: "1px solid rgba(0,0,0,0.1)" }}
+              />
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 10 }}>
@@ -353,6 +387,16 @@ export default function CreateBundle() {
           </button>
         </div>
       </form>
+      <MediaGalleryPickerModal
+        orgSlug={orgSlug}
+        isOpen={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        selectedUrl={bannerGalleryUrl}
+        onSelect={(url) => {
+          setBannerFile(null);
+          setBannerGalleryUrl(url);
+        }}
+      />
     </div>
   );
 }

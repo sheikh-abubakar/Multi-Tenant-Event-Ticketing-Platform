@@ -27,6 +27,7 @@ const platformAdminRoutes = require("./routes/platformAdmin.routes");
 const aiRoutes = require("./routes/ai.routes");
 const bundleRoutes = require("./routes/bundle.routes");
 const seatChangeRoutes = require("./routes/seatChange.routes");
+const mediaRoutes = require("./routes/media.routes");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -118,6 +119,7 @@ app.use("/api/o/:orgSlug/bookings", bookingConfirmRoutes);
 app.use("/api/o/:orgSlug/cart", cartRoutes);
 app.use("/api/o/:orgSlug/coupons", couponRoutes);
 app.use("/api/o/:orgSlug/seat-change", seatChangeRoutes);
+app.use("/api/o/:orgSlug/media", mediaRoutes);
 app.use("/api/cart", globalCartRoutes);
 app.use("/api/o/:orgSlug/settings", orgSettingsRoutes);
 app.use("/api/o/:orgSlug/team", teamRoutes);

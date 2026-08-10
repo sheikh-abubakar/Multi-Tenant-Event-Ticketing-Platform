@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import apiClient from "../api/client";
 import CouponsTab from "../components/org/CouponsTab";
+import MediaGalleryPickerModal from "../components/media/MediaGalleryPickerModal";
 
 const OrgSettings = () => {
   const { orgSlug } = useParams();
@@ -19,6 +20,7 @@ const OrgSettings = () => {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [confirmText, setConfirmText] = useState("");
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState("general"); // "general" or "coupons"
 
@@ -53,6 +55,12 @@ const OrgSettings = () => {
     setLogoPreview(file ? URL.createObjectURL(file) : null);
   };
 
+  const handleGallerySelect = (url) => {
+    setLogoFile(null);
+    setLogoPreview(url);
+    setGalleryOpen(false);
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setError("");
@@ -62,7 +70,12 @@ const OrgSettings = () => {
     const formData = new FormData();
     formData.append("name", name);
     formData.append("slug", slug);
-    if (logoFile) formData.append("logo", logoFile);
+    if (logoFile) {
+      formData.append("logo", logoFile);
+    } else if (logoPreview && logoPreview !== org?.logoUrl) {
+      // Gallery-selected URL that differs from the existing one
+      formData.append("logoUrl", logoPreview);
+    }
 
     try {
       const { data } = await apiClient.put(`/o/${orgSlug}/settings`, formData);
@@ -188,6 +201,26 @@ const OrgSettings = () => {
                   onChange={handleLogoChange}
                   className="text-sm text-ink-text file:mr-3 file:rounded-md file:border-0 file:bg-gold file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-ink hover:file:bg-gold-soft"
                 />
+                <button
+                  type="button"
+                  onClick={() => setGalleryOpen(true)}
+                  style={{
+                    marginTop: 8,
+                    padding: "5px 12px",
+                    background: "rgba(245, 178, 52, 0.1)",
+                    border: "1px solid rgba(245, 178, 52, 0.4)",
+                    borderRadius: 8,
+                    color: "var(--gold)",
+                    fontWeight: 700,
+                    fontSize: 11,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                  }}
+                >
+                  🖼️ Choose from Gallery
+                </button>
               </div>
             </div>
 
@@ -260,6 +293,13 @@ const OrgSettings = () => {
       ) : (
         <CouponsTab orgSlug={orgSlug} />
       )}
+      <MediaGalleryPickerModal
+        orgSlug={orgSlug}
+        isOpen={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        selectedUrl={logoPreview || org?.logoUrl}
+        onSelect={handleGallerySelect}
+      />
     </div>
   );
 };

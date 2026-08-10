@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import apiClient from "../api/client";
+import MediaGalleryPickerModal from "../components/media/MediaGalleryPickerModal";
 
 const formatLocalDateForInput = (dateStr) => {
   if (!dateStr) return "";
@@ -32,6 +33,7 @@ export default function EditBundle() {
   const [privateCodeExpiry, setPrivateCodeExpiry] = useState("");
   const [bannerFile, setBannerFile] = useState(null);
   const [existingBannerUrl, setExistingBannerUrl] = useState("");
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -124,6 +126,8 @@ export default function EditBundle() {
 
       if (bannerFile) {
         body.append("banner", bannerFile);
+      } else if (existingBannerUrl) {
+        body.append("bannerImageUrl", existingBannerUrl);
       }
 
       await apiClient.put(`/o/${orgSlug}/bundles/${bundleId}`, body, {
@@ -386,6 +390,35 @@ export default function EditBundle() {
             onChange={(e) => setBannerFile(e.target.files[0])}
             className="w-full text-sm"
           />
+          <button
+            type="button"
+            onClick={() => setGalleryOpen(true)}
+            style={{
+              marginTop: 8,
+              padding: "6px 14px",
+              background: "rgba(245, 178, 52, 0.1)",
+              border: "1px solid rgba(245, 178, 52, 0.4)",
+              borderRadius: 8,
+              color: "var(--gold)",
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            🖼️ Choose from Gallery
+          </button>
+          {bannerFile && (
+            <div style={{ marginTop: 10 }}>
+              <img
+                src={URL.createObjectURL(bannerFile)}
+                alt="New Banner preview"
+                style={{ maxHeight: 90, borderRadius: 8, border: "1px solid rgba(245, 178, 52, 0.3)" }}
+              />
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 10 }}>
@@ -405,6 +438,16 @@ export default function EditBundle() {
           </button>
         </div>
       </form>
+      <MediaGalleryPickerModal
+        orgSlug={orgSlug}
+        isOpen={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        selectedUrl={existingBannerUrl}
+        onSelect={(url) => {
+          setBannerFile(null);
+          setExistingBannerUrl(url);
+        }}
+      />
     </div>
   );
 }

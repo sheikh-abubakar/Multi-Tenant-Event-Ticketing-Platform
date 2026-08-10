@@ -3,6 +3,7 @@ const { uploadBufferToS3 } = require("../utils/s3Upload");
 const { recordPlatformAudit } = require("../utils/platformAudit");
 const EventBundle = require("../models/EventBundle");
 const Event = require("../models/Event");
+const MediaAsset = require("../models/MediaAsset");
 
 // If a file was uploaded (req.file.buffer, set by multer's
 // memoryStorage), streams it to Cloudinary and returns the hosted
@@ -11,12 +12,26 @@ const Event = require("../models/Event");
 const buildBannerUrl = async (req) => {
   if (!req.file) return undefined;
   const result = await uploadBufferToS3({ buffer: req.file.buffer, mimetype: req.file.mimetype, folder: "event-banners" });
+
+  try {
+    await MediaAsset.create({
+      organizationId: req.organizationId,
+      originalName: req.file.originalname || "unnamed-image",
+      mimeType: req.file.mimetype,
+      key: result.key,
+      url: result.url,
+      size: req.file.size || 0,
+    });
+  } catch (err) {
+    console.error("Auto-saving media asset failed:", err.message);
+  }
+
   return result.url;
 };
 
 const create = async (req, res) => {
   try {
-    const bannerImageUrl = await buildBannerUrl(req);
+    const bannerImageUrl = (await buildBannerUrl(req)) || req.body.bannerImageUrl;
     const event = await eventService.createEvent(req.body, req.organizationId, bannerImageUrl);
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "event.created", targetType: "event", targetId: event._id, metadata: { eventName: event.name } });
     return res.status(201).json({ event });
@@ -27,8 +42,6 @@ const create = async (req, res) => {
 
 const list = async (req, res) => {
   try {
-    // If assignedVenueIds is set (from filterByAssignedVenues middleware),
-    // pass it to the service. Otherwise pass null (show all).
     const events = await eventService.listEvents(req.organizationId, req.assignedVenueIds);
     return res.json({ events });
   } catch (error) {
@@ -107,7 +120,7 @@ const getOne = async (req, res) => {
 
 const update = async (req, res) => {
   try {
-    const bannerImageUrl = await buildBannerUrl(req);
+    const bannerImageUrl = (await buildBannerUrl(req)) || req.body.bannerImageUrl;
     const event = await eventService.updateEvent(
       req.params.eventId,
       req.organizationId,

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import apiClient from "../api/client";
 import { hasPermission } from "../utils/permissionsClient";
+import MediaGalleryPickerModal from "../components/media/MediaGalleryPickerModal";
 
 const formatLocalDateForInput = (dateStr) => {
   if (!dateStr) return "";
@@ -32,6 +33,7 @@ export default function Events() {
   const [sessionDates, setSessionDates] = useState([]);
   const [newSessionDate, setNewSessionDate] = useState("");
   const [selectedSessionMap, setSelectedSessionMap] = useState({});
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -93,6 +95,7 @@ export default function Events() {
       setNewSessionDate("");
       setBannerFile(null);
       setEditingId(null);
+      setGalleryOpen(false);
       await load();
       if (!editingId) {
         navigate(`/o/${orgSlug}/manage/events/${response.data.event._id}/seatmap`);
@@ -328,6 +331,26 @@ export default function Events() {
                 onChange={(e) => setBannerFile(e.target.files[0])}
                 className="mt-1 block w-full text-sm"
               />
+              <button
+                type="button"
+                onClick={() => setGalleryOpen(true)}
+                style={{
+                  marginTop: 8,
+                  padding: "6px 14px",
+                  background: "rgba(245, 178, 52, 0.1)",
+                  border: "1px solid rgba(245, 178, 52, 0.4)",
+                  borderRadius: 8,
+                  color: "var(--gold)",
+                  fontWeight: 700,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                🖼️ Choose from Gallery
+              </button>
               {bannerFile ? (
                 <div className="mt-2 relative rounded-lg overflow-hidden border border-black/10 shadow-sm" style={{ maxHeight: 120, width: "100%" }}>
                   <img
@@ -485,6 +508,16 @@ export default function Events() {
           ⚠️ {toastMsg}
         </div>
       )}
+      <MediaGalleryPickerModal
+        orgSlug={orgSlug}
+        isOpen={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        selectedUrl={form.bannerImageUrl}
+        onSelect={(url) => {
+          setBannerFile(null);
+          setForm((prev) => ({ ...prev, bannerImageUrl: url }));
+        }}
+      />
     </div>
   );
 }

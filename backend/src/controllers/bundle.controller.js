@@ -1,6 +1,7 @@
 const EventBundle = require("../models/EventBundle");
 const Event = require("../models/Event");
 const { uploadBufferToS3 } = require("../utils/s3Upload");
+const MediaAsset = require("../models/MediaAsset");
 
 const buildBannerUrl = async (req) => {
   if (!req.file) return undefined;
@@ -9,6 +10,20 @@ const buildBannerUrl = async (req) => {
     mimetype: req.file.mimetype,
     folder: "event-banners",
   });
+
+  try {
+    await MediaAsset.create({
+      organizationId: req.organizationId,
+      originalName: req.file.originalname || "unnamed-image",
+      mimeType: req.file.mimetype,
+      key: result.key,
+      url: result.url,
+      size: req.file.size || 0,
+    });
+  } catch (err) {
+    console.error("Auto-saving media asset failed:", err.message);
+  }
+
   return result.url;
 };
 
@@ -57,7 +72,7 @@ const create = async (req, res) => {
       return res.status(400).json({ message: "All events in the bundle must be scheduled at the selected venue." });
     }
 
-    const bannerImageUrl = await buildBannerUrl(req);
+    const bannerImageUrl = (await buildBannerUrl(req)) || req.body.bannerImageUrl;
 
     const bundle = new EventBundle({
       organizationId: req.organizationId,
@@ -224,9 +239,9 @@ const update = async (req, res) => {
       bundle.eventIds = parsedEventIds;
     }
 
-    const newBannerUrl = await buildBannerUrl(req);
-    if (newBannerUrl) {
-      bundle.bannerImageUrl = newBannerUrl;
+    const newBannerUrl = (await buildBannerUrl(req)) || req.body.bannerImageUrl;
+    if (newBannerUrl !== undefined) {
+      bundle.bannerImageUrl = newBannerUrl || null;
     }
 
     await bundle.save();

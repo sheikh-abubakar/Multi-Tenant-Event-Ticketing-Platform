@@ -51,6 +51,7 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     description,
     dateTime,
     bannerImageUrl,
+    youtubeUrl: data.youtubeUrl ? String(data.youtubeUrl).trim() || null : null,
     purchaseMode: "seatmap",
     ticketTypes: [],
     timezone: eventTimezone,
@@ -99,7 +100,7 @@ const listEvents = async (organizationId, assignedVenueIds = null, { includeSeat
 
 const getEventById = async (eventId, organizationId) => {
   const event = await Event.findOne({ _id: eventId, organizationId })
-    .select("name description dateTime bannerImageUrl ticketTypes purchaseMode venueId timezone accessCode privateCodeExpiry sessions createdAt updatedAt")
+    .select("name description dateTime bannerImageUrl youtubeUrl ticketTypes purchaseMode venueId timezone accessCode privateCodeExpiry sessions createdAt updatedAt")
     .populate("venueId", "name city")
     .lean();
   if (!event) {
@@ -111,7 +112,7 @@ const getEventById = async (eventId, organizationId) => {
 };
 
 const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => {
-  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode", "privateCodeExpiry", "sessionDates"];
+  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode", "privateCodeExpiry", "sessionDates", "youtubeUrl"];
   const safeUpdates = {};
 
   for (const field of allowedFields) {

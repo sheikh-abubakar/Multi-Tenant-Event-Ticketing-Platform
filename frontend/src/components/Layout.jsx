@@ -79,8 +79,21 @@ const Layout = ({ children }) => {
             <X size={20} />
           </button>
 
-          <Link to="/" className="display sidebar-brand" onClick={() => setSidebarOpen(false)}>
-            <Logo width="130" height="36" />
+          <Link
+            to="/"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-start",
+              height: "36px",
+              width: "38px",
+              overflow: "hidden",
+              marginBottom: "12px",
+            }}
+            className="sidebar-brand"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <Logo width="130" height="36" idSuffix="sidebar" style={{ flexShrink: 0 }} />
           </Link>
           <p className="sidebar-caption">ORGANIZER CONSOLE</p>
           <nav className="sidebar-nav" aria-label="Organization navigation">
@@ -142,7 +155,7 @@ const Layout = ({ children }) => {
               </div>
             </button>
             <Link to="/" className="display organizer-mobile-logo">
-              <Logo width="110" height="30" />
+              <Logo width="110" height="30" idSuffix="mobile" />
             </Link>
             <span className="organizer-mobile-slug">{orgSlug}</span>
           </header>
@@ -159,7 +172,7 @@ const Layout = ({ children }) => {
       <header className="app-header" style={{ padding: "24px 0 18px" }}>
         <div className="container" style={styles.headerRow}>
           <Link to="/" className="display" style={styles.logo}>
-            <Logo width="130" height="36" />
+            <Logo width="130" height="36" idSuffix="public" />
           </Link>
 
           <nav className="layout-nav" style={styles.nav}>

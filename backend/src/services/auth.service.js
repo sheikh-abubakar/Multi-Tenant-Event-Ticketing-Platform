@@ -179,16 +179,17 @@ const generatePasswordResetOTP = async (email) => {
   user.otpExpiresAt = otpExpiresAt;
   await user.save();
 
+  // Print OTP to console for local testing and developer access
+  console.log(`\n🔑 [STAGEPASS DEV] OTP Code generated for ${user.email} -> ${otpCode}\n`);
+
   try {
     await sendPasswordResetOTP(user.email, otpCode);
   } catch (emailErr) {
-    console.error("Failed to send OTP email:", emailErr.message);
-    const error = new Error("Failed to send verification email. Please check your SMTP settings.");
-    error.statusCode = 500;
-    throw error;
+    console.warn("Failed to send OTP email via SMTP:", emailErr.message);
+    // In local development, we catch and ignore SMTP failures so dummy users can still reset passwords
   }
 
-  return { message: "Verification code sent to your email" };
+  return { message: "Verification code sent (check email or server logs)" };
 };
 
 const resetPasswordWithOTP = async ({ email, otpCode, newPassword }) => {

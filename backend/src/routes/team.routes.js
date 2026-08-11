@@ -8,9 +8,10 @@ const teamController = require("../controllers/team.controller");
 
 const router = express.Router({ mergeParams: true });
 
-// ── Public route (no auth) ────────────────────────────────────────
+// ── Public routes (no auth) ────────────────────────────────────────
 // Accept invitation — called via magic link in email
 router.post("/accept-invite", teamController.acceptInvitation);
+router.get("/accept-invite/details", teamController.getInvitationDetails);
 
 // ── Protected routes — require auth + membership ──────────────────
 router.use(authenticate, resolveTenant, loadMembership);

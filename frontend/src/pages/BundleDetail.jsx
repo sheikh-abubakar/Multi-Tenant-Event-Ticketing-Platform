@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import apiClient from "../api/client";
+import YouTubeEmbed from "../components/YouTubeEmbed";
 import "./EventDetail.css";
 
 export default function BundleDetail() {
@@ -251,6 +252,16 @@ export default function BundleDetail() {
 
           {bundle.description && (
             <p className="ed-sm-desc" style={{ marginBottom: 28 }}>{bundle.description}</p>
+          )}
+
+          {/* YouTube promo video */}
+          {bundle.youtubeUrl && (
+            <YouTubeEmbed
+              youtubeUrl={bundle.youtubeUrl}
+              eventName={bundle.name}
+              description={bundle.description}
+              label="Bundle Highlight Reel"
+            />
           )}
 
           {/* Timeline of Bundled Events */}

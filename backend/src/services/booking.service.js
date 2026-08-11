@@ -1225,6 +1225,8 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
         paymentStatus: "pending",
         isBundleBooking: true,
         bundleBookingId,
+        bundleId: bundle._id,
+        bundleName: bundle.name,
         expiresAt: new Date(Date.now() + HOLD_DURATION_MS),
         confirmationCode: generateConfirmationCode(),
       });

@@ -258,6 +258,16 @@ const bookingSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    bundleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "EventBundle",
+      default: null,
+      index: true,
+    },
+    bundleName: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true },
 );

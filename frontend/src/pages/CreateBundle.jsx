@@ -21,6 +21,7 @@ export default function CreateBundle() {
   const [privateCodeExpiry, setPrivateCodeExpiry] = useState("");
   const [bannerFile, setBannerFile] = useState(null);
   const [bannerGalleryUrl, setBannerGalleryUrl] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
   const [galleryOpen, setGalleryOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -86,6 +87,7 @@ export default function CreateBundle() {
       } else if (bannerGalleryUrl) {
         body.append("bannerImageUrl", bannerGalleryUrl);
       }
+      if (youtubeUrl.trim()) body.append("youtubeUrl", youtubeUrl.trim());
 
       await apiClient.post(`/o/${orgSlug}/bundles`, body, {
         headers: { "Content-Type": "multipart/form-data" }
@@ -368,6 +370,29 @@ export default function CreateBundle() {
               />
             </div>
           )}
+        </div>
+
+        {/* YouTube Video URL */}
+        <div>
+          <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>
+            YouTube Video URL
+            <span style={{ fontWeight: 400, fontSize: 12, color: "var(--muted)", marginLeft: 6 }}>(Optional)</span>
+          </label>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="#FF0000">
+                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+              </svg>
+            </span>
+            <input
+              type="url"
+              value={youtubeUrl}
+              onChange={(e) => setYoutubeUrl(e.target.value)}
+              placeholder="https://youtube.com/watch?v=... or https://youtu.be/..."
+              className="w-full rounded-md border border-black/15 px-3 py-2"
+              style={{ paddingLeft: 34, color: "#111326" }}
+            />
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 10 }}>

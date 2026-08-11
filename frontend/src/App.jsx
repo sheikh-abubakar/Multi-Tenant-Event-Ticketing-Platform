@@ -1,8 +1,9 @@
 import { useEffect, useState, Suspense, lazy } from "react";
-import { Routes, Route, useSearchParams } from "react-router-dom";
+import { Navigate, Routes, Route, useSearchParams } from "react-router-dom";
 import LoadingScreen from "./components/LoadingScreen";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { useAuth } from "./context/AuthContext";
 
 // ── Eagerly loaded (tiny, always needed) ───────────────────────────────────
 import LandingPage from "./pages/LandingPage";
@@ -62,6 +63,7 @@ const SeatChangeRequests = lazy(() => import("./pages/Admin/SeatChangeRequests")
 const MediaGalleryPage = lazy(() => import("./pages/Admin/MediaGalleryPage"));
 
 function App() {
+  const { user, token } = useAuth();
   const [searchParams] = useSearchParams();
   const [appReady, setAppReady] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
@@ -100,7 +102,14 @@ function App() {
       <Suspense fallback={<p style={{ color: "#aeb0c4", padding: "40px", textAlign: "center" }}>Loading…</p>}>
       <Routes>
         {/* Public buyer dashboard — shows all events across all orgs */}
-        <Route path="/" element={<LandingPage />} />
+        <Route
+          path="/"
+          element={
+            token && user
+              ? <Navigate to={user.platformRole === "super_admin" ? "/platform-admin" : user.requiresPasswordSetup ? "/set-password" : "/browse"} replace />
+              : <LandingPage />
+          }
+        />
         <Route path="/browse" element={<Home />} />
         <Route path="/cart" element={<ProtectedRoute><GlobalCart /></ProtectedRoute>} />
         

@@ -58,15 +58,7 @@ const inviteMember = async ({ organizationId, email, role, password, inviterName
     throw error;
   }
 
-  // Admin invite requires a password
-  if (role === "admin" && (!password || password.length < 6)) {
-    const error = new Error("Password is required (minimum 6 characters) for admin invites");
-    error.statusCode = 400;
-    throw error;
-  }
-
   const normalizedEmail = email.trim().toLowerCase();
-
   let user = await User.findOne({ email: normalizedEmail });
 
   if (user) {
@@ -82,30 +74,30 @@ const inviteMember = async ({ organizationId, email, role, password, inviterName
     }
   }
 
-  // ── Admin invite: create user with password immediately ──────────
-  if (role === "admin") {
+  // ── Admin invite for NEW users: create user with password immediately ──
+  const isNewAdmin = role === "admin" && !user;
+  if (isNewAdmin) {
+    if (!password || password.length < 6) {
+      const error = new Error("Password is required (minimum 6 characters) for admin invites");
+      error.statusCode = 400;
+      throw error;
+    }
+
     const session = await mongoose.startSession();
     try {
       let memberDoc;
-
       await session.withTransaction(async () => {
-        if (!user) {
-          const nameFromEmail = normalizedEmail.split("@")[0];
-          const passwordHash = await bcrypt.hash(password, 10);
-          const users = await User.create(
-            [{
-              name: nameFromEmail,
-              email: normalizedEmail,
-              passwordHash,
-            }],
-            { session }
-          );
-          user = users[0];
-        } else {
-          // User exists — update their password so they can login
-          const passwordHash = await bcrypt.hash(password, 10);
-          await User.findByIdAndUpdate(user._id, { passwordHash }, { session });
-        }
+        const nameFromEmail = normalizedEmail.split("@")[0];
+        const passwordHash = await bcrypt.hash(password, 10);
+        const users = await User.create(
+          [{
+            name: nameFromEmail,
+            email: normalizedEmail,
+            passwordHash,
+          }],
+          { session }
+        );
+        user = users[0];
 
         const defaultPermissions = getDefaultPermissions("admin");
         const memberDocs = await OrganizationMember.create(
@@ -145,7 +137,7 @@ const inviteMember = async ({ organizationId, email, role, password, inviterName
     }
   }
 
-  // ── Staff invite: create user (placeholder) + send email ────────
+  // ── Existing user (Admin/Staff) OR Staff invite: send invitation link ──
   const invitationToken = generateInvitationToken();
   const session = await mongoose.startSession();
   let memberDoc;
@@ -165,23 +157,23 @@ const inviteMember = async ({ organizationId, email, role, password, inviterName
         user = users[0];
       }
 
-      const defaultPermissions = getDefaultPermissions("staff");
+      const defaultPermissions = getDefaultPermissions(role);
       const memberDocs = await OrganizationMember.create(
         [{
           userId: user._id,
           organizationId,
-          role: "staff",
+          role,
           permissions: defaultPermissions,
           invitationToken,
           invitationSentAt: new Date(),
-          passwordSet: false,
+          passwordSet: user.passwordHash && user.passwordHash !== "$2b$10$placeholder" ? true : false,
         }],
         { session }
       );
       memberDoc = memberDocs[0];
     });
 
-    // Send invitation email (outside transaction — non-critical)
+    // Send invitation email
     try {
       await sendTeamInvitation({
         email: normalizedEmail,
@@ -194,7 +186,6 @@ const inviteMember = async ({ organizationId, email, role, password, inviterName
       console.warn(`[Team] Invitation email failed for ${normalizedEmail}:`, emailErr.message);
     }
 
-    // Re-fetch with populated user data
     const populated = await OrganizationMember.findById(memberDoc._id)
       .populate("userId", "name email");
 
@@ -208,10 +199,10 @@ const inviteMember = async ({ organizationId, email, role, password, inviterName
         },
         role: populated.role,
         permissions: populated.permissions,
-        passwordSet: false,
+        passwordSet: populated.passwordSet,
         joinedAt: populated.createdAt,
       },
-      message: `Invitation sent to ${normalizedEmail}. They'll receive an email to set up their account.`,
+      message: `Invitation sent to ${normalizedEmail}. They'll receive an email to join the team.`,
     };
   } finally {
     session.endSession();
@@ -223,12 +214,6 @@ const inviteMember = async ({ organizationId, email, role, password, inviterName
  * Validates the token and sets their password.
  */
 const acceptInvitation = async ({ invitationToken, name, password }) => {
-  if (!password || password.length < 6) {
-    const error = new Error("Password is required (minimum 6 characters)");
-    error.statusCode = 400;
-    throw error;
-  }
-
   const membership = await OrganizationMember.findOne({ invitationToken })
     .populate("userId");
 
@@ -238,9 +223,17 @@ const acceptInvitation = async ({ invitationToken, name, password }) => {
     throw error;
   }
 
-  if (membership.passwordSet) {
+  if (membership.passwordSet && !membership.invitationToken) {
     const error = new Error("This invitation has already been accepted");
     error.statusCode = 410;
+    throw error;
+  }
+
+  const userHasPassword = membership.userId.passwordHash && membership.userId.passwordHash !== "$2b$10$placeholder";
+  
+  if (!userHasPassword && (!password || password.length < 6)) {
+    const error = new Error("Password is required (minimum 6 characters)");
+    error.statusCode = 400;
     throw error;
   }
 
@@ -255,11 +248,17 @@ const acceptInvitation = async ({ invitationToken, name, password }) => {
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
-      // Update user's name + password
-      const passwordHash = await bcrypt.hash(password, 10);
-      const updateData = { passwordHash };
-      if (name && name.trim()) updateData.name = name.trim();
-      await User.findByIdAndUpdate(membership.userId._id, updateData, { session });
+      const updateData = {};
+      if (password) {
+        updateData.passwordHash = await bcrypt.hash(password, 10);
+      }
+      if (name && name.trim()) {
+        updateData.name = name.trim();
+      }
+      
+      if (Object.keys(updateData).length > 0) {
+        await User.findByIdAndUpdate(membership.userId._id, updateData, { session });
+      }
 
       // Clear invitation token and mark password as set
       membership.invitationToken = null;
@@ -268,7 +267,7 @@ const acceptInvitation = async ({ invitationToken, name, password }) => {
     });
 
     return {
-      message: "Account created! You can now log in.",
+      message: "Invitation accepted successfully!",
       email: membership.userId.email,
       orgId: membership.organizationId,
     };
@@ -449,6 +448,26 @@ const assignVenues = async ({ organizationId, memberId, venueIds }) => {
   };
 };
 
+const getInvitationDetails = async (invitationToken) => {
+  const membership = await OrganizationMember.findOne({ invitationToken })
+    .populate("userId", "name email passwordHash");
+
+  if (!membership) {
+    const error = new Error("Invalid or expired invitation link");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const userHasPassword = membership.userId.passwordHash && membership.userId.passwordHash !== "$2b$10$placeholder";
+
+  return {
+    email: membership.userId.email,
+    name: membership.userId.name,
+    role: membership.role,
+    hasPassword: !!userHasPassword,
+  };
+};
+
 module.exports = {
   getMembers,
   inviteMember,
@@ -457,4 +476,5 @@ module.exports = {
   updateMemberPermissions,
   removeMember,
   assignVenues,
+  getInvitationDetails,
 };

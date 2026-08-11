@@ -117,10 +117,11 @@ const getOwnerAnalytics = async (organizationId) => {
         buyerName: 1, buyerEmail: 1, eventName: 1, eventDateTime: 1,
         eventId: 1, totalAmount: 1, originalAmount: 1, status: 1,
         paymentStatus: 1, refundInfo: 1, verified: 1, verifiedAt: 1, createdAt: 1,
+        isBundleBooking: 1, bundleBookingId: 1, bundleId: 1, bundleName: 1,
       }
     )
       .sort({ createdAt: -1 })
-      .limit(10)
+      .limit(30)
       .lean(),
 
     // Revenue for last 30 days (for line/bar chart)
@@ -255,23 +256,69 @@ const getOwnerAnalytics = async (organizationId) => {
     });
   }
 
-  // Shape recent bookings — no populate() needed since we project snapshot fields
-  const shapedRecentBookings = recentBookings.map((b) => ({
-    id: b._id,
-    buyerName: b.buyerName,
-    buyerEmail: b.buyerEmail,
-    eventName: b.eventName || "Unknown",
-    eventDate: b.eventDateTime || null,
-    eventId: b.eventId || null,
-    totalAmount: b.totalAmount,
-    originalAmount: b.originalAmount || b.totalAmount,
-    status: b.status,
-    paymentStatus: b.paymentStatus,
-    refundInfo: b.refundInfo || null,
-    verified: b.verified || false,
-    verifiedAt: b.verifiedAt || null,
-    createdAt: b.createdAt,
-  }));
+  // Shape recent bookings — group bundle bookings by bundleBookingId
+  const groupedBookingsMap = new Map();
+  const individualBookings = [];
+
+  recentBookings.forEach((b) => {
+    if (b.isBundleBooking && b.bundleBookingId) {
+      const key = b.bundleBookingId.toString();
+      if (!groupedBookingsMap.has(key)) {
+        groupedBookingsMap.set(key, {
+          id: b.bundleBookingId.toString(),
+          buyerName: b.buyerName,
+          buyerEmail: b.buyerEmail,
+          eventName: `Bundle: ${b.bundleName || "Event Bundle"}`,
+          eventDate: b.eventDateTime || null,
+          eventId: b.eventId || null,
+          totalAmount: 0,
+          originalAmount: 0,
+          status: b.status,
+          paymentStatus: b.paymentStatus,
+          refundInfo: b.refundInfo || null,
+          verified: b.verified || false,
+          verifiedAt: b.verifiedAt || null,
+          createdAt: b.createdAt,
+          isBundle: true,
+        });
+      }
+      const grp = groupedBookingsMap.get(key);
+      grp.totalAmount += b.totalAmount;
+      grp.originalAmount += b.originalAmount || b.totalAmount;
+
+      if (!b.verified) {
+        grp.verified = false;
+      }
+      if (b.verified && (!grp.verifiedAt || b.verifiedAt > grp.verifiedAt)) {
+        grp.verifiedAt = b.verifiedAt;
+      }
+    } else {
+      individualBookings.push({
+        id: b._id.toString(),
+        buyerName: b.buyerName,
+        buyerEmail: b.buyerEmail,
+        eventName: b.eventName || "Unknown",
+        eventDate: b.eventDateTime || null,
+        eventId: b.eventId || null,
+        totalAmount: b.totalAmount,
+        originalAmount: b.originalAmount || b.totalAmount,
+        status: b.status,
+        paymentStatus: b.paymentStatus,
+        refundInfo: b.refundInfo || null,
+        verified: b.verified || false,
+        verifiedAt: b.verifiedAt || null,
+        createdAt: b.createdAt,
+        isBundle: false,
+      });
+    }
+  });
+
+  const shapedRecentBookings = [
+    ...individualBookings,
+    ...Array.from(groupedBookingsMap.values()),
+  ]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 10);
 
   const result = {
     metrics: {

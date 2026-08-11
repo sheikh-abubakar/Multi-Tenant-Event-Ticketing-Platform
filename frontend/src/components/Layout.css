@@ -1,21 +1,148 @@
 /* ── Organizer shell layout ───────────────────────────────────── */
-.organizer-shell{display:grid;grid-template-columns:258px minmax(0,1fr);min-height:100vh;background:var(--ink)}
+.organizer-shell {
+  display: grid;
+  grid-template-columns: 258px minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--ink);
+}
 
-/* Sidebar — desktop */
-.organizer-sidebar{position:sticky;top:0;display:flex;flex-direction:column;height:100vh;padding:28px 18px 20px;overflow-y:auto;overscroll-behavior:contain;border-right:1px solid rgba(247,242,231,.12);background:linear-gradient(155deg,#111326 0%,#181b35 58%,#121427 100%);transition:transform 280ms cubic-bezier(.4,0,.2,1)}
+/* Sidebar — desktop default sticky styling */
+.organizer-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 28px 18px 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  border-right: 1px solid rgba(247, 242, 231, .12);
+  background: linear-gradient(155deg, #111326 0%, #181b35 58%, #121427 100%);
+  transition: transform 280ms cubic-bezier(.4, 0, .2, 1),
+              width 280ms cubic-bezier(.4, 0, .2, 1),
+              padding 280ms cubic-bezier(.4, 0, .2, 1);
+}
+
+/* ── Modern Hover-Expand Sidebar overrides for desktop ── */
+@media (min-width: 841px) {
+  .organizer-shell {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  
+  .organizer-sidebar {
+    position: sticky;
+    top: 0;
+    width: 70px;
+    height: 100vh;
+    z-index: 150;
+    padding: 28px 14px 20px;
+  }
+  
+  .organizer-sidebar:hover {
+    width: 258px;
+    padding: 28px 18px 20px;
+  }
+  
+  .sidebar-brand {
+    width: 38px !important;
+    overflow: hidden !important;
+    white-space: nowrap;
+    transition: width 280ms cubic-bezier(.4, 0, .2, 1);
+  }
+  .organizer-sidebar:hover .sidebar-brand {
+    width: 130px !important;
+  }
+  
+  .sidebar-caption {
+    opacity: 0;
+    white-space: nowrap;
+    transition: opacity 220ms ease;
+  }
+  .organizer-sidebar:hover .sidebar-caption {
+    opacity: 1;
+  }
+  
+  .sidebar-link {
+    overflow: hidden;
+    white-space: nowrap;
+    padding: 11px 13px; /* Slightly adjust padding to center the icon */
+  }
+  
+  .sidebar-link div {
+    gap: 0 !important; /* Hide inline gap when collapsed to center icon */
+    transition: gap 280ms cubic-bezier(.4, 0, .2, 1);
+  }
+  .organizer-sidebar:hover .sidebar-link div {
+    gap: 10px !important;
+  }
+  
+  .sidebar-link div svg {
+    flex-shrink: 0;
+  }
+  
+  .sidebar-link div span {
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    display: inline-block;
+    transition: max-width 280ms cubic-bezier(.4, 0, .2, 1), opacity 220ms ease;
+  }
+  .organizer-sidebar:hover .sidebar-link div span {
+    max-width: 200px;
+    opacity: 1;
+  }
+  
+  .sidebar-user {
+    opacity: 0;
+    transition: opacity 220ms ease;
+  }
+  .organizer-sidebar:hover .sidebar-user {
+    opacity: 1;
+  }
+}
 
 /* Sidebar close button — only shown on mobile */
 .sidebar-close-btn{display:none;align-items:center;justify-content:flex-end;width:100%;background:transparent;border:none;color:var(--muted);cursor:pointer;padding:0 0 12px;transition:color 150ms ease}
 .sidebar-close-btn:hover{color:var(--paper)}
 
-.sidebar-brand{color:var(--paper);font-size:31px;letter-spacing:.05em}.sidebar-brand:hover{color:var(--gold-soft);text-decoration:none}.sidebar-caption{margin:28px 10px 9px;color:var(--muted);font:10px var(--font-mono);letter-spacing:.12em}.sidebar-nav{display:flex;flex-direction:column;gap:3px}.sidebar-link{display:flex;align-items:center;justify-content:flex-start;gap:10px;padding:11px 12px;color:#d5d7e2;border-left:2px solid transparent;font-size:14px;font-weight:650;letter-spacing:.01em;transition:background-color 150ms ease,color 150ms ease,border-color 150ms ease,transform 150ms ease}.sidebar-link:hover{color:var(--paper);background:rgba(247,242,231,.07);text-decoration:none;transform:translateX(2px)}.sidebar-link.is-active{color:var(--gold-soft);border-left-color:var(--gold);background:linear-gradient(90deg,rgba(201,154,60,.17),transparent)}.sidebar-link--global{color:var(--gold-soft)}.sidebar-link--disabled{cursor:not-allowed;opacity:.45}.sidebar-link--disabled:hover{color:#d5d7e2;background:transparent;transform:none}.sidebar-link small{font:8px var(--font-mono);letter-spacing:.08em;color:var(--gold)}.sidebar-divider{height:1px;margin:18px 10px 0;background:rgba(247,242,231,.12)}.sidebar-user{margin-top:auto;padding:16px 10px 0;border-top:1px dashed rgba(247,242,231,.18)}.sidebar-user span{display:block;overflow:hidden;color:var(--paper);font-size:13px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}.sidebar-user button{display:flex;align-items:center;gap:8px;margin-top:8px;padding:0;border:0;color:var(--muted);background:transparent;font-size:12px}.sidebar-user button:hover{color:var(--gold-soft)}.sidebar-user b{font-size:16px}
+.sidebar-brand {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  height: 36px !important;
+  margin: 0 0 12px 0 !important;
+  color: var(--paper);
+  text-decoration: none;
+}
+.sidebar-brand svg {
+  flex-shrink: 0 !important;
+  width: 130px !important;
+  height: 36px !important;
+}
+.sidebar-brand:hover {
+  color: var(--gold-soft);
+  text-decoration: none;
+}
+.sidebar-caption {
+  margin: 28px 10px 9px;
+  color: var(--muted);
+  font: 10px var(--font-mono);
+  letter-spacing: .12em;
+}.sidebar-nav{display:flex;flex-direction:column;gap:3px}.sidebar-link{display:flex;align-items:center;justify-content:flex-start;gap:10px;padding:11px 12px;color:#d5d7e2;border-left:2px solid transparent;font-size:14px;font-weight:650;letter-spacing:.01em;transition:background-color 150ms ease,color 150ms ease,border-color 150ms ease,transform 150ms ease}.sidebar-link:hover{color:var(--paper);background:rgba(247,242,231,.07);text-decoration:none;transform:translateX(2px)}.sidebar-link.is-active{color:var(--gold-soft);border-left-color:var(--gold);background:linear-gradient(90deg,rgba(201,154,60,.17),transparent)}.sidebar-link--global{color:var(--gold-soft)}.sidebar-link--disabled{cursor:not-allowed;opacity:.45}.sidebar-link--disabled:hover{color:#d5d7e2;background:transparent;transform:none}.sidebar-link small{font:8px var(--font-mono);letter-spacing:.08em;color:var(--gold)}.sidebar-divider{height:1px;margin:18px 10px 0;background:rgba(247,242,231,.12)}.sidebar-user{margin-top:auto;padding:16px 10px 0;border-top:1px dashed rgba(247,242,231,.18)}.sidebar-user span{display:block;overflow:hidden;color:var(--paper);font-size:13px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}.sidebar-user button{display:flex;align-items:center;gap:8px;margin-top:8px;padding:0;border:0;color:var(--muted);background:transparent;font-size:12px}.sidebar-user button:hover{color:var(--gold-soft)}.sidebar-user b{font-size:16px}
 
 .organizer-stage{min-width:0}
 .organizer-main{width:min(1380px,100%);margin:0 auto;padding:54px clamp(24px,4vw,68px) 90px}
 .organizer-mobile-header{display:none}
 
 /* Scrollbar */
-.organizer-sidebar::-webkit-scrollbar{width:7px}.organizer-sidebar::-webkit-scrollbar-thumb{background:rgba(201,154,60,.48);border-radius:8px}.organizer-sidebar::-webkit-scrollbar-track{background:rgba(0,0,0,.12)}
+.organizer-sidebar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.organizer-sidebar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
 
 /* ── Common visual polish ─────────────────────────────────────── */
 .organizer-main .rounded-2xl.bg-paper{border-radius:3px!important;box-shadow:11px 11px 0 rgba(201,154,60,.25),0 20px 44px rgba(0,0,0,.2)}.organizer-main .rounded-2xl.bg-white\/\[0\.04\]{border-radius:3px!important}.organizer-main .font-display{letter-spacing:.04em}.organizer-main button[class*="bg-gold"]{box-shadow:3px 3px 0 rgba(20,22,43,.72);transition:transform 160ms ease,box-shadow 160ms ease}.organizer-main button[class*="bg-gold"]:hover:not(:disabled){transform:translate(-2px,-2px);box-shadow:5px 5px 0 rgba(20,22,43,.72)}

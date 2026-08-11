@@ -75,6 +75,14 @@ const eventSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // Optional YouTube video URL for embedding a promotional video
+    // on the event detail page. Stored as the raw URL; the frontend
+    // extracts the video ID and renders an inline embed.
+    youtubeUrl: {
+      type: String,
+      default: null,
+      trim: true,
+    },
     ticketTypes: {
       type: [ticketTypeSchema],
       default: [],

@@ -20,7 +20,7 @@ router.get(
   authenticate,
   resolveTenant,
   loadMembership,
-  checkPermission("events:update"),
+  checkPermission("bundles:read"),
   bundleController.getOneManage
 );
 
@@ -29,7 +29,7 @@ router.post(
   authenticate,
   resolveTenant,
   loadMembership,
-  checkPermission("events:create"),
+  checkPermission("bundles:create"),
   upload.single("banner"),
   bundleController.create
 );
@@ -39,7 +39,7 @@ router.put(
   authenticate,
   resolveTenant,
   loadMembership,
-  checkPermission("events:update"),
+  checkPermission("bundles:update"),
   upload.single("banner"),
   bundleController.update
 );
@@ -49,7 +49,7 @@ router.delete(
   authenticate,
   resolveTenant,
   loadMembership,
-  checkPermission("events:delete"),
+  checkPermission("bundles:delete"),
   bundleController.remove
 );
 

@@ -15,8 +15,8 @@ router.post("/cart/:eventId/validate-coupon", resolveTenant, couponController.va
 const adminMiddleware = [authenticate, resolveTenant, loadMembership];
 
 // Organizer Admin: Manage coupons (scoped to organization)
-router.post("/", ...adminMiddleware, checkPermission("settings:update"), couponController.create);
-router.get("/", ...adminMiddleware, checkPermission("settings:read"), couponController.list);
-router.delete("/:couponId", ...adminMiddleware, checkPermission("settings:update"), couponController.remove);
+router.post("/", ...adminMiddleware, checkPermission("coupons:create"), couponController.create);
+router.get("/", ...adminMiddleware, checkPermission("coupons:read"), couponController.list);
+router.delete("/:couponId", ...adminMiddleware, checkPermission("coupons:delete"), couponController.remove);
 
 module.exports = router;

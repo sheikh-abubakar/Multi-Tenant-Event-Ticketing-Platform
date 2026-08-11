@@ -39,6 +39,11 @@ const eventBundleSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    youtubeUrl: {
+      type: String,
+      default: null,
+      trim: true,
+    },
     accessCode: {
       type: String,
       default: null,

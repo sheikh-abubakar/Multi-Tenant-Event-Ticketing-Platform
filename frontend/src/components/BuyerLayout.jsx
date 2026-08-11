@@ -65,7 +65,7 @@ const BuyerLayout = ({ children }) => {
     <div className="buyer-shell">
       <aside className={`buyer-sidebar${sidebarOpen ? " is-open" : ""}`}>
         <button className="buyer-sidebar__close" onClick={() => setSidebarOpen(false)} aria-label="Close buyer menu"><X size={20} /></button>
-        <Link to="/" className="buyer-sidebar__brand"><Logo width="132" height="36" /></Link>
+        <Link to="/" className="buyer-sidebar__brand"><Logo width="132" height="36" idSuffix="buyer" /></Link>
         <p className="buyer-sidebar__eyebrow">MEMBER CONCIERGE</p>
         <nav className="buyer-sidebar__nav" aria-label="Buyer navigation">
           {links.slice(0, 1).map(([label, to, Icon, end]) => (

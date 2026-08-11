@@ -16,7 +16,7 @@ const formatLocalDateForInput = (dateStr) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
-const emptyForm = { name: "", description: "", dateTime: "", venueId: "", accessCode: "", privateCodeExpiry: "" };
+const emptyForm = { name: "", description: "", dateTime: "", venueId: "", accessCode: "", privateCodeExpiry: "", youtubeUrl: "" };
 
 export default function Events() {
   const { orgSlug } = useParams();
@@ -117,6 +117,7 @@ export default function Events() {
       accessCode: item.accessCode || "",
       privateCodeExpiry: formatLocalDateForInput(item.privateCodeExpiry),
       bannerImageUrl: item.bannerImageUrl || "",
+      youtubeUrl: item.youtubeUrl || "",
     });
     if (item.sessions && item.sessions.length > 1) {
       const additional = item.sessions.slice(1).map(s => formatLocalDateForInput(s.dateTime));
@@ -372,6 +373,33 @@ export default function Events() {
                   <div className="absolute top-1 right-1 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">Current banner</div>
                 </div>
               ) : null}
+            </label>
+            {/* YouTube Video Link */}
+            <label className="block text-sm font-semibold">
+              YouTube Video URL
+              <span className="text-xs text-muted font-normal ml-1">(Optional — shown on event page)</span>
+              <div style={{ position: "relative", marginTop: 4 }}>
+                <span style={{
+                  position: "absolute",
+                  left: 10,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  pointerEvents: "none",
+                }}>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="#FF0000">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                  </svg>
+                </span>
+                <input
+                  name="youtubeUrl"
+                  type="url"
+                  value={form.youtubeUrl}
+                  onChange={(e) => setForm({ ...form, youtubeUrl: e.target.value })}
+                  placeholder="https://youtube.com/watch?v=... or https://youtu.be/..."
+                  className="w-full rounded-md border border-black/15 px-3 py-2"
+                  style={{ paddingLeft: 34, color: "#111326" }}
+                />
+              </div>
             </label>
             <div className="flex gap-2">
               <button

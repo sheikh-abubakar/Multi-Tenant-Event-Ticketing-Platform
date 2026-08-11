@@ -80,6 +80,31 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Custom scrollbar globally */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 154, 60, 0.45) var(--ink);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ink);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(201, 154, 60, 0.45);
+  border-radius: 4px;
+  border: 1px solid var(--ink);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(227, 195, 119, 0.75);
+}
+
 h1, h2, h3, .display {
   font-family: var(--font-display);
   letter-spacing: 0.03em;
@@ -501,3 +526,41 @@ html, body {
   border-color: rgba(232, 191, 108, 0.45) !important;
   box-shadow: 0 8px 24px rgba(232, 191, 108, 0.08);
 }
+
+/* Password input wrapper containing password toggle */
+.password-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.password-input-wrapper input {
+  width: 100%;
+  padding-right: 36px !important; /* Make room for the eye icon */
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(30, 32, 48, 0.45);
+  transition: color 0.18s ease;
+  outline: none;
+}
+
+.password-toggle-btn:hover {
+  color: var(--gold);
+}
+
+.password-toggle-btn:focus-visible {
+  outline: 1px solid var(--gold);
+  border-radius: 2px;
+}
+

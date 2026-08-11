@@ -300,14 +300,15 @@ const TeamManagement = () => {
             </div>
             {inviteRole === "admin" && (
               <div className="field" style={{ flex: "0 0 180px", marginBottom: 0 }}>
-                <label htmlFor="invitePassword" style={{ fontSize: 12 }}>Password</label>
+                <label htmlFor="invitePassword" style={{ fontSize: 12 }}>
+                  Password <span style={{ fontWeight: 400, color: "var(--muted)" }}>(Optional)</span>
+                </label>
                 <input
                   id="invitePassword"
                   type="password"
                   value={invitePassword}
                   onChange={(e) => setInvitePassword(e.target.value)}
-                  placeholder="Min 6 characters"
-                  required
+                  placeholder="Only for new accounts"
                   minLength={6}
                   style={{ padding: "10px 12px", fontSize: 14 }}
                 />
@@ -324,12 +325,12 @@ const TeamManagement = () => {
           </form>
           {inviteRole === "staff" && (
             <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--muted)" }}>
-              Staff will receive an email with a link to set their own password.
+              Staff will receive an email with a link to accept the invitation. If they don't have an account, they can set their password then.
             </p>
           )}
           {inviteRole === "admin" && (
             <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--muted)" }}>
-              Admin will be able to login immediately with the password you set.
+              New users can login immediately with the password you set. For existing StagePass users, leave this blank; they will receive a secure email invitation.
             </p>
           )}
         </div>

@@ -50,6 +50,41 @@ const PERMISSION_CATALOG = [
       { action: "delete", label: "Delete organization" },
     ],
   },
+  {
+    resource: "bundles",
+    label: "Event Bundles",
+    actions: [
+      { action: "create", label: "Create bundles" },
+      { action: "read", label: "View bundles" },
+      { action: "update", label: "Edit bundles" },
+      { action: "delete", label: "Delete bundles" },
+    ],
+  },
+  {
+    resource: "seatchange",
+    label: "Seat Change Requests",
+    actions: [
+      { action: "update", label: "Manage seat changes" },
+    ],
+  },
+  {
+    resource: "media",
+    label: "Media Gallery",
+    actions: [
+      { action: "create", label: "Upload media" },
+      { action: "read", label: "View media list" },
+      { action: "delete", label: "Delete media items" },
+    ],
+  },
+  {
+    resource: "coupons",
+    label: "Discount Coupons",
+    actions: [
+      { action: "create", label: "Create coupons" },
+      { action: "read", label: "View coupons" },
+      { action: "delete", label: "Delete coupons" },
+    ],
+  },
 ];
 
 export const getPermissionCatalog = () => PERMISSION_CATALOG;

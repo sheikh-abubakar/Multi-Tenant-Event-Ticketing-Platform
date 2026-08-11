@@ -17,7 +17,7 @@ router.get(
   authenticate,
   resolveTenant,
   loadMembership,
-  checkPermission("events:update"),
+  checkPermission("seatchange:update"),
   seatChangeController.getPendingRequests
 );
 
@@ -26,7 +26,7 @@ router.post(
   authenticate,
   resolveTenant,
   loadMembership,
-  checkPermission("events:update"),
+  checkPermission("seatchange:update"),
   seatChangeController.approveRequest
 );
 
@@ -35,7 +35,7 @@ router.post(
   authenticate,
   resolveTenant,
   loadMembership,
-  checkPermission("events:update"),
+  checkPermission("seatchange:update"),
   seatChangeController.rejectRequest
 );
 

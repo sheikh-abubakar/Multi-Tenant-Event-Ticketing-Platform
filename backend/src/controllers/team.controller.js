@@ -138,6 +138,16 @@ const assignVenues = async (req, res) => {
   }
 };
 
+const getInvitationDetails = async (req, res) => {
+  try {
+    const { token } = req.query;
+    const result = await teamService.getInvitationDetails(token);
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getMembers,
   inviteMember,
@@ -146,4 +156,5 @@ module.exports = {
   updateMemberPermissions,
   removeMember,
   assignVenues,
+  getInvitationDetails,
 };

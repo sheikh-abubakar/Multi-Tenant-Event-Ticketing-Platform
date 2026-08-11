@@ -12,20 +12,20 @@ router.use(authenticate, resolveTenant, loadMembership);
 
 router.get(
   "/",
-  checkPermission("events:read"),
+  checkPermission("media:read"),
   mediaController.list
 );
 
 router.post(
   "/",
-  checkPermission("events:create"),
+  checkPermission("media:create"),
   upload.single("file"),
   mediaController.upload
 );
 
 router.delete(
   "/:assetId",
-  checkPermission("events:delete"),
+  checkPermission("media:delete"),
   mediaController.remove
 );
 

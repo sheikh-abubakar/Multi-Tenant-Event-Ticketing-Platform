@@ -599,7 +599,18 @@ const Analytics = () => {
                       </span>
                     </td>
                     <td style={{ padding: "10px 6px" }}>
-                      {b.verified ? (
+                      {b.isBundle ? (
+                        <span
+                          className="badge"
+                          style={{
+                            background: "rgba(201, 154, 60, 0.15)",
+                            color: "var(--gold-soft)",
+                            border: "1px solid rgba(201, 154, 60, 0.3)",
+                          }}
+                        >
+                          Bundle
+                        </span>
+                      ) : b.verified ? (
                         <span
                           className="badge"
                           style={{ background: "#e6f4ea", color: "#1e7e34" }}

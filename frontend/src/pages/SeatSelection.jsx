@@ -91,6 +91,21 @@ export default function SeatSelection() {
     }
   };
 
+  if (error && !map) {
+    return (
+      <div className="ss-loading" style={{ padding: "40px 20px", textAlign: "center" }}>
+        <div className="ss-error" style={{ display: "inline-block", margin: "20px auto", maxWidth: 500 }}>
+          <span>⚠</span> {error}
+        </div>
+        <div style={{ marginTop: 20 }}>
+          <Link to={`/o/${orgSlug}/events/${eventId}`} className="ss-back" style={{ display: "inline-block" }}>
+            ← Back to event
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!map) {
     return (
       <div className="ss-loading">

@@ -82,6 +82,7 @@ const create = async (req, res) => {
       eventIds: parsedEventIds,
       pricePerSeat: Number(pricePerSeat),
       bannerImageUrl: bannerImageUrl || null,
+      youtubeUrl: req.body.youtubeUrl ? String(req.body.youtubeUrl).trim() || null : null,
       accessCode: accessCode ? String(accessCode).trim() || null : null,
       privateCodeExpiry: privateCodeExpiry ? new Date(privateCodeExpiry) || null : null,
       allowedSections: Array.isArray(parsedAllowedSections) ? parsedAllowedSections : [],
@@ -242,6 +243,9 @@ const update = async (req, res) => {
     const newBannerUrl = (await buildBannerUrl(req)) || req.body.bannerImageUrl;
     if (newBannerUrl !== undefined) {
       bundle.bannerImageUrl = newBannerUrl || null;
+    }
+    if (req.body.youtubeUrl !== undefined) {
+      bundle.youtubeUrl = req.body.youtubeUrl ? String(req.body.youtubeUrl).trim() || null : null;
     }
 
     await bundle.save();

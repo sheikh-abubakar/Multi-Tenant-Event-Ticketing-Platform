@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom"
 import apiClient from "../api/client";
 import { cachedGet, prefetch } from "../api/requestCache";
 import { useAuth } from "../context/AuthContext";
+import YouTubeEmbed from "../components/YouTubeEmbed";
 import "./EventDetail.css";
 
 const EventDetail = () => {
@@ -387,6 +388,16 @@ const EventDetail = () => {
               <p className="ed-sm-desc">{event.description}</p>
             )}
 
+            {/* YouTube promo video */}
+            {event.youtubeUrl && (
+              <YouTubeEmbed
+                youtubeUrl={event.youtubeUrl}
+                eventName={event.name}
+                description={event.description}
+                label="Official Video"
+              />
+            )}
+
             {sessions.length > 1 && (
               <div style={{
                 background: "rgba(255, 255, 255, 0.05)",
@@ -492,6 +503,18 @@ const EventDetail = () => {
         {event.description && (
           <div className="ed-hero-desc-wrap">
             <p className="ed-hero-desc">{event.description}</p>
+          </div>
+        )}
+
+        {/* YouTube promo video — legacy ticket mode */}
+        {event.youtubeUrl && (
+          <div style={{ padding: "0 0 8px" }}>
+            <YouTubeEmbed
+              youtubeUrl={event.youtubeUrl}
+              eventName={event.name}
+              description={event.description}
+              label="Official Video"
+            />
           </div>
         )}
       </div>

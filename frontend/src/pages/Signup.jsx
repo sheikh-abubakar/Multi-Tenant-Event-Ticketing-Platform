@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import GoogleSignInButton from "../components/GoogleSignInButton";
+import AnimatedEyeIcon from "../components/AnimatedEyeIcon";
 
 const Signup = () => {
   const { signup, loginWithGoogle } = useAuth();
@@ -9,6 +10,7 @@ const Signup = () => {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     sessionStorage.removeItem("unlockedCodes");
@@ -70,15 +72,25 @@ const Signup = () => {
           </div>
           <div className="field">
             <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              value={form.password}
-              onChange={handleChange}
-              required
-              minLength={8}
-            />
+            <div className="password-input-wrapper">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                value={form.password}
+                onChange={handleChange}
+                required
+                minLength={8}
+              />
+              <button
+                type="button"
+                className="password-toggle-btn"
+                onClick={() => setShowPassword((p) => !p)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                <AnimatedEyeIcon isOpen={showPassword} />
+              </button>
+            </div>
           </div>
           <button className="btn btn-primary auth-submit" type="submit" disabled={loading} style={{ width: "100%" }}>
             {loading ? "Creating account…" : "Sign up"}

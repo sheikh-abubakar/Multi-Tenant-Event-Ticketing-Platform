@@ -31,6 +31,7 @@ export default function EditBundle() {
   const [pricePerSeat, setPricePerSeat] = useState("");
   const [accessCode, setAccessCode] = useState("");
   const [privateCodeExpiry, setPrivateCodeExpiry] = useState("");
+  const [bookingOpeningDateTime, setBookingOpeningDateTime] = useState("");
   const [bannerFile, setBannerFile] = useState(null);
   const [existingBannerUrl, setExistingBannerUrl] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -56,6 +57,7 @@ export default function EditBundle() {
         setPricePerSeat(b.pricePerSeat || "");
         setAccessCode(b.accessCode || "");
         setPrivateCodeExpiry(formatLocalDateForInput(b.privateCodeExpiry));
+        setBookingOpeningDateTime(formatLocalDateForInput(b.bookingOpeningDateTime));
         setExistingBannerUrl(b.bannerImageUrl || "");
         setYoutubeUrl(b.youtubeUrl || "");
         
@@ -120,6 +122,7 @@ export default function EditBundle() {
       body.append("pricePerSeat", Number(pricePerSeat));
       body.append("accessCode", accessCode.trim());
       body.append("privateCodeExpiry", privateCodeExpiry ? new Date(privateCodeExpiry).toISOString() : "");
+      body.append("bookingOpeningDateTime", bookingOpeningDateTime ? new Date(bookingOpeningDateTime).toISOString() : "");
 
       const filteredAllowedSections = Object.values(allowedSections).filter(
         (sec) => selectedEvents.includes(sec.eventId)
@@ -378,6 +381,18 @@ export default function EditBundle() {
             <span className="text-xs text-muted font-normal block mt-0.5">If set, the bundle will automatically become public after this date/time.</span>
           </div>
         )}
+
+        <div>
+          <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Booking Opening Date & Time (Optional)</label>
+          <input
+            type="datetime-local"
+            value={bookingOpeningDateTime}
+            onChange={(e) => setBookingOpeningDateTime(e.target.value)}
+            className="w-full rounded-md border border-black/15 px-3 py-2 text-ink-text bg-white"
+            style={{ color: "#111326" }}
+          />
+          <span className="text-xs text-muted font-normal block mt-0.5">If set, buyers will not be able to select seats/tickets for this bundle until this date and time.</span>
+        </div>
 
         <div>
           <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Banner Image</label>

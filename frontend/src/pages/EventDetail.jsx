@@ -23,6 +23,38 @@ const EventDetail = () => {
   const [shareLoading, setShareLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [sessions, setSessions] = useState([]);
+  const [isBookingOpen, setIsBookingOpen] = useState(true);
+  const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+  useEffect(() => {
+    if (!event || !event.bookingOpeningDateTime) {
+      setIsBookingOpen(true);
+      return;
+    }
+
+    const openingTime = new Date(event.bookingOpeningDateTime).getTime();
+    
+    const updateCountdown = () => {
+      const now = Date.now();
+      const diff = openingTime - now;
+
+      if (diff <= 0) {
+        setIsBookingOpen(true);
+      } else {
+        setIsBookingOpen(false);
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        setCountdown({ days, hours, minutes, seconds });
+      }
+    };
+
+    updateCountdown(); // run once immediately
+    const timer = setInterval(updateCountdown, 1000);
+
+    return () => clearInterval(timer);
+  }, [event]);
 
   // Protected Event states
   const [showUnlockModal, setShowUnlockModal] = useState(false);
@@ -440,20 +472,56 @@ const EventDetail = () => {
               </div>
             )}
 
-            <Link
-              to={`/o/${orgSlug}/events/${eventId}/seats?sessionId=${selectedSessionId}`}
-              className="ed-sm-cta"
-              onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${selectedSessionId}`, 3_000)}
-              onFocus={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${selectedSessionId}`, 3_000)}
-            >
-              <span className="ed-sm-cta-icon">🗺️</span>
-              Choose Your Seats
-              <span className="ed-sm-cta-arrow">→</span>
-            </Link>
+            {isBookingOpen ? (
+              <>
+                <Link
+                  to={`/o/${orgSlug}/events/${eventId}/seats?sessionId=${selectedSessionId}`}
+                  className="ed-sm-cta"
+                  onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${selectedSessionId}`, 3_000)}
+                  onFocus={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${selectedSessionId}`, 3_000)}
+                >
+                  <span className="ed-sm-cta-icon">🗺️</span>
+                  Choose Your Seats
+                  <span className="ed-sm-cta-arrow">→</span>
+                </Link>
 
-            <p className="ed-sm-hint">
-              Select your preferred seats from the interactive venue map and pay only for what you choose.
-            </p>
+                <p className="ed-sm-hint">
+                  Select your preferred seats from the interactive venue map and pay only for what you choose.
+                </p>
+              </>
+            ) : (
+              <div className="ed-countdown-panel">
+                <h3 className="ed-countdown-title">⏳ Booking Opens In</h3>
+                <div className="ed-countdown-grid">
+                  <div className="ed-countdown-box">
+                    <span className="ed-countdown-num">{countdown.days}</span>
+                    <span className="ed-countdown-lbl">Days</span>
+                  </div>
+                  <div className="ed-countdown-box">
+                    <span className="ed-countdown-num">{countdown.hours}</span>
+                    <span className="ed-countdown-lbl">Hours</span>
+                  </div>
+                  <div className="ed-countdown-box">
+                    <span className="ed-countdown-num">{countdown.minutes}</span>
+                    <span className="ed-countdown-lbl">Mins</span>
+                  </div>
+                  <div className="ed-countdown-box">
+                    <span className="ed-countdown-num">{countdown.seconds}</span>
+                    <span className="ed-countdown-lbl">Secs</span>
+                  </div>
+                </div>
+                <p className="ed-countdown-time-text">
+                  Bookings will officially open on {new Date(event.bookingOpeningDateTime).toLocaleString("en-US", {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  })}
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -521,143 +589,179 @@ const EventDetail = () => {
 
       {/* Ticket panel */}
       <div className="ed-ticket-panel">
-        {sessions.length > 1 && (
-          <div style={{
-            background: "rgba(255, 255, 255, 0.05)",
-            padding: "16px 20px",
-            borderRadius: "12px",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            marginBottom: "24px"
-          }}>
-            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#c99a3c", marginBottom: 8, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-              Select Session Date
-            </label>
-            <select
-              value={eventId}
-              onChange={(e) => navigate(`/o/${orgSlug}/events/${e.target.value}`)}
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                borderRadius: "8px",
-                background: "#14162b",
-                color: "#fff",
-                border: "1px solid rgba(255,255,255,0.15)",
-                fontSize: "14px",
-                fontWeight: 600,
-                outline: "none"
-              }}
-            >
-              {sessions.map((s) => (
-                <option key={s._id} value={s._id}>
-                  {new Date(s.dateTime).toLocaleString("en-US", {
-                    weekday: "short",
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit"
-                  })}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        <div className="ed-ticket-panel-header">
-          <h2 className="ed-ticket-panel-title">🎟️ Select Tickets</h2>
-          {event.ticketTypes?.length > 0 && (
-            <Link to="/cart" className="ed-view-cart-btn">View Cart</Link>
-          )}
-        </div>
+        {isBookingOpen ? (
+          <>
+            {sessions.length > 1 && (
+              <div style={{
+                background: "rgba(255, 255, 255, 0.05)",
+                padding: "16px 20px",
+                borderRadius: "12px",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                marginBottom: "24px"
+              }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#c99a3c", marginBottom: 8, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                  Select Session Date
+                </label>
+                <select
+                  value={eventId}
+                  onChange={(e) => navigate(`/o/${orgSlug}/events/${e.target.value}`)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    background: "#14162b",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    outline: "none"
+                  }}
+                >
+                  {sessions.map((s) => (
+                    <option key={s._id} value={s._id}>
+                      {new Date(s.dateTime).toLocaleString("en-US", {
+                        weekday: "short",
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="ed-ticket-panel-header">
+              <h2 className="ed-ticket-panel-title">🎟️ Select Tickets</h2>
+              {event.ticketTypes?.length > 0 && (
+                <Link to="/cart" className="ed-view-cart-btn">View Cart</Link>
+              )}
+            </div>
 
-        {cartMessage && (
-          <div className={`ed-cart-msg ${cartMessage.includes("Error") ? "ed-cart-msg--error" : "ed-cart-msg--success"}`}>
-            {cartMessage}
-          </div>
-        )}
+            {cartMessage && (
+              <div className={`ed-cart-msg ${cartMessage.includes("Error") ? "ed-cart-msg--error" : "ed-cart-msg--success"}`}>
+                {cartMessage}
+              </div>
+            )}
 
-        {event.ticketTypes?.length ? (
-          <div className="ed-tickets-list">
-            {event.ticketTypes.map((ticketType, index) => {
-              const remaining = Math.max(0,
-                Number(ticketType.quantityTotal || 0) - Number(ticketType.quantityBooked || 0)
-              );
-              const soldOut = remaining === 0;
-              const fillPct = ticketType.quantityTotal > 0
-                ? Math.round((ticketType.quantityBooked / ticketType.quantityTotal) * 100)
-                : 0;
+            {event.ticketTypes?.length ? (
+              <div className="ed-tickets-list">
+                {event.ticketTypes.map((ticketType, index) => {
+                  const remaining = Math.max(0,
+                    Number(ticketType.quantityTotal || 0) - Number(ticketType.quantityBooked || 0)
+                  );
+                  const soldOut = remaining === 0;
+                  const fillPct = ticketType.quantityTotal > 0
+                    ? Math.round((ticketType.quantityBooked / ticketType.quantityTotal) * 100)
+                    : 0;
 
-              return (
-                <div key={ticketType._id || ticketType.name} className={`ed-ticket-row ${soldOut ? "ed-ticket-row--sold" : ""}`}>
-                  <div className="ed-ticket-info">
-                    <h4 className="ed-ticket-name">{ticketType.name}</h4>
-                    <div className="ed-ticket-fill-bar">
-                      <div className="ed-ticket-fill-track">
-                        <div className="ed-ticket-fill-fill" style={{ width: `${fillPct}%` }} />
-                      </div>
-                      <span className="ed-ticket-fill-label">{remaining} remaining</span>
-                    </div>
-                  </div>
-
-                  <div className="ed-ticket-price-col">
-                    <span className="ed-ticket-price">${Number(ticketType.price || 0)}</span>
-                    <span className="ed-ticket-per">per ticket</span>
-                  </div>
-
-                  <div className="ed-ticket-actions">
-                    {soldOut ? (
-                      <span className="ed-ticket-sold-badge">Sold Out</span>
-                    ) : (
-                      <>
-                        <div className="ed-qty-stepper">
-                          <button
-                            className="ed-qty-btn"
-                            onClick={() => setQuantities((prev) => ({ ...prev, [index]: Math.max(0, (prev[index] || 0) - 1) }))}
-                          >−</button>
-                          <span className="ed-qty-val">{quantities[index] || 0}</span>
-                          <button
-                            className="ed-qty-btn"
-                            onClick={() => setQuantities((prev) => ({ ...prev, [index]: Math.min(remaining, (prev[index] || 0) + 1) }))}
-                          >+</button>
+                  return (
+                    <div key={ticketType._id || ticketType.name} className={`ed-ticket-row ${soldOut ? "ed-ticket-row--sold" : ""}`}>
+                      <div className="ed-ticket-info">
+                        <h4 className="ed-ticket-name">{ticketType.name}</h4>
+                        <div className="ed-ticket-fill-bar">
+                          <div className="ed-ticket-fill-track">
+                            <div className="ed-ticket-fill-fill" style={{ width: `${fillPct}%` }} />
+                          </div>
+                          <span className="ed-ticket-fill-label">{remaining} remaining</span>
                         </div>
-                        <button
-                          className="ed-add-btn"
-                          disabled={addingToCart || !(quantities[index] > 0)}
-                          onClick={async () => {
-                            const qty = Number(quantities[index] || 0);
-                            if (qty < 1) return;
-                            setAddingToCart(true);
-                            setCartMessage("");
-                            try {
-                              await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items`, {
-                                ticketTypeIndex: index,
-                                quantity: qty,
-                              });
-                              setCartMessage(`Added ${qty} × ${ticketType.name} to cart!`);
-                              setQuantities((prev) => ({ ...prev, [index]: 0 }));
-                            } catch (err) {
-                              setCartMessage(`Error: ${err.response?.data?.message || "Could not add to cart"}`);
-                            } finally {
-                              setAddingToCart(false);
-                            }
-                          }}
-                        >
-                          {addingToCart ? "…" : "Add"}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="ed-no-tickets">No ticket types are available for this event yet.</p>
-        )}
+                      </div>
 
-        {event.ticketTypes?.length > 0 && (
-          <button className="ed-go-cart-btn" onClick={() => navigate(`/o/${orgSlug}/cart/${eventId}`)}>
-            Proceed to Cart →
-          </button>
+                      <div className="ed-ticket-price-col">
+                        <span className="ed-ticket-price">${Number(ticketType.price || 0)}</span>
+                        <span className="ed-ticket-per">per ticket</span>
+                      </div>
+
+                      <div className="ed-ticket-actions">
+                        {soldOut ? (
+                          <span className="ed-ticket-sold-badge">Sold Out</span>
+                        ) : (
+                          <>
+                            <div className="ed-qty-stepper">
+                              <button
+                                className="ed-qty-btn"
+                                onClick={() => setQuantities((prev) => ({ ...prev, [index]: Math.max(0, (prev[index] || 0) - 1) }))}
+                              >−</button>
+                              <span className="ed-qty-val">{quantities[index] || 0}</span>
+                              <button
+                                className="ed-qty-btn"
+                                onClick={() => setQuantities((prev) => ({ ...prev, [index]: Math.min(remaining, (prev[index] || 0) + 1) }))}
+                              >+</button>
+                            </div>
+                            <button
+                              className="ed-add-btn"
+                              disabled={addingToCart || !(quantities[index] > 0)}
+                              onClick={async () => {
+                                const qty = Number(quantities[index] || 0);
+                                if (qty < 1) return;
+                                setAddingToCart(true);
+                                setCartMessage("");
+                                try {
+                                  await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items`, {
+                                    ticketTypeIndex: index,
+                                    quantity: qty,
+                                  });
+                                  setCartMessage(`Added ${qty} × ${ticketType.name} to cart!`);
+                                  setQuantities((prev) => ({ ...prev, [index]: 0 }));
+                                } catch (err) {
+                                  setCartMessage(`Error: ${err.response?.data?.message || "Could not add to cart"}`);
+                                } finally {
+                                  setAddingToCart(false);
+                                }
+                              }}
+                            >
+                              {addingToCart ? "…" : "Add"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="ed-no-tickets">No ticket types are available for this event yet.</p>
+            )}
+
+            {event.ticketTypes?.length > 0 && (
+              <button className="ed-go-cart-btn" onClick={() => navigate(`/o/${orgSlug}/cart/${eventId}`)}>
+                Proceed to Cart →
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="ed-countdown-panel" style={{ background: "transparent", border: "none", padding: 0 }}>
+            <h3 className="ed-countdown-title">⏳ Booking Opens In</h3>
+            <div className="ed-countdown-grid" style={{ justifyContent: "center" }}>
+              <div className="ed-countdown-box">
+                <span className="ed-countdown-num">{countdown.days}</span>
+                <span className="ed-countdown-lbl">Days</span>
+              </div>
+              <div className="ed-countdown-box">
+                <span className="ed-countdown-num">{countdown.hours}</span>
+                <span className="ed-countdown-lbl">Hours</span>
+              </div>
+              <div className="ed-countdown-box">
+                <span className="ed-countdown-num">{countdown.minutes}</span>
+                <span className="ed-countdown-lbl">Mins</span>
+              </div>
+              <div className="ed-countdown-box">
+                <span className="ed-countdown-num">{countdown.seconds}</span>
+                <span className="ed-countdown-lbl">Secs</span>
+              </div>
+            </div>
+            <p className="ed-countdown-time-text">
+              Tickets will become available on {new Date(event.bookingOpeningDateTime).toLocaleString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit"
+              })}
+            </p>
+          </div>
         )}
       </div>
 

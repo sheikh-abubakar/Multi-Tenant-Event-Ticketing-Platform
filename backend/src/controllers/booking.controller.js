@@ -1,5 +1,6 @@
 const stripe = require("../config/stripe");
 const bookingService = require("../services/booking.service");
+const cartService = require("../services/cart.service");
 const { recordPlatformAudit } = require("../utils/platformAudit");
 const { invalidateOrgCache } = require("../services/analytics.service");
 
@@ -24,6 +25,10 @@ const createCheckout = async (req, res) => {
       req.params.orgSlug,
       req.body,
     );
+    // The booking service has atomically moved selected seats into the booking
+    // hold. Remove the browser's local cart snapshot so it cannot keep
+    // overriding the live map after payment confirmation or hold expiry.
+    cartService.clearCart(req, req.organizationId, req.params.eventId, req.body.sessionId);
     return res.status(201).json(result);
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

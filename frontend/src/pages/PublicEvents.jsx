@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { cachedGet, prefetch } from "../api/requestCache";
 import apiClient from "../api/client";
 import "./PublicEvents.css";
 
 const PublicEvents = () => {
   const { orgSlug } = useParams();
+  const [searchParams] = useSearchParams();
   const [organization, setOrganization] = useState(null);
   const [events, setEvents] = useState([]);
   const [bundles, setBundles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Capture referral code from URL and persist it so it survives navigation
+  useEffect(() => {
+    const refCode = searchParams.get("ref");
+    if (refCode) sessionStorage.setItem("referralCode", refCode);
+  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;

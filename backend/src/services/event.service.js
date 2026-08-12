@@ -2,7 +2,7 @@ const Event = require("../models/Event");
 const Venue = require("../models/Venue");
 
 const createEvent = async (data, organizationId, bannerImageUrl) => {
-  const { name, description, dateTime, venueId, accessCode, privateCodeExpiry, sessionDates } = data;
+  const { name, description, dateTime, venueId, accessCode, privateCodeExpiry, sessionDates, bookingOpeningDateTime } = data;
 
   if (!name || !dateTime || !venueId) {
     const error = new Error("name, dateTime and venueId are required");
@@ -14,6 +14,19 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     const error = new Error("Event date and time cannot be in the past");
     error.statusCode = 400;
     throw error;
+  }
+
+  if (bookingOpeningDateTime) {
+    if (new Date(bookingOpeningDateTime) < new Date()) {
+      const error = new Error("Booking opening date and time cannot be in the past");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (new Date(bookingOpeningDateTime) > new Date(dateTime)) {
+      const error = new Error("Booking opening date and time cannot be after the event date and time");
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   let parsedSessionDates = [];
@@ -57,6 +70,7 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     timezone: eventTimezone,
     accessCode: accessCode ? String(accessCode).trim() || null : null,
     privateCodeExpiry: privateCodeExpiry ? new Date(privateCodeExpiry) || null : null,
+    bookingOpeningDateTime: bookingOpeningDateTime ? new Date(bookingOpeningDateTime) : null,
     sessions: sessionsList,
   });
 };
@@ -100,7 +114,7 @@ const listEvents = async (organizationId, assignedVenueIds = null, { includeSeat
 
 const getEventById = async (eventId, organizationId) => {
   const event = await Event.findOne({ _id: eventId, organizationId })
-    .select("name description dateTime bannerImageUrl youtubeUrl ticketTypes purchaseMode venueId timezone accessCode privateCodeExpiry sessions createdAt updatedAt")
+    .select("name description dateTime bannerImageUrl youtubeUrl ticketTypes purchaseMode venueId timezone accessCode privateCodeExpiry bookingOpeningDateTime sessions createdAt updatedAt")
     .populate("venueId", "name city")
     .lean();
   if (!event) {
@@ -112,7 +126,7 @@ const getEventById = async (eventId, organizationId) => {
 };
 
 const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => {
-  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode", "privateCodeExpiry", "sessionDates", "youtubeUrl"];
+  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode", "privateCodeExpiry", "sessionDates", "youtubeUrl", "bookingOpeningDateTime"];
   const safeUpdates = {};
 
   for (const field of allowedFields) {
@@ -120,6 +134,8 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
       if (field === "accessCode") {
         safeUpdates[field] = updates[field] ? String(updates[field]).trim() || null : null;
       } else if (field === "privateCodeExpiry") {
+        safeUpdates[field] = updates[field] ? new Date(updates[field]) || null : null;
+      } else if (field === "bookingOpeningDateTime") {
         safeUpdates[field] = updates[field] ? new Date(updates[field]) || null : null;
       } else {
         safeUpdates[field] = updates[field];
@@ -135,6 +151,33 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
   }
 
   const primaryDateTime = safeUpdates.dateTime || event.dateTime;
+
+  // Booking opening date checks
+  if (updates.bookingOpeningDateTime !== undefined) {
+    const newOpeningDate = updates.bookingOpeningDateTime ? new Date(updates.bookingOpeningDateTime) : null;
+    
+    if (newOpeningDate) {
+      if (newOpeningDate > new Date(primaryDateTime)) {
+        const error = new Error("Booking opening date and time cannot be after the event date and time");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (newOpeningDate > new Date()) {
+        const Booking = require("../models/Booking");
+        const existingBookingsCount = await Booking.countDocuments({
+          eventId,
+          status: { $in: ["confirmed", "refunded"] }
+        });
+        if (existingBookingsCount > 0) {
+          const error = new Error("Cannot set booking opening time to the future because tickets/seats have already been booked for this event.");
+          error.statusCode = 400;
+          throw error;
+        }
+      }
+    }
+  }
+
   let sessionsToCheck = [primaryDateTime];
   if (updates.sessionDates !== undefined) {
     let parsedSessionDates = [];

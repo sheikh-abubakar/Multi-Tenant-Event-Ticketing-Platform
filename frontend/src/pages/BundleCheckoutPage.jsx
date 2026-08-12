@@ -20,6 +20,12 @@ export default function BundleCheckoutPage() {
   const [referralStats, setReferralStats] = useState(null);
   const [rewardsToApply, setRewardsToApply] = useState(0);
 
+  // Coupon states
+  const [couponInput, setCouponInput] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponError, setCouponError] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -83,6 +89,32 @@ export default function BundleCheckoutPage() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  const handleApplyCoupon = async () => {
+    if (!couponInput.trim()) return;
+    setCouponLoading(true);
+    setCouponError("");
+    try {
+      const res = await apiClient.post(`/o/${orgSlug}/coupons/validate`, {
+        code: couponInput.trim(),
+        bundleId,
+        originalTotal: cartTotal,
+      });
+      setAppliedCoupon(res.data.data);
+      setRewardsToApply(0); // clear referral rewards (no-stacking)
+    } catch (err) {
+      setCouponError(err.response?.data?.message || "Invalid coupon code");
+      setAppliedCoupon(null);
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponError("");
+  };
+
   const handleCheckoutSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -104,6 +136,7 @@ export default function BundleCheckoutPage() {
         walletDeduction: useWallet ? walletDeduction : 0,
         refCode: refCode || undefined,
         rewardsToApply: rewardsToApply > 0 ? rewardsToApply : undefined,
+        couponCode: appliedCoupon?.code || undefined,
         userId: user?.id,
       });
 
@@ -130,9 +163,10 @@ export default function BundleCheckoutPage() {
 
   // Referral discount
   const maxRewards = Math.min(referralStats?.availableRewardsCount || 0, 5);
-  const referralDiscountAmount = Math.round((cartTotal * (rewardsToApply * 10)) / 100);
+  const referralDiscountAmount = !appliedCoupon ? Math.round((cartTotal * (rewardsToApply * 10)) / 100) : 0;
+  const couponDiscountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
 
-  const totalDiscount = referralDiscountAmount;
+  const totalDiscount = referralDiscountAmount + couponDiscountAmount;
   const afterDiscount = Math.max(0, cartTotal - totalDiscount);
 
   // Wallet deduction
@@ -211,7 +245,7 @@ export default function BundleCheckoutPage() {
           )}
 
           {/* Referral Rewards */}
-          {user && maxRewards > 0 && (
+          {user && maxRewards > 0 && !appliedCoupon && (
             <div style={{ padding: "14px 18px", borderRadius: 12, background: "rgba(247,242,231,0.03)", border: "1px solid rgba(247,242,231,0.06)" }}>
               <p style={{ margin: 0, fontWeight: 700 }}>Apply Referral Rewards</p>
               <p style={{ margin: "2px 0 10px", fontSize: 12, color: "var(--muted)" }}>You have {maxRewards} rewards available. Apply up to 5 for 10% off each.</p>
@@ -234,6 +268,72 @@ export default function BundleCheckoutPage() {
               </div>
             </div>
           )}
+
+          {/* Coupon Input */}
+          <div style={{ padding: "14px 18px", borderRadius: 12, background: "linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(20, 22, 43, 0.95))", border: "1px solid rgba(99, 102, 241, 0.25)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>🎫 Discount Coupon</span>
+              {appliedCoupon && (
+                <button
+                  type="button"
+                  onClick={handleRemoveCoupon}
+                  style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            {appliedCoupon ? (
+              <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(74, 222, 128, 0.08)", border: "1px solid rgba(74, 222, 128, 0.2)", display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 14, color: "#4ade80", fontWeight: 700 }}>✓ Code Applied: {appliedCoupon.code}</span>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>({appliedCoupon.discountType === "percentage" ? `${appliedCoupon.discountValue}%` : `$${appliedCoupon.discountValue}`} discount)</span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="text"
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                    placeholder="ENTER CODE (e.g. BUNDLESAVE)"
+                    style={{
+                      flex: 1,
+                      padding: "9px 12px",
+                      borderRadius: 8,
+                      border: "1px solid rgba(247, 242, 231, 0.2)",
+                      background: "rgba(255, 255, 255, 0.05)",
+                      color: "#f7f2e7",
+                      fontSize: 13,
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    disabled={couponLoading || !couponInput.trim()}
+                    style={{
+                      padding: "9px 16px",
+                      background: "var(--gold)",
+                      color: "var(--navy)",
+                      border: "none",
+                      borderRadius: 8,
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: "pointer",
+                      opacity: (couponLoading || !couponInput.trim()) ? 0.6 : 1,
+                    }}
+                  >
+                    {couponLoading ? "Checking..." : "Apply"}
+                  </button>
+                </div>
+                {couponError && (
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#f87171", fontWeight: 600 }}>
+                    ❌ {couponError}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           <button
             type="submit"
@@ -266,10 +366,17 @@ export default function BundleCheckoutPage() {
             <span style={{ fontWeight: 700 }}>${cartTotal.toFixed(2)}</span>
           </div>
 
-          {totalDiscount > 0 && (
+          {referralDiscountAmount > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "#4ade80", marginBottom: 8 }}>
-              <span>Discounts</span>
-              <span>−${totalDiscount.toFixed(2)}</span>
+              <span>Referral Discount</span>
+              <span>−${referralDiscountAmount.toFixed(2)}</span>
+            </div>
+          )}
+
+          {couponDiscountAmount > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "#4ade80", marginBottom: 8 }}>
+              <span>Coupon ({appliedCoupon.code})</span>
+              <span>−${couponDiscountAmount.toFixed(2)}</span>
             </div>
           )}
 

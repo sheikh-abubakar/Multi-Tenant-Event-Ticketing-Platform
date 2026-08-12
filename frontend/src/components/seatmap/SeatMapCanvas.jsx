@@ -32,7 +32,10 @@ export const drawSeatmap = (ctx, map, selectedIds = new Set(), selectedShapeId =
       // Public lifecycle colours: yellow = available, green = checkout hold,
       // red = paid/sold. Organizer holds remain slate so they don't look paid.
       const palette = { available: "#facc15", "sold": "#ef4444", "checkout-held": "#22c55e", "organizer-held": "#64748b" };
-      ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fillStyle = selectedIds.has(id) ? "#f5b234" : (palette[seat.status] || "#facc15"); ctx.fill();
+      // Live inventory is authoritative. A stale session-cart selection must never
+      // mask a seat that has already become held or sold in the database.
+      const isSelectable = seat.status === "available";
+      ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fillStyle = isSelectable && selectedIds.has(id) ? "#f5b234" : (palette[seat.status] || "#facc15"); ctx.fill();
       // Labels deliberately use a dark, high-contrast colour because venue
       // maps may have a light boundary background. Draw the full row+number
       // identity below every seat, e.g. A1, B4.

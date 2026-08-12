@@ -34,6 +34,12 @@ const couponSchema = new mongoose.Schema(
       default: null, // null means organization-wide (valid for any event)
       index: true,
     },
+    bundleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "EventBundle",
+      default: null, // null means not restricted to a specific bundle
+      index: true,
+    },
     expiresAt: {
       type: Date,
       default: null, // null means no expiration

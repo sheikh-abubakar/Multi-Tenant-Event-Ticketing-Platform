@@ -141,12 +141,29 @@ const releaseExpiredBookings = async () => {
       }).session(session);
 
       if (event && booking.selectedSeats?.length) {
+        // Determine the correct seat map to release seats from.
+        // Seatmap bookings may be tied to a specific session, so we must
+        // check the session's seat map first (same logic as in confirmBooking).
+        let targetSeatMap = event.selectedSeatMap;
+        let sessionDoc = null;
+        if (booking.sessionId && event.sessions && event.sessions.length > 0) {
+          sessionDoc = event.sessions.find(s => String(s._id) === String(booking.sessionId));
+          if (sessionDoc) {
+            targetSeatMap = sessionDoc.selectedSeatMap;
+          }
+        }
         for (const reference of booking.selectedSeats) {
-          const seat = event.selectedSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+          const seat = targetSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
           if (seat?.status === "checkout-held") seat.status = "available";
         }
-        event.markModified("selectedSeatMap");
+        if (sessionDoc) {
+          sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+          event.markModified("sessions");
+        } else {
+          event.markModified("selectedSeatMap");
+        }
         await event.save({ session });
+
       } else if (event) {
         for (const item of booking.items) {
           const ticketType = event.ticketTypes[item.ticketTypeIndex];

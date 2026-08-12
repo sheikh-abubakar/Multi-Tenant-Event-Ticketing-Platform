@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
 import { cachedGet } from "../api/requestCache";
@@ -25,7 +25,7 @@ export default function SeatSelection() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const [mapResponse, cartResponse, eventResponse] = await Promise.all([
         apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${sessionId}`),
@@ -38,9 +38,20 @@ export default function SeatSelection() {
     } catch (err) {
       setError(err.response?.data?.message || "Could not load this seating plan.");
     }
-  };
+  }, [orgSlug, eventId, sessionId]);
 
-  useEffect(() => { load(); }, [orgSlug, eventId, sessionId]);
+  useEffect(() => {
+    load();
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") load(); };
+    const interval = window.setInterval(refreshWhenVisible, 7000);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [load]);
 
   const selected = useMemo(
     () => new Set(cart.items.map((item) => seatKey(item.blockId, item.seatId))),

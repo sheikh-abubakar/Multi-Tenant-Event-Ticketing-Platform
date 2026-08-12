@@ -119,6 +119,10 @@ const eventSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    bookingOpeningDateTime: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

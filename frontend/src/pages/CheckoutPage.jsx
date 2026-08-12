@@ -192,7 +192,7 @@ const CheckoutPage = () => {
     return (
       <div className="card" style={{ maxWidth: 640 }}>
         <p style={{ marginTop: 0 }}>
-          <Link to={`/o/${orgSlug}/cart/${eventId}`}>&larr; Back to cart</Link>
+          <Link to={`/o/${orgSlug}/cart/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>&larr; Back to cart</Link>
         </p>
         <h3 style={{ marginTop: 0, color: "var(--danger)" }}>Checkout error</h3>
         <p>{error}</p>
@@ -204,7 +204,7 @@ const CheckoutPage = () => {
     return (
       <div className="card" style={{ maxWidth: 640 }}>
         <p style={{ marginTop: 0 }}>
-          <Link to={`/o/${orgSlug}/events/${eventId}`}>&larr; Back to event</Link>
+          <Link to={`/o/${orgSlug}/events/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>&larr; Back to event</Link>
         </p>
         <h3 style={{ marginTop: 0 }}>Your cart is empty</h3>
         <p style={{ color: "var(--muted)" }}>Add tickets to your cart before proceeding.</p>
@@ -215,7 +215,7 @@ const CheckoutPage = () => {
   return (
     <div className="checkout-page" style={{ maxWidth: 740, margin: "0 auto" }}>
       <p style={{ marginBottom: 16 }}>
-        <Link to={`/o/${orgSlug}/cart/${eventId}`}>&larr; Back to cart</Link>
+        <Link to={`/o/${orgSlug}/cart/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>&larr; Back to cart</Link>
       </p>
 
       <div style={styles.topBar}>

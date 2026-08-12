@@ -16,7 +16,7 @@ const formatLocalDateForInput = (dateStr) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
-const emptyForm = { name: "", description: "", dateTime: "", venueId: "", accessCode: "", privateCodeExpiry: "", youtubeUrl: "" };
+const emptyForm = { name: "", description: "", dateTime: "", venueId: "", accessCode: "", privateCodeExpiry: "", youtubeUrl: "", bookingOpeningDateTime: "" };
 
 export default function Events() {
   const { orgSlug } = useParams();
@@ -77,7 +77,7 @@ export default function Events() {
     try {
       const body = new FormData();
       Object.entries(form).forEach(([key, value]) => {
-        if (key === "privateCodeExpiry") {
+        if (key === "privateCodeExpiry" || key === "bookingOpeningDateTime") {
           body.append(key, value ? new Date(value).toISOString() : "");
         } else {
           body.append(key, key === "dateTime" ? new Date(value).toISOString() : value);
@@ -118,6 +118,7 @@ export default function Events() {
       privateCodeExpiry: formatLocalDateForInput(item.privateCodeExpiry),
       bannerImageUrl: item.bannerImageUrl || "",
       youtubeUrl: item.youtubeUrl || "",
+      bookingOpeningDateTime: formatLocalDateForInput(item.bookingOpeningDateTime),
     });
     if (item.sessions && item.sessions.length > 1) {
       const additional = item.sessions.slice(1).map(s => formatLocalDateForInput(s.dateTime));
@@ -174,6 +175,17 @@ export default function Events() {
                 type="datetime-local"
                 value={form.dateTime}
                 onChange={(e) => setForm({ ...form, dateTime: e.target.value })}
+                className="mt-1 w-full rounded-md border border-black/15 px-3 py-2"
+              />
+            </label>
+            <label className="block text-sm font-semibold">
+              Booking Opening Date & Time (Optional)
+              <span className="text-xs text-muted block font-normal">When tickets/seats become available for purchase. Leave empty to open immediately.</span>
+              <input
+                name="bookingOpeningDateTime"
+                type="datetime-local"
+                value={form.bookingOpeningDateTime || ""}
+                onChange={(e) => setForm({ ...form, bookingOpeningDateTime: e.target.value })}
                 className="mt-1 w-full rounded-md border border-black/15 px-3 py-2"
               />
             </label>

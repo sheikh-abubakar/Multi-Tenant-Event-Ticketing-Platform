@@ -99,7 +99,7 @@ const GlobalCart = () => {
             </div>
             <div className="global-cart-group__actions">
               <Link to={`/o/${cart.organizationSlug}/events/${cart.eventId}`}>Add more</Link>
-              <button type="button" onClick={() => navigate(`/o/${cart.organizationSlug}/checkout/${cart.eventId}`)}>
+              <button type="button" onClick={() => navigate(`/o/${cart.organizationSlug}/checkout/${cart.eventId}${cart.sessionId ? `?sessionId=${cart.sessionId}` : ""}`)}>
                 Proceed to payment →
               </button>
             </div>

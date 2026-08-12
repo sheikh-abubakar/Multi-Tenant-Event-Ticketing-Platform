@@ -17,6 +17,7 @@ const adminMiddleware = [authenticate, resolveTenant, loadMembership];
 // Organizer Admin: Manage coupons (scoped to organization)
 router.post("/", ...adminMiddleware, checkPermission("coupons:create"), couponController.create);
 router.get("/", ...adminMiddleware, checkPermission("coupons:read"), couponController.list);
+router.put("/:couponId", ...adminMiddleware, checkPermission("coupons:update"), couponController.update);
 router.delete("/:couponId", ...adminMiddleware, checkPermission("coupons:delete"), couponController.remove);
 
 module.exports = router;

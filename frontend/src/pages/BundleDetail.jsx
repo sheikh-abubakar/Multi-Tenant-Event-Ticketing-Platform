@@ -13,6 +13,37 @@ export default function BundleDetail() {
   const [error, setError] = useState("");
   const [quantity, setQuantity] = useState(2); // default is 2 seats
 
+  // Booking opening countdown states
+  const [isBookingOpen, setIsBookingOpen] = useState(true);
+  const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+  useEffect(() => {
+    if (!bundle?.bookingOpeningDateTime) {
+      setIsBookingOpen(true);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const diff = new Date(bundle.bookingOpeningDateTime) - new Date();
+
+      if (diff <= 0) {
+        setIsBookingOpen(true);
+      } else {
+        setIsBookingOpen(false);
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        setCountdown({ days, hours, minutes, seconds });
+      }
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+
+    return () => clearInterval(timer);
+  }, [bundle]);
+
   // Protected Bundle states
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockCodeInput, setUnlockCodeInput] = useState("");
@@ -282,42 +313,78 @@ export default function BundleDetail() {
             ))}
           </div>
 
-          {/* Seat selection quantity configurator */}
-          <div className="card" style={{ background: "rgba(14, 17, 35, 0.5)", border: "1px solid rgba(201, 154, 60, 0.15)", borderRadius: 16, padding: 24, marginBottom: 28 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-              <div>
-                <h4 style={{ margin: 0, color: "#f7f2e7", fontSize: 15, fontWeight: 700 }}>How many seats do you want to book?</h4>
-                <p style={{ margin: "6px 0 0", color: "rgba(247, 242, 231, 0.6)", fontSize: 12.5 }}>You must pick exactly this number of seats per event in the bundle.<br/><strong style={{ color: "#c99a3c" }}>Total = ${bundle.pricePerSeat} × {quantity} = ${(bundle.pricePerSeat * quantity).toFixed(2)}</strong></p>
+          {isBookingOpen ? (
+            <>
+              {/* Seat selection quantity configurator */}
+              <div className="card" style={{ background: "rgba(14, 17, 35, 0.5)", border: "1px solid rgba(201, 154, 60, 0.15)", borderRadius: 16, padding: 24, marginBottom: 28 }}>
+                <div style={{ display: "flex", justifycontent: "space-between", justifyContent: "space-between", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                  <div>
+                    <h4 style={{ margin: 0, color: "#f7f2e7", fontSize: 15, fontWeight: 700 }}>How many seats do you want to book?</h4>
+                    <p style={{ margin: "6px 0 0", color: "rgba(247, 242, 231, 0.6)", fontSize: 12.5 }}>You must pick exactly this number of seats per event in the bundle.<br/><strong style={{ color: "#c99a3c" }}>Total = ${bundle.pricePerSeat} × {quantity} = ${(bundle.pricePerSeat * quantity).toFixed(2)}</strong></p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                      style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid rgba(247,242,231,0.15)", background: "rgba(247,242,231,0.05)", color: "#fff", fontSize: 18, cursor: "pointer" }}
+                    >
+                      −
+                    </button>
+                    <span style={{ fontSize: 18, fontWeight: 800, minWidth: 24, textAlign: "center", color: "#fff" }}>{quantity}</span>
+                    <button
+                      type="button"
+                      onClick={() => setQuantity(q => Math.min(10, q + 1))}
+                      style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid rgba(247,242,231,0.15)", background: "rgba(247,242,231,0.05)", color: "#fff", fontSize: 18, cursor: "pointer" }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <button
-                  type="button"
-                  onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                  style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid rgba(247,242,231,0.15)", background: "rgba(247,242,231,0.05)", color: "#fff", fontSize: 18, cursor: "pointer" }}
-                >
-                  −
-                </button>
-                <span style={{ fontSize: 18, fontWeight: 800, minWidth: 24, textAlign: "center", color: "#fff" }}>{quantity}</span>
-                <button
-                  type="button"
-                  onClick={() => setQuantity(q => Math.min(10, q + 1))}
-                  style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid rgba(247,242,231,0.15)", background: "rgba(247,242,231,0.05)", color: "#fff", fontSize: 18, cursor: "pointer" }}
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          </div>
 
-          <button
-            onClick={() => navigate(`/o/${orgSlug}/bundles/${bundleId}/seats?qty=${quantity}`)}
-            className="ed-sm-cta"
-            style={{ border: "none", cursor: "pointer" }}
-          >
-            <span className="ed-sm-cta-icon">🗺️</span>
-            Start Step-by-Step Seat Selection
-            <span className="ed-sm-cta-arrow">→</span>
-          </button>
+              <button
+                onClick={() => navigate(`/o/${orgSlug}/bundles/${bundleId}/seats?qty=${quantity}`)}
+                className="ed-sm-cta"
+                style={{ border: "none", cursor: "pointer" }}
+              >
+                <span className="ed-sm-cta-icon">🗺️</span>
+                Start Step-by-Step Seat Selection
+                <span className="ed-sm-cta-arrow">→</span>
+              </button>
+            </>
+          ) : (
+            <div className="ed-countdown-panel" style={{ marginTop: 24 }}>
+              <h3 className="ed-countdown-title">⏳ Bundle Booking Opens In</h3>
+              <div className="ed-countdown-grid">
+                <div className="ed-countdown-box">
+                  <span className="ed-countdown-num">{countdown.days}</span>
+                  <span className="ed-countdown-lbl">Days</span>
+                </div>
+                <div className="ed-countdown-box">
+                  <span className="ed-countdown-num">{countdown.hours}</span>
+                  <span className="ed-countdown-lbl">Hours</span>
+                </div>
+                <div className="ed-countdown-box">
+                  <span className="ed-countdown-num">{countdown.minutes}</span>
+                  <span className="ed-countdown-lbl">Mins</span>
+                </div>
+                <div className="ed-countdown-box">
+                  <span className="ed-countdown-num">{countdown.seconds}</span>
+                  <span className="ed-countdown-lbl">Secs</span>
+                </div>
+              </div>
+              <p className="ed-countdown-time-text">
+                Bookings will officially open on {new Date(bundle.bookingOpeningDateTime).toLocaleString("en-US", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit"
+                })}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

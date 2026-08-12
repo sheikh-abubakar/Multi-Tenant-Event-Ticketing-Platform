@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
 
 const CartPage = () => {
   const { orgSlug, eventId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get("sessionId") || "";
   const [event, setEvent] = useState(null);
   const [cart, setCart] = useState(null);
   const [walletBalance, setWalletBalance] = useState(0);
@@ -20,7 +22,7 @@ const CartPage = () => {
       setError("");
       try {
         const [cartRes, walletRes] = await Promise.all([
-          apiClient.get(`/o/${orgSlug}/cart/${eventId}`),
+          apiClient.get(`/o/${orgSlug}/cart/${eventId}?sessionId=${sessionId}`),
           apiClient.get("/wallet").catch(() => ({ data: { wallet: { balance: 0 } } })),
         ]);
         if (!cancelled) {
@@ -39,11 +41,11 @@ const CartPage = () => {
 
     load();
     return () => { cancelled = true; };
-  }, [orgSlug, eventId]);
+  }, [orgSlug, eventId, sessionId]);
 
   const handleQuantityChange = async (ticketTypeIndex, newQuantity) => {
     try {
-      const res = await apiClient.put(`/o/${orgSlug}/cart/${eventId}/items`, {
+      const res = await apiClient.put(`/o/${orgSlug}/cart/${eventId}/items?sessionId=${sessionId}`, {
         ticketTypeIndex,
         quantity: Math.max(0, newQuantity),
       });
@@ -56,7 +58,7 @@ const CartPage = () => {
   const handleRemoveItem = async (ticketTypeIndex) => {
     try {
       const res = await apiClient.delete(
-        `/o/${orgSlug}/cart/${eventId}/items/${ticketTypeIndex}`,
+        `/o/${orgSlug}/cart/${eventId}/items/${ticketTypeIndex}?sessionId=${sessionId}`,
       );
       setCart(res.data.cart);
     } catch (err) {
@@ -78,7 +80,7 @@ const CartPage = () => {
     return (
       <div className="card" style={{ maxWidth: 640 }}>
         <p style={{ marginTop: 0 }}>
-          <Link to={`/o/${orgSlug}/events/${eventId}`}>&larr; Back to event</Link>
+          <Link to={`/o/${orgSlug}/events/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>&larr; Back to event</Link>
         </p>
         <h3 style={{ marginTop: 0, color: "var(--danger)" }}>Cart error</h3>
         <p>{error}</p>
@@ -94,9 +96,9 @@ const CartPage = () => {
   return (
     <div className="cart-page" style={{ maxWidth: 900, margin: "0 auto" }}>
       <p style={{ marginBottom: 16 }}>
-        <Link to={`/o/${orgSlug}/events/${eventId}`}>&larr; Back to event</Link>
+        <Link to={`/o/${orgSlug}/events/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>&larr; Back to event</Link>
         <span style={{ marginLeft: 16 }}>
-          <Link to={`/o/${orgSlug}/events/${eventId}`}>+ Add more tickets</Link>
+          <Link to={`/o/${orgSlug}/events/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>+ Add more tickets</Link>
         </span>
       </p>
 
@@ -134,7 +136,7 @@ const CartPage = () => {
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Your cart is empty</h3>
           <p style={{ color: "var(--muted)" }}>
-            <Link to={`/o/${orgSlug}/events/${eventId}`}>Browse ticket types</Link> to add tickets.
+            <Link to={`/o/${orgSlug}/events/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>Browse ticket types</Link> to add tickets.
           </p>
         </div>
       ) : (
@@ -147,37 +149,45 @@ const CartPage = () => {
                 : 0;
 
               return (
-                <div key={item.ticketTypeIndex} className="card cart-item-card" style={styles.itemCard}>
+                <div key={item.ticketTypeIndex || (item.blockId + ":" + item.seatId)} className="card cart-item-card" style={styles.itemCard}>
                   <div style={styles.itemInfo}>
                     <h4 style={{ margin: "0 0 4px", color: "var(--text)", fontSize: 16 }}>
-                      {item.ticketTypeName}
+                      {item.ticketTypeName || `${item.sectionName || "Seat"} · ${item.seatName || "Selection"}`}
                     </h4>
                     <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
                       $ {Number(item.unitPrice || 0)} per ticket
                     </p>
-                    <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
-                      {remaining > 0 ? `${remaining} tickets available` : "Sold out"}
-                    </p>
+                    {item.blockId ? null : (
+                      <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
+                        {remaining > 0 ? `${remaining} tickets available` : "Sold out"}
+                      </p>
+                    )}
                   </div>
 
                   <div style={styles.itemActions}>
-                    <div style={styles.qtyControl}>
-                      <button
-                        style={styles.qtyBtn}
-                        onClick={() => handleQuantityChange(item.ticketTypeIndex, Number(item.quantity) - 1)}
-                        disabled={Number(item.quantity) <= 1}
-                      >
-                        −
-                      </button>
-                      <span style={styles.qtyValue}>{item.quantity}</span>
-                      <button
-                        style={styles.qtyBtn}
-                        onClick={() => handleQuantityChange(item.ticketTypeIndex, Number(item.quantity) + 1)}
-                        disabled={Number(item.quantity) >= remaining}
-                      >
-                        +
-                      </button>
-                    </div>
+                    {item.blockId ? (
+                      <div style={{ padding: "6px 12px", minWidth: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
+                        Qty: 1
+                      </div>
+                    ) : (
+                      <div style={styles.qtyControl}>
+                        <button
+                          style={styles.qtyBtn}
+                          onClick={() => handleQuantityChange(item.ticketTypeIndex, Number(item.quantity) - 1)}
+                          disabled={Number(item.quantity) <= 1}
+                        >
+                          −
+                        </button>
+                        <span style={styles.qtyValue}>{item.quantity}</span>
+                        <button
+                          style={styles.qtyBtn}
+                          onClick={() => handleQuantityChange(item.ticketTypeIndex, Number(item.quantity) + 1)}
+                          disabled={Number(item.quantity) >= remaining}
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                     <div style={{ textAlign: "right", minWidth: 90 }}>
                       <p style={styles.itemTotal}>$ {Number(item.unitPrice || 0) * Number(item.quantity || 0)}</p>
                       <p style={{ fontSize: 11, color: "var(--muted)", margin: 0 }}>
@@ -251,7 +261,7 @@ const CartPage = () => {
             <button
               style={styles.checkoutBtn}
               onClick={() =>
-                navigate(`/o/${orgSlug}/checkout/${eventId}`, {
+                navigate(`/o/${orgSlug}/checkout/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`, {
                   state: { 
                     useWallet, 
                     walletDeduction,

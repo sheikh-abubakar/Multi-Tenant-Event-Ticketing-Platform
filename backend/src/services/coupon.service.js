@@ -5,7 +5,7 @@ const mongoose = require("mongoose");
  * Create a new coupon for an organization
  */
 async function createCoupon(organizationId, data) {
-  const { code, discountType, discountValue, eventId, expiresAt, maxUses } = data;
+  const { code, discountType, discountValue, eventId, bundleId, expiresAt, maxUses } = data;
 
   if (!code || !discountValue) {
     const error = new Error("Coupon code and discount value are required");
@@ -42,6 +42,7 @@ async function createCoupon(organizationId, data) {
     discountType: discountType || "percentage",
     discountValue,
     eventId: eventId ? new mongoose.Types.ObjectId(eventId) : null,
+    bundleId: bundleId ? new mongoose.Types.ObjectId(bundleId) : null,
     expiresAt: expiresAt ? new Date(expiresAt) : null,
     maxUses: maxUses ? parseInt(maxUses, 10) : null,
   });
@@ -72,7 +73,8 @@ async function deleteCoupon(organizationId, couponId) {
 /**
  * Validate a coupon code and calculate the discount for a checkout
  */
-async function validateAndApplyCoupon(organizationId, eventId, code, originalTotal) {
+async function validateAndApplyCoupon(organizationId, code, originalTotal, context = {}) {
+  const { eventId, bundleId } = context;
   if (!code) {
     const error = new Error("Coupon code is required");
     error.statusCode = 400;
@@ -110,10 +112,25 @@ async function validateAndApplyCoupon(organizationId, eventId, code, originalTot
   }
 
   // Event scoping validation
-  if (coupon.eventId && String(coupon.eventId) !== String(eventId)) {
-    const error = new Error(`Coupon code '${cleanCode}' is not valid for this specific event`);
-    error.statusCode = 400;
-    throw error;
+  if (coupon.eventId) {
+    if (!eventId || String(coupon.eventId) !== String(eventId)) {
+      if (!coupon.bundleId || !bundleId || String(coupon.bundleId) !== String(bundleId)) {
+        const error = new Error(`Coupon code '${cleanCode}' is not valid for this purchase`);
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+  }
+
+  // Bundle scoping validation
+  if (coupon.bundleId) {
+    if (!bundleId || String(coupon.bundleId) !== String(bundleId)) {
+      if (!coupon.eventId || !eventId || String(coupon.eventId) !== String(eventId)) {
+        const error = new Error(`Coupon code '${cleanCode}' is not valid for this purchase`);
+        error.statusCode = 400;
+        throw error;
+      }
+    }
   }
 
   // Calculate discount amount
@@ -151,10 +168,68 @@ async function incrementCouponUses(organizationId, code) {
   );
 }
 
+async function updateCoupon(organizationId, couponId, data) {
+  const { code, discountType, discountValue, eventId, bundleId, expiresAt, maxUses } = data;
+
+  const coupon = await Coupon.findOne({ _id: couponId, organizationId });
+  if (!coupon) {
+    const error = new Error("Coupon not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Validate discount value
+  if (discountType === "percentage" && (discountValue <= 0 || discountValue > 100)) {
+    const error = new Error("Percentage discount must be between 1 and 100");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (discountType === "fixed" && discountValue <= 0) {
+    const error = new Error("Fixed discount must be greater than 0");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (code) {
+    const cleanCode = String(code).trim().toUpperCase();
+    const existing = await Coupon.findOne({ organizationId, code: cleanCode, _id: { $ne: couponId } });
+    if (existing) {
+      const error = new Error(`Coupon with code ${cleanCode} already exists in this organization`);
+      error.statusCode = 409;
+      throw error;
+    }
+    coupon.code = cleanCode;
+  }
+
+  if (discountType !== undefined) coupon.discountType = discountType;
+  if (discountValue !== undefined) coupon.discountValue = discountValue;
+  
+  if (eventId !== undefined) {
+    coupon.eventId = eventId ? new mongoose.Types.ObjectId(eventId) : null;
+  }
+
+  if (bundleId !== undefined) {
+    coupon.bundleId = bundleId ? new mongoose.Types.ObjectId(bundleId) : null;
+  }
+  
+  if (expiresAt !== undefined) {
+    coupon.expiresAt = expiresAt ? new Date(expiresAt) : null;
+  }
+  
+  if (maxUses !== undefined) {
+    coupon.maxUses = maxUses ? parseInt(maxUses, 10) : null;
+  }
+
+  await coupon.save();
+  return coupon;
+}
+
 module.exports = {
   createCoupon,
   listCoupons,
   deleteCoupon,
+  updateCoupon,
   validateAndApplyCoupon,
   incrementCouponUses,
 };

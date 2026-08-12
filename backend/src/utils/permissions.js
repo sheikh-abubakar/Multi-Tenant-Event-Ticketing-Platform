@@ -47,6 +47,7 @@ const ALL_PERMISSIONS = [
 
   "coupons:create",
   "coupons:read",
+  "coupons:update",
   "coupons:delete",
 ];
 
@@ -89,6 +90,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
 
     "coupons:create",
     "coupons:read",
+    "coupons:update",
     "coupons:delete",
   ],
 

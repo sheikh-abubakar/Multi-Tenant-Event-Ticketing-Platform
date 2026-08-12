@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { ShoppingCart, WalletCards, User, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw, Image, SearchCheck } from "lucide-react";
+import { ShoppingCart, WalletCards, User, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw, Image, SearchCheck, Ticket } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "./Logo";
 import AICopilot from "./ai/AICopilot";
@@ -47,8 +47,15 @@ const Layout = ({ children }) => {
 
   if (location.pathname.startsWith("/platform-admin")) return children;
 
-  const isBuyerConfirmation = /^\/o\/[^/]+\/bookings\/[^/]+\/confirmation$/.test(location.pathname);
-  const isBuyerHubPath = location.pathname === "/browse" || location.pathname === "/cart" || location.pathname === "/profile" || location.pathname === "/create-organization" || location.pathname.startsWith("/my/") || isBuyerConfirmation;
+  const isOrgPublicPath = /^\/o\/[^/]+\/(events|bundles|checkout|cart|bookings)/.test(location.pathname);
+
+  const isBuyerHubPath = location.pathname === "/browse" || 
+                         location.pathname === "/cart" || 
+                         location.pathname === "/profile" || 
+                         location.pathname === "/create-organization" || 
+                         location.pathname.startsWith("/my/") || 
+                         isOrgPublicPath;
+                         
   if (user && isBuyerHubPath) return <BuyerLayout>{children}</BuyerLayout>;
 
   // ── ORGANIZER CONSOLE LAYOUT ──────────────────────────────────
@@ -61,6 +68,7 @@ const Layout = ({ children }) => {
       ["Seat Changes", `/o/${orgSlug}/manage/seat-changes`, RefreshCw],
       ["Booking Lookup", `/o/${orgSlug}/manage/booking-lookup`, SearchCheck],
       ["Media Gallery", `/o/${orgSlug}/manage/media`, Image],
+      ["Coupons", `/o/${orgSlug}/manage/coupons`, Ticket],
       ["Analytics", `/o/${orgSlug}/manage/analytics`, BarChart3],
       ["Team", `/o/${orgSlug}/manage/team`, Users2],
       ["Settings", `/o/${orgSlug}/manage/settings`, Settings],

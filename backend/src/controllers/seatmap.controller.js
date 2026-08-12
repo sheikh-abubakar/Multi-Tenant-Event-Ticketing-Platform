@@ -24,11 +24,41 @@ const getEventMap = async (req, res) => {
 
     const isEventProtected = event.accessCode && (!event.privateCodeExpiry || new Date(event.privateCodeExpiry) > new Date());
     if (isEventProtected) {
+      let unlocked = false;
+
+      // Bypass if the user is an organizer of this organization or a platform super admin
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        try {
+          const { verifyToken } = require("../utils/jwt");
+          const token = authHeader.split(" ")[1];
+          const decoded = verifyToken(token);
+          if (decoded && decoded.userId) {
+            const User = require("../models/User");
+            const dbUser = await User.findById(decoded.userId).lean();
+            if (dbUser) {
+              if (dbUser.platformRole === "super_admin") {
+                unlocked = true;
+              } else {
+                const OrganizationMember = require("../models/OrganizationMember");
+                const membership = await OrganizationMember.findOne({
+                  userId: decoded.userId,
+                  organizationId: req.organizationId,
+                });
+                if (membership) {
+                  unlocked = true;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+
       const eventCode = (req.headers["x-event-access-code"] || req.query.accessCode || "").trim();
       const bundleCode = (req.headers["x-bundle-access-code"] || req.query.bundleAccessCode || "").trim();
       const queryBookingId = req.query.bookingId || req.headers["x-booking-id"];
-
-      let unlocked = false;
 
       // 1. Check direct event access code
       if (eventCode && eventCode === event.accessCode) {

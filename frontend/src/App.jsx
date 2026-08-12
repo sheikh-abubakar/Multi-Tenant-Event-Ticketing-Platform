@@ -62,6 +62,9 @@ const SeatChangeRequests = lazy(() => import("./pages/Admin/SeatChangeRequests")
 // Media Gallery
 const MediaGalleryPage = lazy(() => import("./pages/Admin/MediaGalleryPage"));
 
+// Coupons Management
+const Coupons = lazy(() => import("./pages/Coupons"));
+
 function App() {
   const { user, token } = useAuth();
   const [searchParams] = useSearchParams();
@@ -164,6 +167,14 @@ function App() {
         />
         <Route path="/o/:orgSlug/manage/venues/:venueId/seatmaps/:seatmapId?" element={<ProtectedRoute><VenueSeatMapBuilder /></ProtectedRoute>} />
         <Route path="/o/:orgSlug/manage/events/:eventId/seatmap" element={<ProtectedRoute><EventSeatMapBuilder /></ProtectedRoute>} />
+        <Route
+          path="/o/:orgSlug/manage/coupons"
+          element={
+            <ProtectedRoute>
+              <Coupons />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/o/:orgSlug/manage/settings"
           element={

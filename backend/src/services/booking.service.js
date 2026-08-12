@@ -67,7 +67,7 @@ const parseCheckoutItems = (items) => {
   );
 };
 
-const calculateDiscounts = async (organizationId, eventId, totalAmount, data) => {
+const calculateDiscounts = async (organizationId, eventId, totalAmount, data, bundleId = null) => {
   const { couponCode, rewardsToApply, userId } = data;
   const requestedRewardsCount = rewardsToApply ? parseInt(rewardsToApply, 10) : 0;
 
@@ -78,9 +78,9 @@ const calculateDiscounts = async (organizationId, eventId, totalAmount, data) =>
     try {
       const couponResult = await couponService.validateAndApplyCoupon(
         organizationId,
-        eventId,
         couponCode,
-        totalAmount
+        totalAmount,
+        { eventId, bundleId }
       );
       couponDiscountAmount = couponResult.discountAmount;
       appliedCouponCode = couponResult.code;
@@ -131,6 +131,12 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
     if (!event) {
       const error = new Error("Event not found");
       error.statusCode = 404;
+      throw error;
+    }
+
+    if (event.bookingOpeningDateTime && new Date(event.bookingOpeningDateTime) > new Date()) {
+      const error = new Error(`Bookings for this event are not open yet. Bookings open on ${new Date(event.bookingOpeningDateTime).toLocaleString()}`);
+      error.statusCode = 403;
       throw error;
     }
 
@@ -462,6 +468,12 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
       throw error;
     }
 
+    if (event.bookingOpeningDateTime && new Date(event.bookingOpeningDateTime) > new Date()) {
+      const error = new Error(`Bookings for this event are not open yet. Bookings open on ${new Date(event.bookingOpeningDateTime).toLocaleString()}`);
+      error.statusCode = 403;
+      throw error;
+    }
+
     if (!Array.isArray(event.ticketTypes) || event.ticketTypes.length === 0) {
       const error = new Error("This event has no ticket types available");
       error.statusCode = 400;
@@ -720,9 +732,46 @@ const confirmBooking = async (stripeSessionId) => {
   for (const booking of bookings) {
     if (booking.status === "confirmed" && booking.paymentStatus === "paid") {
       console.log(`[ConfirmBooking] Booking ${booking._id} is already confirmed.`);
+      // Self-heal: if any booked seat is still stuck as checkout-held (a race-condition
+      // artefact from a previous run that failed to transition the seat), fix it now.
+      if (booking.selectedSeats?.length) {
+        try {
+          const seatEvent = await Event.findOne({ _id: booking.eventId, organizationId: booking.organizationId });
+          if (seatEvent) {
+            let targetSeatMap = seatEvent.selectedSeatMap;
+            let sessionDoc = null;
+            if (booking.sessionId && seatEvent.sessions && seatEvent.sessions.length > 0) {
+              sessionDoc = seatEvent.sessions.find(s => String(s._id) === String(booking.sessionId));
+              if (sessionDoc) targetSeatMap = sessionDoc.selectedSeatMap;
+            }
+            let healed = false;
+            for (const reference of booking.selectedSeats) {
+              const seat = targetSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
+              if (seat && seat.status === "checkout-held") {
+                seat.status = "sold";
+                healed = true;
+              }
+            }
+            if (healed) {
+              if (sessionDoc) {
+                sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+                seatEvent.markModified("sessions");
+              } else {
+                seatEvent.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+                seatEvent.markModified("selectedSeatMap");
+              }
+              await seatEvent.save();
+              console.log(`[ConfirmBooking] Self-healed stuck checkout-held seats for booking ${booking._id}`);
+            }
+          }
+        } catch (healErr) {
+          console.error(`[ConfirmBooking] Seat self-heal failed for booking ${booking._id}:`, healErr.message);
+        }
+      }
       confirmedBookings.push(booking);
       continue;
     }
+
 
     if (booking.status === "expired") {
       continue;
@@ -766,7 +815,14 @@ const confirmBooking = async (stripeSessionId) => {
         }
         for (const reference of booking.selectedSeats) {
           const seat = targetSeatMap?.blocks?.find((block) => block.id === reference.blockId)?.seats?.find((item) => item.id === reference.seatId);
-          if (seat?.status === "checkout-held") seat.status = "sold";
+          // Force the seat to "sold" regardless of its current state —
+          // a confirmed Stripe payment is the authoritative source of truth.
+          // We must NOT skip seats that are already "available" (which happens
+          // when the booking scheduler expired the hold before Stripe's
+          // webhook / confirm call caught up) — those still need to be sold.
+          if (seat && seat.status !== "organizer-held" && seat.status !== "sold") {
+            seat.status = "sold";
+          }
         }
         if (sessionDoc) {
           sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
@@ -824,7 +880,7 @@ const confirmBooking = async (stripeSessionId) => {
     }
 
     // Increment coupon usage count if coupon was used
-    if (booking.couponCode) {
+    if (booking.couponCode && (!booking.isBundleBooking || String(booking._id) === String(bookings[0]._id))) {
       try {
         await couponService.incrementCouponUses(booking.organizationId, booking.couponCode);
       } catch (couponErr) {
@@ -1066,6 +1122,13 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
     throw error;
   }
 
+  // Check bundle-level booking opening date and time
+  if (bundle.bookingOpeningDateTime && new Date(bundle.bookingOpeningDateTime) > new Date()) {
+    const error = new Error(`Bookings for this bundle are not open yet. Bookings open on ${new Date(bundle.bookingOpeningDateTime).toLocaleString()}`);
+    error.statusCode = 403;
+    throw error;
+  }
+
   // 1. Check if the bundle is protected (Case 1)
   const isBundleProtected = bundle.accessCode && (!bundle.privateCodeExpiry || new Date(bundle.privateCodeExpiry) > new Date());
   if (isBundleProtected) {
@@ -1252,7 +1315,7 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
       couponCode,
       rewardsToApply,
       userId,
-    });
+    }, bundle._id);
 
     const totalDiscount = discountRes.couponDiscountAmount + discountRes.referralDiscountAmount;
     const walletAmount = useWallet && walletDeduction > 0 ? Math.min(walletDeduction, Math.max(0, totalAmount - totalDiscount)) : 0;

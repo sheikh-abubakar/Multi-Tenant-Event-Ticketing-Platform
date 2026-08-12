@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import apiClient from "../api/client";
-import CouponsTab from "../components/org/CouponsTab";
 import MediaGalleryPickerModal from "../components/media/MediaGalleryPickerModal";
 
 const OrgSettings = () => {
@@ -21,8 +20,6 @@ const OrgSettings = () => {
   const [successMsg, setSuccessMsg] = useState("");
   const [confirmText, setConfirmText] = useState("");
   const [galleryOpen, setGalleryOpen] = useState(false);
-
-  const [activeTab, setActiveTab] = useState("general"); // "general" or "coupons"
 
   useEffect(() => {
     let cancelled = false;
@@ -128,38 +125,6 @@ const OrgSettings = () => {
       <h1 className="font-display text-4xl text-paper mb-1">Organization settings</h1>
       <p className="text-muted mb-6">Update your public details, manage settings, or configure coupon codes.</p>
 
-      {/* Tabs Switcher */}
-      <div className="flex border-b border-black/10 mb-6 gap-2">
-        <button
-          onClick={() => setActiveTab("general")}
-          style={{
-            padding: "8px 16px",
-            borderBottom: activeTab === "general" ? "2px solid var(--gold)" : "none",
-            color: activeTab === "general" ? "var(--gold)" : "var(--paper)",
-            background: "none",
-            border: "none",
-            fontWeight: "700",
-            cursor: "pointer",
-          }}
-        >
-          General Profile
-        </button>
-        <button
-          onClick={() => setActiveTab("coupons")}
-          style={{
-            padding: "8px 16px",
-            borderBottom: activeTab === "coupons" ? "2px solid var(--gold)" : "none",
-            color: activeTab === "coupons" ? "var(--gold)" : "var(--paper)",
-            background: "none",
-            border: "none",
-            fontWeight: "700",
-            cursor: "pointer",
-          }}
-        >
-          Coupon Codes
-        </button>
-      </div>
-
       {error && (
         <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-danger">
           {error}
@@ -171,12 +136,10 @@ const OrgSettings = () => {
         </div>
       )}
 
-      {activeTab === "general" ? (
-        <>
-          <form
-            onSubmit={handleSave}
-            className="rounded-xl bg-paper p-6 shadow-lg space-y-5"
-          >
+      <form
+        onSubmit={handleSave}
+        className="rounded-xl bg-paper p-6 shadow-lg space-y-5"
+      >
             <div className="flex items-center gap-4">
               <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-ink-soft ring-1 ring-black/10">
                 {(logoPreview || org?.logoUrl) ? (
@@ -289,10 +252,6 @@ const OrgSettings = () => {
               {deleting ? "Deleting…" : "Delete organization"}
             </button>
           </div>
-        </>
-      ) : (
-        <CouponsTab orgSlug={orgSlug} />
-      )}
       <MediaGalleryPickerModal
         orgSlug={orgSlug}
         isOpen={galleryOpen}

@@ -59,7 +59,7 @@ const remove = async (req, res) => {
  */
 const validate = async (req, res) => {
   try {
-    const { code, originalTotal, eventId: bodyEventId } = req.body;
+    const { code, originalTotal, eventId: bodyEventId, bundleId } = req.body;
     const targetEventId = bodyEventId || req.params.eventId;
 
     if (!code || originalTotal === undefined) {
@@ -71,9 +71,9 @@ const validate = async (req, res) => {
 
     const result = await couponService.validateAndApplyCoupon(
       req.organizationId,
-      targetEventId,
       code,
-      Number(originalTotal)
+      Number(originalTotal),
+      { eventId: targetEventId, bundleId }
     );
 
     return res.json({
@@ -88,9 +88,25 @@ const validate = async (req, res) => {
   }
 };
 
+const update = async (req, res) => {
+  try {
+    const coupon = await couponService.updateCoupon(req.organizationId, req.params.couponId, req.body);
+    return res.json({
+      status: "success",
+      data: coupon,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      status: "error",
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   create,
   list,
   remove,
+  update,
   validate,
 };

@@ -82,6 +82,7 @@ const PERMISSION_CATALOG = [
     actions: [
       { action: "create", label: "Create coupons" },
       { action: "read", label: "View coupons" },
+      { action: "update", label: "Edit coupons" },
       { action: "delete", label: "Delete coupons" },
     ],
   },

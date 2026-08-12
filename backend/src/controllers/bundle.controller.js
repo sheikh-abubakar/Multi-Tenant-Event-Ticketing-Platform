@@ -29,7 +29,7 @@ const buildBannerUrl = async (req) => {
 
 const create = async (req, res) => {
   try {
-    const { name, description, venueId, eventIds, pricePerSeat, accessCode, privateCodeExpiry, allowedSections } = req.body;
+    const { name, description, venueId, eventIds, pricePerSeat, accessCode, privateCodeExpiry, allowedSections, bookingOpeningDateTime } = req.body;
 
     let parsedEventIds = eventIds;
     if (typeof eventIds === "string") {
@@ -72,6 +72,20 @@ const create = async (req, res) => {
       return res.status(400).json({ message: "All events in the bundle must be scheduled at the selected venue." });
     }
 
+    // Validate bookingOpeningDateTime
+    if (bookingOpeningDateTime) {
+      const openDate = new Date(bookingOpeningDateTime);
+      if (openDate < new Date()) {
+        return res.status(400).json({ message: "Booking opening date and time cannot be in the past." });
+      }
+      const earliestEvent = events.reduce((earliest, evt) => {
+        return new Date(evt.dateTime) < new Date(earliest.dateTime) ? evt : earliest;
+      }, events[0]);
+      if (earliestEvent && openDate > new Date(earliestEvent.dateTime)) {
+        return res.status(400).json({ message: `Booking opening date and time cannot be after the earliest event starts (${new Date(earliestEvent.dateTime).toLocaleString()}).` });
+      }
+    }
+
     const bannerImageUrl = (await buildBannerUrl(req)) || req.body.bannerImageUrl;
 
     const bundle = new EventBundle({
@@ -86,6 +100,7 @@ const create = async (req, res) => {
       accessCode: accessCode ? String(accessCode).trim() || null : null,
       privateCodeExpiry: privateCodeExpiry ? new Date(privateCodeExpiry) || null : null,
       allowedSections: Array.isArray(parsedAllowedSections) ? parsedAllowedSections : [],
+      bookingOpeningDateTime: bookingOpeningDateTime ? new Date(bookingOpeningDateTime) : null,
     });
 
     await bundle.save();
@@ -178,7 +193,7 @@ const getOne = async (req, res) => {
 
 const update = async (req, res) => {
   try {
-    const { name, description, venueId, eventIds, pricePerSeat, accessCode, privateCodeExpiry, allowedSections } = req.body;
+    const { name, description, venueId, eventIds, pricePerSeat, accessCode, privateCodeExpiry, allowedSections, bookingOpeningDateTime } = req.body;
 
     const bundle = await EventBundle.findOne({
       _id: req.params.bundleId,
@@ -196,6 +211,40 @@ const update = async (req, res) => {
       } catch (e) {
         parsedEventIds = eventIds.split(",").map((id) => id.trim());
       }
+    }
+
+    if (bookingOpeningDateTime !== undefined) {
+      const newOpeningDate = bookingOpeningDateTime ? new Date(bookingOpeningDateTime) : null;
+      if (newOpeningDate) {
+        if (!bundle.bookingOpeningDateTime || new Date(bundle.bookingOpeningDateTime).getTime() !== newOpeningDate.getTime()) {
+          if (newOpeningDate < new Date()) {
+            return res.status(400).json({ message: "Booking opening date and time cannot be in the past." });
+          }
+        }
+
+        const currentEventIds = parsedEventIds || bundle.eventIds;
+        const bundleEvents = await Event.find({ _id: { $in: currentEventIds } });
+        if (bundleEvents.length > 0) {
+          const earliestEvent = bundleEvents.reduce((earliest, evt) => {
+            return new Date(evt.dateTime) < new Date(earliest.dateTime) ? evt : earliest;
+          }, bundleEvents[0]);
+          if (newOpeningDate > new Date(earliestEvent.dateTime)) {
+            return res.status(400).json({ message: `Booking opening date and time cannot be after the earliest event starts (${new Date(earliestEvent.dateTime).toLocaleString()}).` });
+          }
+        }
+
+        if (newOpeningDate > new Date()) {
+          const Booking = require("../models/Booking");
+          const existingBookingsCount = await Booking.countDocuments({
+            bundleId: bundle._id,
+            status: { $in: ["confirmed", "refunded"] }
+          });
+          if (existingBookingsCount > 0) {
+            return res.status(400).json({ message: "Cannot set booking opening time to the future because tickets/seats have already been booked for this bundle." });
+          }
+        }
+      }
+      bundle.bookingOpeningDateTime = newOpeningDate;
     }
 
     if (name) bundle.name = name;

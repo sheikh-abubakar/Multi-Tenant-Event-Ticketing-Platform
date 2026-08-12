@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import apiClient from "../api/client";
 import OrgCard from "../components/OrgCard";
@@ -9,6 +9,13 @@ import { cachedGet, prefetch } from "../api/requestCache";
 const Home = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Capture referral code from URL — shared links land here (/browse?ref=REF-XXXXXX)
+  useEffect(() => {
+    const refCode = searchParams.get("ref");
+    if (refCode) sessionStorage.setItem("referralCode", refCode);
+  }, [searchParams]);
 
   // ─── "Your organizations" state (only relevant when logged in) ──────
   const [myOrgs, setMyOrgs] = useState([]);

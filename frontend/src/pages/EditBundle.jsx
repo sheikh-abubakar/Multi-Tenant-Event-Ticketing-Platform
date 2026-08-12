@@ -391,7 +391,7 @@ export default function EditBundle() {
             className="w-full rounded-md border border-black/15 px-3 py-2 text-ink-text bg-white"
             style={{ color: "#111326" }}
           />
-          <span className="text-xs text-muted font-normal block mt-0.5">If set, buyers will not be able to select seats/tickets for this bundle until this date and time.</span>
+          <span className="text-xs text-muted font-normal block mt-0.5">If set, new bundle sales pause until this date and time. Existing bookings remain valid.</span>
         </div>
 
         <div>

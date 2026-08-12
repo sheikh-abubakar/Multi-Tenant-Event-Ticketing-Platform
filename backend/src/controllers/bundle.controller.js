@@ -233,16 +233,8 @@ const update = async (req, res) => {
           }
         }
 
-        if (newOpeningDate > new Date()) {
-          const Booking = require("../models/Booking");
-          const existingBookingsCount = await Booking.countDocuments({
-            bundleId: bundle._id,
-            status: { $in: ["confirmed", "refunded"] }
-          });
-          if (existingBookingsCount > 0) {
-            return res.status(400).json({ message: "Cannot set booking opening time to the future because tickets/seats have already been booked for this bundle." });
-          }
-        }
+        // A future opening time pauses new bundle sales only. Existing bookings
+        // remain valid, so organizers can use this setting after sales begin.
       }
       bundle.bookingOpeningDateTime = newOpeningDate;
     }

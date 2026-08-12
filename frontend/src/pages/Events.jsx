@@ -180,7 +180,7 @@ export default function Events() {
             </label>
             <label className="block text-sm font-semibold">
               Booking Opening Date & Time (Optional)
-              <span className="text-xs text-muted block font-normal">When tickets/seats become available for purchase. Leave empty to open immediately.</span>
+              <span className="text-xs text-muted block font-normal">When tickets/seats become available for purchase. You can pause new sales again later; existing bookings remain valid.</span>
               <input
                 name="bookingOpeningDateTime"
                 type="datetime-local"

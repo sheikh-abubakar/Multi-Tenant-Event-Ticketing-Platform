@@ -163,18 +163,8 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
         throw error;
       }
 
-      if (newOpeningDate > new Date()) {
-        const Booking = require("../models/Booking");
-        const existingBookingsCount = await Booking.countDocuments({
-          eventId,
-          status: { $in: ["confirmed", "refunded"] }
-        });
-        if (existingBookingsCount > 0) {
-          const error = new Error("Cannot set booking opening time to the future because tickets/seats have already been booked for this event.");
-          error.statusCode = 400;
-          throw error;
-        }
-      }
+      // Organizers may pause future sales at any time, including after bookings
+      // exist. Confirmed bookings and sold seats are intentionally left intact.
     }
   }
 

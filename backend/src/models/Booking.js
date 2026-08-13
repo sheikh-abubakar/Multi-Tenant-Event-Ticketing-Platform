@@ -123,6 +123,11 @@ const bookingSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    cartId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     confirmationCode: {
       type: String,
       default: null,

@@ -4,6 +4,7 @@ const QRCode = require("qrcode");
 const Event = require("../models/Event");
 const EventBundle = require("../models/EventBundle");
 const Booking = require("../models/Booking");
+const Cart = require("../models/Cart");
 const User = require("../models/User");
 const stripe = require("../config/stripe");
 const { sendUnifiedBookingConfirmation } = require("../config/email");
@@ -911,6 +912,25 @@ const confirmBooking = async (stripeSessionId) => {
     }
   }
 
+  // This is deliberately idempotent and runs even when a Stripe webhook or a
+  // confirmation-page refresh finds the order already confirmed. It repairs
+  // carts created before the cleanup feature was deployed as well.
+  if (bookings.length) {
+    try {
+      const sourceBooking = bookings[0];
+      const cartQuery = sourceBooking.userId
+        ? { userId: sourceBooking.userId }
+        : { cartId: sourceBooking.cartId };
+      if (sourceBooking.userId || sourceBooking.cartId) {
+        await Cart.updateOne(cartQuery, {
+          $set: { items: [], expiresAt: new Date(Date.now() + HOLD_DURATION_MS) },
+        });
+      }
+    } catch (cartError) {
+      console.error("Completed cart cleanup failed:", cartError.message);
+    }
+  }
+
   // Return the first booking to satisfy controller redirect / page title info
   return confirmedBookings[0];
 };
@@ -1677,6 +1697,7 @@ const createUnifiedCheckout = async (organizationId, orgSlug, data) => {
             currency: "USD",
             status: "pending",
             paymentStatus: "pending",
+            cartId: cartId || null,
             confirmationCode,
             isBundleBooking: Boolean(eventItems[0].bundleId),
             bundleBookingId,

@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { setLocalCart } from "../utils/cart";
 import "./BuyerContextPages.css";
 
 const BookingConfirmation = () => {
@@ -32,6 +33,7 @@ const BookingConfirmation = () => {
           await apiClient.get(
             `/o/${orgSlug}/bookings/${bookingId}/confirm?session_id=${sessionId}`,
           );
+          setLocalCart([]);
         }
 
         // Step 2: Fetch booking details

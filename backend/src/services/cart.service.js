@@ -1,49 +1,47 @@
+const mongoose = require("mongoose");
 const Event = require("../models/Event");
+const Cart = require("../models/Cart");
 
 const normalizeSessionId = (sessionId) => {
   if (!sessionId || sessionId === "undefined" || sessionId === "null") return null;
   return String(sessionId);
 };
 
-const getSessionCartKey = (organizationId, eventId, sessionId = null) => {
-  const cleanSessionId = normalizeSessionId(sessionId);
-  return cleanSessionId 
-    ? `cart:${organizationId}:${eventId}:${cleanSessionId}`
-    : `cart:${organizationId}:${eventId}`;
-};
-
-const getOrCreateCart = (req, organizationId, eventId, sessionId = null) => {
-  if (!req.session.carts) {
-    req.session.carts = {};
+const getUnifiedCart = async (req) => {
+  const userId = req.user?._id;
+  const cartId = req.headers["x-cart-id"] || req.sessionID;
+  
+  let cart = null;
+  if (userId) {
+    cart = await Cart.findOne({ userId });
   }
-
-  const cleanSessionId = normalizeSessionId(sessionId);
-  const cartKey = getSessionCartKey(organizationId, eventId, cleanSessionId);
-
-  if (!req.session.carts[cartKey]) {
-    req.session.carts[cartKey] = {
-      organizationId,
-      eventId,
-      sessionId: cleanSessionId,
+  if (!cart) {
+    cart = await Cart.findOne({ cartId });
+  }
+  if (!cart) {
+    cart = new Cart({
+      userId: userId || null,
+      cartId,
       items: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+      expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
+    });
   }
-
-  return req.session.carts[cartKey];
+  return cart;
 };
 
-const saveCart = (req, organizationId, eventId, cart, sessionId = null) => {
-  if (!req.session.carts) {
-    req.session.carts = {};
-  }
-
+const formatEventCart = (cartDoc, organizationId, eventId, sessionId) => {
   const cleanSessionId = normalizeSessionId(sessionId);
-  const cartKey = getSessionCartKey(organizationId, eventId, cleanSessionId);
-  req.session.carts[cartKey] = {
-    ...cart,
-    updatedAt: new Date().toISOString(),
+  const eventItems = cartDoc.items.filter(item => 
+    String(item.eventId) === String(eventId) && 
+    String(item.eventSessionId || "") === String(cleanSessionId || "")
+  );
+  return {
+    organizationId,
+    eventId,
+    sessionId: cleanSessionId,
+    items: eventItems,
+    createdAt: cartDoc.createdAt,
+    updatedAt: cartDoc.updatedAt
   };
 };
 
@@ -67,30 +65,33 @@ const getCartByEvent = async (req, organizationId, eventId, sessionId) => {
     }
   }
 
-  const cart = getOrCreateCart(req, organizationId, eventId, cleanSessionId);
+  const cartDoc = await getUnifiedCart(req);
+  const cart = formatEventCart(cartDoc, organizationId, eventId, cleanSessionId);
 
-  // A browser session can retain cart entries after payment/expiry. Reconcile
-  // seat entries with the authoritative live map so a sold/held seat cannot
-  // stay visually selected or be submitted again from that same browser.
+  // Reconcile seat map holds
   if (event.purchaseMode === "seatmap" && cart.items?.some((item) => item.blockId && item.seatId)) {
     const activeSession = (cleanSessionId && event.sessions?.find((item) => String(item._id) === String(cleanSessionId)))
       || event.sessions?.find((item) => new Date(item.dateTime) >= new Date())
       || event.sessions?.[0];
     const seatmap = activeSession?.selectedSeatMap || event.selectedSeatMap;
     if (seatmap?.blocks) {
-      const before = cart.items.length;
-      cart.items = cart.items.filter((item) => {
+      const before = cartDoc.items.length;
+      cartDoc.items = cartDoc.items.filter((item) => {
+        const isThisEventSession = String(item.eventId) === String(eventId) && String(item.eventSessionId || "") === String(cleanSessionId || "");
+        if (!isThisEventSession) return true;
         if (!item.blockId || !item.seatId) return true;
         const seat = seatmap.blocks.find((block) => block.id === item.blockId)?.seats?.find((candidate) => candidate.id === item.seatId);
         return seat?.status === "available";
       });
-      if (cart.items.length !== before) saveCart(req, organizationId, eventId, cart, cleanSessionId);
+      if (cartDoc.items.length !== before) {
+        await cartDoc.save();
+      }
     }
   }
 
   return {
     event,
-    cart,
+    cart: formatEventCart(cartDoc, organizationId, eventId, cleanSessionId),
   };
 };
 
@@ -129,9 +130,10 @@ const addItem = async (req, organizationId, eventId, data) => {
     throw error;
   }
 
-  const cart = getOrCreateCart(req, organizationId, eventId);
-  const existingItem = cart.items.find(
-    (item) => item.ticketTypeIndex === ticketTypeIdx,
+  const cartDoc = await getUnifiedCart(req);
+  
+  const existingItem = cartDoc.items.find(
+    (item) => String(item.eventId) === String(eventId) && item.ticketTypeIndex === ticketTypeIdx
   );
 
   const currentQuantity = existingItem ? existingItem.quantity : 0;
@@ -148,7 +150,9 @@ const addItem = async (req, organizationId, eventId, data) => {
   if (existingItem) {
     existingItem.quantity = requestedQuantity;
   } else {
-    cart.items.push({
+    cartDoc.items.push({
+      eventId,
+      eventSessionId: null,
       ticketTypeIndex: ticketTypeIdx,
       ticketTypeName: ticketType.name,
       quantity: qty,
@@ -156,9 +160,9 @@ const addItem = async (req, organizationId, eventId, data) => {
     });
   }
 
-  saveCart(req, organizationId, eventId, cart);
+  await cartDoc.save();
 
-  return cart;
+  return formatEventCart(cartDoc, organizationId, eventId);
 };
 
 const addSeat = async (req, organizationId, eventId, { blockId, seatId, overridePrice, bundleId, sessionId }) => {
@@ -197,19 +201,38 @@ const addSeat = async (req, organizationId, eventId, { blockId, seatId, override
   const seat = block?.seats?.find((item) => item.id === seatId);
   if (!seat || !block) { const error = new Error("Seat not found"); error.statusCode = 404; throw error; }
   if (seat.status !== "available") { const error = new Error("This seat is no longer available"); error.statusCode = 409; throw error; }
-  const cart = getOrCreateCart(req, organizationId, eventId, cleanSessionId);
-  if (!cart.items.some((item) => item.blockId === blockId && item.seatId === seatId)) {
+  
+  const cartDoc = await getUnifiedCart(req);
+  if (!cartDoc.items.some((item) => String(item.eventId) === String(eventId) && String(item.eventSessionId || "") === String(cleanSessionId || "") && item.blockId === blockId && item.seatId === seatId)) {
     const finalPrice = overridePrice !== undefined && overridePrice !== null ? Number(overridePrice) : Number(block.price || 0);
-    cart.items.push({ blockId, seatId, seatName: seat.seatName, sectionName: block.name, category: block.category || null, quantity: 1, unitPrice: finalPrice });
+    cartDoc.items.push({ 
+      eventId,
+      eventSessionId: cleanSessionId,
+      blockId, 
+      seatId, 
+      seatName: seat.seatName, 
+      sectionName: block.name, 
+      category: block.category || null, 
+      quantity: 1, 
+      unitPrice: finalPrice,
+      bundleId: bundleId || null,
+    });
   }
-  saveCart(req, organizationId, eventId, cart, cleanSessionId); return cart;
+  await cartDoc.save();
+  return formatEventCart(cartDoc, organizationId, eventId, cleanSessionId);
 };
 
-const removeSeat = (req, organizationId, eventId, blockId, seatId, sessionId) => {
+const removeSeat = async (req, organizationId, eventId, blockId, seatId, sessionId) => {
   const cleanSessionId = normalizeSessionId(sessionId);
-  const cart = getOrCreateCart(req, organizationId, eventId, cleanSessionId);
-  cart.items = cart.items.filter((item) => item.blockId !== blockId || item.seatId !== seatId);
-  saveCart(req, organizationId, eventId, cart, cleanSessionId); return cart;
+  const cartDoc = await getUnifiedCart(req);
+  cartDoc.items = cartDoc.items.filter((item) => 
+    !(String(item.eventId) === String(eventId) && 
+      String(item.eventSessionId || "") === String(cleanSessionId || "") && 
+      item.blockId === blockId && 
+      item.seatId === seatId)
+  );
+  await cartDoc.save(); 
+  return formatEventCart(cartDoc, organizationId, eventId, cleanSessionId);
 };
 
 const updateItem = async (req, organizationId, eventId, data) => {
@@ -246,17 +269,17 @@ const updateItem = async (req, organizationId, eventId, data) => {
     throw error;
   }
 
-  const cart = getOrCreateCart(req, organizationId, eventId);
-  const itemIndex = cart.items.findIndex(
-    (item) => item.ticketTypeIndex === ticketTypeIdx,
+  const cartDoc = await getUnifiedCart(req);
+  const itemIndex = cartDoc.items.findIndex(
+    (item) => String(item.eventId) === String(eventId) && item.ticketTypeIndex === ticketTypeIdx
   );
 
   if (qty === 0) {
     if (itemIndex !== -1) {
-      cart.items.splice(itemIndex, 1);
+      cartDoc.items.splice(itemIndex, 1);
     }
-    saveCart(req, organizationId, eventId, cart);
-    return cart;
+    await cartDoc.save();
+    return formatEventCart(cartDoc, organizationId, eventId);
   }
 
   const remaining =
@@ -269,9 +292,11 @@ const updateItem = async (req, organizationId, eventId, data) => {
   }
 
   if (itemIndex !== -1) {
-    cart.items[itemIndex].quantity = qty;
+    cartDoc.items[itemIndex].quantity = qty;
   } else {
-    cart.items.push({
+    cartDoc.items.push({
+      eventId,
+      eventSessionId: null,
       ticketTypeIndex: ticketTypeIdx,
       ticketTypeName: ticketType.name,
       quantity: qty,
@@ -279,12 +304,12 @@ const updateItem = async (req, organizationId, eventId, data) => {
     });
   }
 
-  saveCart(req, organizationId, eventId, cart);
+  await cartDoc.save();
 
-  return cart;
+  return formatEventCart(cartDoc, organizationId, eventId);
 };
 
-const removeItem = (req, organizationId, eventId, ticketTypeIndex) => {
+const removeItem = async (req, organizationId, eventId, ticketTypeIndex) => {
   const ticketTypeIdx = Number(ticketTypeIndex);
 
   if (!Number.isInteger(ticketTypeIdx) || ticketTypeIdx < 0) {
@@ -293,23 +318,22 @@ const removeItem = (req, organizationId, eventId, ticketTypeIndex) => {
     throw error;
   }
 
-  const cart = getOrCreateCart(req, organizationId, eventId);
-  cart.items = cart.items.filter(
-    (item) => item.ticketTypeIndex !== ticketTypeIdx,
+  const cartDoc = await getUnifiedCart(req);
+  cartDoc.items = cartDoc.items.filter(
+    (item) => !(String(item.eventId) === String(eventId) && item.ticketTypeIndex === ticketTypeIdx)
   );
+  await cartDoc.save();
 
-  saveCart(req, organizationId, eventId, cart);
-
-  return cart;
+  return formatEventCart(cartDoc, organizationId, eventId);
 };
 
-const clearCart = (req, organizationId, eventId, sessionId) => {
+const clearCart = async (req, organizationId, eventId, sessionId) => {
   const cleanSessionId = normalizeSessionId(sessionId);
-  const cartKey = getSessionCartKey(organizationId, eventId, cleanSessionId);
-
-  if (req.session.carts && req.session.carts[cartKey]) {
-    delete req.session.carts[cartKey];
-  }
+  const cartDoc = await getUnifiedCart(req);
+  cartDoc.items = cartDoc.items.filter(
+    (item) => !(String(item.eventId) === String(eventId) && String(item.eventSessionId || "") === String(cleanSessionId || ""))
+  );
+  await cartDoc.save();
 
   return {
     organizationId,
@@ -320,41 +344,57 @@ const clearCart = (req, organizationId, eventId, sessionId) => {
 };
 
 const getAllSessionCarts = async (req) => {
-  const sessionCarts = Object.values(req.session?.carts || {}).filter((cart) => cart.items?.length);
-  if (!sessionCarts.length) return [];
+  const cartDoc = await getUnifiedCart(req);
+  if (!cartDoc.items?.length) return [];
 
-  const events = await Event.find({ _id: { $in: sessionCarts.map((cart) => cart.eventId) } })
+  const groupsMap = new Map();
+  cartDoc.items.forEach((item) => {
+    const key = `${item.eventId}:${item.eventSessionId || ""}`;
+    if (!groupsMap.has(key)) {
+      groupsMap.set(key, {
+        eventId: item.eventId,
+        sessionId: item.eventSessionId || null,
+        items: []
+      });
+    }
+    groupsMap.get(key).items.push(item);
+  });
+
+  const uniqueEventIds = Array.from(new Set(cartDoc.items.map((item) => String(item.eventId))));
+  const events = await Event.find({ _id: { $in: uniqueEventIds } })
     .select("name description dateTime bannerImageUrl purchaseMode venueId organizationId")
     .populate("venueId", "name city")
     .populate("organizationId", "name slug")
     .lean();
   const eventById = new Map(events.map((event) => [String(event._id), event]));
 
-  return sessionCarts.flatMap((cart) => {
-    const event = eventById.get(String(cart.eventId));
-    if (!event || String(event.organizationId?._id || event.organizationId) !== String(cart.organizationId)) return [];
-    return [{
-      organizationId: String(cart.organizationId),
+  const resultList = [];
+  for (const group of groupsMap.values()) {
+    const event = eventById.get(String(group.eventId));
+    if (!event) continue;
+
+    resultList.push({
+      organizationId: String(event.organizationId?._id || event.organizationId),
       organizationSlug: event.organizationId?.slug,
       organizationName: event.organizationId?.name,
-      eventId: String(cart.eventId),
-      sessionId: cart.sessionId,
+      eventId: String(group.eventId),
+      sessionId: group.sessionId,
       event,
-      items: cart.items,
-      total: cart.items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0),
-    }];
-  });
+      items: group.items,
+      total: group.items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0),
+    });
+  }
+
+  return resultList;
 };
 
-const removeGlobalCartItem = (req, { eventId, blockId, seatId, ticketTypeIndex }) => {
-  const cart = Object.values(req.session?.carts || {}).find((item) => String(item.eventId) === String(eventId));
-  if (!cart) {
-    const error = new Error("Cart not found");
-    error.statusCode = 404;
-    throw error;
-  }
+const removeGlobalCartItem = async (req, { eventId, blockId, seatId, ticketTypeIndex }) => {
+  const cartDoc = await getUnifiedCart(req);
+  
   if (blockId && seatId) {
-    cart.items = cart.items.filter((item) => item.blockId !== blockId || item.seatId !== seatId);
+    cartDoc.items = cartDoc.items.filter((item) => 
+      !(String(item.eventId) === String(eventId) && item.blockId === blockId && item.seatId === seatId)
+    );
   } else {
     const index = Number(ticketTypeIndex);
     if (!Number.isInteger(index) || index < 0) {
@@ -362,10 +402,119 @@ const removeGlobalCartItem = (req, { eventId, blockId, seatId, ticketTypeIndex }
       error.statusCode = 400;
       throw error;
     }
-    cart.items = cart.items.filter((item) => item.ticketTypeIndex !== index);
+    cartDoc.items = cartDoc.items.filter((item) => 
+      !(String(item.eventId) === String(eventId) && item.ticketTypeIndex === index)
+    );
   }
-  saveCart(req, cart.organizationId, cart.eventId, cart);
-  return cart;
+  await cartDoc.save();
+  
+  const event = await Event.findById(eventId).select("organizationId").lean();
+  const organizationId = event ? String(event.organizationId) : "";
+
+  return formatEventCart(cartDoc, organizationId, eventId);
+};
+
+const addBundleToCart = async (req, organizationId, bundleId) => {
+  const EventBundle = require("../models/EventBundle");
+  const bundle = await EventBundle.findOne({ _id: bundleId, organizationId }).lean();
+  if (!bundle) {
+    const error = new Error("Bundle not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const cartDoc = await getUnifiedCart(req);
+  const selections = cartDoc.items.filter((item) => String(item.bundleId || "") === String(bundleId) && item.itemType !== "bundle");
+  const eventIds = bundle.eventIds.map(String);
+  const quantities = eventIds.map((eventId) => selections.filter((item) => String(item.eventId) === eventId).length);
+  const quantity = quantities[0];
+  if (!quantity || quantities.some((count) => count !== quantity)) {
+    const error = new Error("Select the same number of seats for every event in this bundle before adding it to your cart.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Until this point the cart contains zero-priced, temporary seat holds for
+  // each event in the bundle. Replace all of them in one saved document with
+  // one priced bundle item; they must never be rendered as payable items.
+  const nonBundleItems = cartDoc.items
+    .filter((item) => String(item.bundleId || "") !== String(bundleId))
+    .map((item) => (item.toObject ? item.toObject() : item));
+  const bundleCartItem = {
+    eventId: bundle.eventIds[0],
+    itemType: "bundle",
+    bundleId: bundle._id,
+    bundleName: bundle.name,
+    bundleBannerImageUrl: bundle.bannerImageUrl || null,
+    bundleQuantity: quantity,
+    quantity: 1,
+    unitPrice: Number(bundle.pricePerSeat) * quantity,
+    bundleSelections: selections.map((item) => ({
+      eventId: item.eventId,
+      eventSessionId: item.eventSessionId || null,
+      blockId: item.blockId,
+      seatId: item.seatId,
+      seatName: item.seatName || null,
+      sectionName: item.sectionName || null,
+    })),
+  };
+  cartDoc.set("items", [...nonBundleItems, bundleCartItem]);
+  cartDoc.markModified("items");
+  await cartDoc.save();
+
+  // Return the persisted cart rather than the pre-save Mongoose instance so
+  // the client always receives the single bundle item, including for guests.
+  const savedCart = await Cart.findById(cartDoc._id);
+  const persistedBundle = savedCart?.items?.find(
+    (item) => item.itemType === "bundle" && String(item.bundleId) === String(bundleId)
+  );
+  if (!persistedBundle) {
+    const error = new Error("Could not finalize the bundle in your cart. Please try again.");
+    error.statusCode = 500;
+    throw error;
+  }
+  return savedCart;
+};
+
+const removeBundleFromCart = async (req, bundleId) => {
+  const cartDoc = await getUnifiedCart(req);
+  cartDoc.items = cartDoc.items.filter((item) => String(item.bundleId || "") !== String(bundleId));
+  await cartDoc.save();
+  return cartDoc;
+};
+
+const restoreBundleSelections = async (req, organizationId, bundleId) => {
+  const EventBundle = require("../models/EventBundle");
+  const bundle = await EventBundle.findOne({ _id: bundleId, organizationId }).lean();
+  if (!bundle) {
+    const error = new Error("Bundle not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  const cartDoc = await getUnifiedCart(req);
+  const bundleItem = cartDoc.items.find((item) => item.itemType === "bundle" && String(item.bundleId) === String(bundleId));
+  if (!bundleItem) {
+    const error = new Error("This bundle is no longer in your cart.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  cartDoc.items = cartDoc.items.filter((item) => !(item.itemType === "bundle" && String(item.bundleId) === String(bundleId)));
+  bundleItem.bundleSelections.forEach((selection) => cartDoc.items.push({
+    eventId: selection.eventId,
+    eventSessionId: selection.eventSessionId || null,
+    blockId: selection.blockId,
+    seatId: selection.seatId,
+    seatName: selection.seatName || null,
+    sectionName: selection.sectionName || null,
+    itemType: "event",
+    bundleId: bundle._id,
+    bundleName: bundle.name,
+    quantity: 1,
+    unitPrice: 0,
+  }));
+  await cartDoc.save();
+  return cartDoc;
 };
 
 module.exports = {
@@ -378,4 +527,7 @@ module.exports = {
   clearCart,
   getAllSessionCarts,
   removeGlobalCartItem,
+  addBundleToCart,
+  removeBundleFromCart,
+  restoreBundleSelections,
 };

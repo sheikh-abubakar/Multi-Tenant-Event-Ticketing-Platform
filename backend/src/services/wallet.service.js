@@ -28,6 +28,13 @@ const getWallet = async (userId, session) => {
     } else {
       wallet = await Wallet.create({ userId, balance: 0, currency: "USD" });
     }
+  } else if (wallet.currency !== "USD") {
+    // StagePass prices, Stripe charges and refund amounts are all USD. Legacy
+    // wallets only carried an incorrect display label; their stored numeric
+    // credit is already used directly in the USD checkout calculations.
+    wallet.currency = "USD";
+    if (session) await wallet.save({ session });
+    else await wallet.save();
   }
   return wallet;
 };

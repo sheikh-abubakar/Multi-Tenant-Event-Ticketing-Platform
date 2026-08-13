@@ -1,5 +1,6 @@
 const express = require("express");
 const authenticate = require("../middlewares/authenticate");
+const optionalAuthenticate = require("../middlewares/optionalAuthenticate");
 const resolveTenant = require("../middlewares/resolveTenant");
 const loadMembership = require("../middlewares/loadMembership");
 const checkPermission = require("../middlewares/checkPermission");
@@ -12,6 +13,9 @@ const router = express.Router({ mergeParams: true });
 router.get("/", resolveTenant, bundleController.listPublic);
 router.get("/:bundleId", resolveTenant, bundleController.getOne);
 router.post("/:bundleId/checkout", resolveTenant, bundleController.checkout);
+router.post("/:bundleId/cart", optionalAuthenticate, resolveTenant, bundleController.addToCart);
+router.post("/:bundleId/cart/edit", optionalAuthenticate, resolveTenant, bundleController.editCartSelections);
+router.delete("/:bundleId/cart", optionalAuthenticate, resolveTenant, bundleController.removeFromCart);
 router.post("/:bundleId/verify-access", resolveTenant, bundleController.verifyAccess);
 
 // Organizer management endpoints

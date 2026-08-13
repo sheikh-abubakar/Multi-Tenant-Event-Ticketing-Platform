@@ -28,7 +28,7 @@ const createCheckout = async (req, res) => {
     // The booking service has atomically moved selected seats into the booking
     // hold. Remove the browser's local cart snapshot so it cannot keep
     // overriding the live map after payment confirmation or hold expiry.
-    cartService.clearCart(req, req.organizationId, req.params.eventId, req.body.sessionId);
+    await cartService.clearCart(req, req.organizationId, req.params.eventId, req.body.EventSeatMapSessionID || req.body.sessionId);
     return res.status(201).json(result);
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -143,6 +143,19 @@ const getBundleBookings = async (req, res) => {
   }
 };
 
+const createUnifiedCheckout = async (req, res) => {
+  try {
+    const result = await bookingService.createUnifiedCheckout(
+      req.organizationId,
+      req.params.orgSlug,
+      { ...req.body, userId: req.user?.id || null }
+    );
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   create,
   createCheckout,
@@ -153,4 +166,5 @@ module.exports = {
   handleWebhook,
   verify,
   getBundleBookings,
+  createUnifiedCheckout,
 };

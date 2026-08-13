@@ -28,6 +28,7 @@ const aiRoutes = require("./routes/ai.routes");
 const bundleRoutes = require("./routes/bundle.routes");
 const seatChangeRoutes = require("./routes/seatChange.routes");
 const mediaRoutes = require("./routes/media.routes");
+const cartSyncRoutes = require("./routes/cartSync.routes");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -121,6 +122,7 @@ app.use("/api/o/:orgSlug/coupons", couponRoutes);
 app.use("/api/o/:orgSlug/seat-change", seatChangeRoutes);
 app.use("/api/o/:orgSlug/media", mediaRoutes);
 app.use("/api/cart", globalCartRoutes);
+app.use("/api/cart-sync", cartSyncRoutes);
 app.use("/api/o/:orgSlug/settings", orgSettingsRoutes);
 app.use("/api/o/:orgSlug/team", teamRoutes);
 app.use("/api/o/:orgSlug/analytics", analyticsRoutes);

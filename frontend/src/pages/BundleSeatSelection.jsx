@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
 import SeatMapCanvas from "../components/seatmap/SeatMapCanvas";
+import { fetchCart, getCartId, serverLockSeat, serverUnlockSeat, setLocalCart } from "../utils/cart";
 import "./SeatSelection.css";
 
 const seatKey = (blockId, seatId) => `${blockId}:${seatId}`;
@@ -73,10 +74,10 @@ export default function BundleSeatSelection() {
     setActiveEventMap(null);
     setActiveCart({ items: [] });
     try {
-      const [eventRes, mapRes, cartRes] = await Promise.all([
+      const [eventRes, mapRes, cartItems] = await Promise.all([
         apiClient.get(`/o/${orgSlug}/events/${resolvedEventId}`),
         apiClient.get(`/o/${orgSlug}/events/${resolvedEventId}/seatmap?sessionId=${sessionId}`, { params: { bundleId } }),
-        apiClient.get(`/o/${orgSlug}/cart/${resolvedEventId}?sessionId=${sessionId}`, { params: { bundleId } }),
+        fetchCart(),
       ]);
       setResolvedEvent(eventRes.data.event);
       const upcoming = (eventRes.data.sessions || []).filter(s => new Date(s.dateTime) >= new Date());
@@ -85,7 +86,7 @@ export default function BundleSeatSelection() {
         setError("This event is no longer active as all of its session dates have passed.");
       }
       setActiveEventMap(mapRes.data.seatmap);
-      setActiveCart(cartRes.data.cart);
+      setActiveCart({ items: cartItems.filter((item) => String(item.eventId) === String(resolvedEventId) && String(item.bundleId || "") === String(bundleId) && item.itemType !== "bundle") });
       setLockedEventId(null);
     } catch (err) {
       if (err.response?.status === 403 && err.response?.data?.isProtected) {
@@ -103,6 +104,26 @@ export default function BundleSeatSelection() {
   useEffect(() => {
     loadActiveEventMapAndCart();
   }, [activeEvent, activeSessionId]);
+
+  // Keep every open bundle map aligned with live seat holds/sales from other buyers.
+  useEffect(() => {
+    if (!activeEvent?._id) return undefined;
+    const refreshLiveState = async () => {
+      try {
+        const sessionId = selectedSessionIds[activeEvent._id] || "";
+        const [mapRes, cartItems] = await Promise.all([
+          apiClient.get(`/o/${orgSlug}/events/${activeEvent._id}/seatmap?sessionId=${sessionId}`),
+          fetchCart(),
+        ]);
+        setActiveEventMap(mapRes.data.seatmap);
+        setActiveCart({ items: cartItems.filter((item) => String(item.eventId) === String(activeEvent._id) && String(item.bundleId || "") === String(bundleId) && item.itemType !== "bundle") });
+      } catch {
+        // A transient refresh failure should not interrupt the buyer's selection.
+      }
+    };
+    const interval = window.setInterval(refreshLiveState, 3000);
+    return () => window.clearInterval(interval);
+  }, [orgSlug, bundleId, activeEvent?._id, activeSessionId]);
 
   const handleUnlockEventSubmit = async (e) => {
     e.preventDefault();
@@ -151,11 +172,10 @@ export default function BundleSeatSelection() {
   }, [activeEventMap, activeEvent, bundle]);
 
   const toggleSeat = async (block, seat) => {
-    if (seat.status !== "available" || busy) return;
-    setError("");
-
     const key = seatKey(block.id, seat.id);
     const exists = selectedIds.has(key);
+    if ((!exists && seat.status !== "available") || busy) return;
+    setError("");
 
     if (!exists && activeCart.items.length >= requiredQty) {
       setError(`You can only select up to ${requiredQty} seats for this event.`);
@@ -175,15 +195,25 @@ export default function BundleSeatSelection() {
     setBusy(true);
     const sessionId = selectedSessionIds[activeEvent._id] || "";
     try {
-      const res = exists
-        ? await apiClient.delete(`/o/${orgSlug}/cart/${activeEvent._id}/seats/${block.id}/${seat.id}?sessionId=${sessionId}`)
-        : await apiClient.post(`/o/${orgSlug}/cart/${activeEvent._id}/items?sessionId=${sessionId}`, {
-            blockId: block.id,
-            seatId: seat.id,
-            overridePrice: bundle.pricePerSeat,
-            bundleId: bundle._id,
-          });
-      setActiveCart(res.data.cart);
+      if (exists) {
+        await serverUnlockSeat({ eventId: activeEvent._id, eventSessionId: sessionId, blockId: block.id, seatId: seat.id });
+      } else {
+        await serverLockSeat({
+          eventId: activeEvent._id,
+          eventSessionId: sessionId,
+          blockId: block.id,
+          seatId: seat.id,
+          seatName: seat.seatName,
+          sectionName: block.name,
+          category: block.category || null,
+          unitPrice: 0,
+          bundleId: bundle._id,
+        });
+      }
+      const cartItems = await fetchCart();
+      setActiveCart({ items: cartItems.filter((item) => String(item.eventId) === String(activeEvent._id) && String(item.bundleId || "") === String(bundleId) && item.itemType !== "bundle") });
+      const mapRes = await apiClient.get(`/o/${orgSlug}/events/${activeEvent._id}/seatmap?sessionId=${sessionId}`);
+      setActiveEventMap(mapRes.data.seatmap);
     } catch (err) {
       setError(err.response?.data?.message || "Could not update selection.");
     } finally {
@@ -209,15 +239,19 @@ export default function BundleSeatSelection() {
     setError("");
     const sessionId = selectedSessionIds[activeEvent._id] || "";
     try {
-      const res = increment
-        ? await apiClient.post(`/o/${orgSlug}/cart/${activeEvent._id}/items?sessionId=${sessionId}`, {
-            blockId: block.id,
-            seatId: candidate.id,
-            overridePrice: bundle.pricePerSeat,
-            bundleId: bundle._id,
-          })
-        : await apiClient.delete(`/o/${orgSlug}/cart/${activeEvent._id}/seats/${block.id}/${candidate.seatId || candidate.id}?sessionId=${sessionId}`);
-      setActiveCart(res.data.cart);
+      if (increment) {
+        await serverLockSeat({
+          eventId: activeEvent._id, eventSessionId: sessionId, blockId: block.id, seatId: candidate.id,
+          seatName: candidate.seatName || "GA Ticket", sectionName: block.name, category: block.category || null,
+          unitPrice: 0, bundleId: bundle._id,
+        });
+      } else {
+        await serverUnlockSeat({ eventId: activeEvent._id, eventSessionId: sessionId, blockId: block.id, seatId: candidate.seatId || candidate.id });
+      }
+      const cartItems = await fetchCart();
+      setActiveCart({ items: cartItems.filter((item) => String(item.eventId) === String(activeEvent._id) && String(item.bundleId || "") === String(bundleId) && item.itemType !== "bundle") });
+      const mapRes = await apiClient.get(`/o/${orgSlug}/events/${activeEvent._id}/seatmap?sessionId=${sessionId}`);
+      setActiveEventMap(mapRes.data.seatmap);
     } catch (err) {
       setError(err.response?.data?.message || "Could not update General Admission quantity.");
     } finally {
@@ -239,12 +273,31 @@ export default function BundleSeatSelection() {
     setCurrentEventIdx((prev) => Math.max(0, prev - 1));
   };
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (activeCart.items.length !== requiredQty) {
       setError(`Please select exactly ${requiredQty} seats for this event.`);
       return;
     }
-    navigate(`/o/${orgSlug}/checkout/bundle?bundleId=${bundleId}&qty=${requiredQty}`, { state: { selectedSessionIds } });
+    setBusy(true);
+    setError("");
+    try {
+      const res = await apiClient.post(`/o/${orgSlug}/bundles/${bundleId}/cart`, {}, {
+        headers: { "X-Cart-Id": getCartId() },
+      });
+      const finalizedItems = res.data.cart?.items || [];
+      const finalizedBundle = finalizedItems.find(
+        (item) => item.itemType === "bundle" && String(item.bundleId) === String(bundleId)
+      );
+      if (!finalizedBundle) {
+        throw new Error("The bundle could not be finalized in your cart. Please try again.");
+      }
+      setLocalCart(finalizedItems);
+      navigate("/cart");
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not add this bundle to your cart.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (!bundle || loading) {
@@ -492,7 +545,7 @@ export default function BundleSeatSelection() {
                   className="ss-btn ss-btn--primary"
                   style={{ background: "#c99a3c", color: "#14162b" }}
                 >
-                  {busy ? "Processing…" : "Proceed to Payment →"}
+                  {busy ? "Adding to cart…" : "Add bundle to cart →"}
                 </button>
               ) : (
                 <button

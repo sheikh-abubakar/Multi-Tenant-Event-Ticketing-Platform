@@ -136,4 +136,26 @@ const getAllPublicBundles = async (req, res) => {
   }
 };
 
-module.exports = { getAllPublicEvents, getAllOrganizations, getAllPublicBundles };
+const getPublicEventById = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.eventId)
+      .populate("organizationId", "name slug")
+      .populate("venueId", "name city address");
+
+    if (!event) {
+      return res.status(404).json({ message: "Event not found" });
+    }
+
+    return res.json({ event });
+  } catch (error) {
+    console.error("[Public] Error fetching event by ID:", error);
+    return res.status(500).json({ message: "Could not load event details." });
+  }
+};
+
+module.exports = {
+  getAllPublicEvents,
+  getAllOrganizations,
+  getAllPublicBundles,
+  getPublicEventById,
+};

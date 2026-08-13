@@ -1,5 +1,6 @@
 const nodemailer = require("nodemailer");
 const moment = require("moment-timezone");
+const Organization = require("../models/Organization");
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || "smtp.gmail.com",
@@ -100,11 +101,11 @@ const sendBookingConfirmation = async (booking, event, qrCodeUrl, organizationId
     [
       `Confirmation Code: ${booking.confirmationCode}`,
       `Buyer: ${booking.buyerName}`,
-      `Total Paid: Rs. ${booking.totalAmount}`,
+      `Total Paid: $${Number(booking.totalAmount || 0).toFixed(2)}`,
       `Timezone: ${timezone} (UTC${moment.tz(timezone).format("Z")})`,
       ``,
       `Tickets:`,
-      ...booking.items.map((item) => `  - ${item.ticketTypeName} x${item.quantity} (Rs. ${item.lineTotal})`),
+      ...booking.items.map((item) => `  - ${item.ticketTypeName} x${item.quantity} ($${Number(item.lineTotal || 0).toFixed(2)})`),
       ``,
       `View your booking: ${process.env.FRONTEND_URL || "http://localhost:5173"}/o/${organizationId}/bookings/${booking._id}/confirmation`,
     ].join("\n")
@@ -118,7 +119,7 @@ const sendBookingConfirmation = async (booking, event, qrCodeUrl, organizationId
       <tr style="border-bottom: 1px solid #e8e0d0;">
         <td style="padding: 12px 10px; font-size: 14px; color: #1e2030;">${item.ticketTypeName}</td>
         <td style="padding: 12px 10px; text-align: center; font-size: 14px; color: #1e2030; font-weight: bold;">${item.quantity}</td>
-        <td style="padding: 12px 10px; text-align: right; font-size: 14px; color: #1e2030; font-weight: bold;">Rs. ${item.lineTotal}</td>
+        <td style="padding: 12px 10px; text-align: right; font-size: 14px; color: #1e2030; font-weight: bold;">$${Number(item.lineTotal || 0).toFixed(2)}</td>
       </tr>
     `
     )
@@ -175,7 +176,7 @@ const sendBookingConfirmation = async (booking, event, qrCodeUrl, organizationId
         </tr>
         <tr>
           <td style="padding: 6px 0; color: #6b6054; vertical-align: top;"><strong>Total Paid</strong></td>
-          <td style="padding: 6px 0; color: #c99a3c; font-weight: bold; font-size: 16px;">Rs. ${booking.totalAmount}</td>
+          <td style="padding: 6px 0; color: #c99a3c; font-weight: bold; font-size: 16px;">$${Number(booking.totalAmount || 0).toFixed(2)}</td>
         </tr>
       </table>
     </div>
@@ -301,6 +302,53 @@ const sendPaymentReminder = async (booking, event, paymentUrl) => {
   return transporter.sendMail(mailOptions);
 };
 
+// A cart checkout can create several Booking documents but has one Stripe
+// session. This sends one complete order reminder for that session.
+const sendUnifiedPaymentReminder = async (bookings, paymentUrl) => {
+  const primary = bookings[0];
+  if (!primary) return;
+  const money = (amount) => `$${Number(amount || 0).toFixed(2)}`;
+  const groups = new Map();
+  for (const booking of bookings) {
+    const key = booking.isBundleBooking && booking.bundleId ? `bundle:${booking.bundleId}` : `event:${booking._id}`;
+    if (!groups.has(key)) groups.set(key, { title: booking.isBundleBooking ? (booking.bundleName || "Event Bundle") : (booking.eventName || "Event"), bundle: Boolean(booking.isBundleBooking), lines: [], total: 0 });
+    const group = groups.get(key);
+    const seats = (booking.selectedSeats || []).map((seat) => `${seat.sectionName || "Section"} - ${seat.seatName}`).join(", ");
+    const tickets = (booking.items || []).map((item) => `${item.ticketTypeName} x${item.quantity}`).join(", ");
+    group.lines.push({ event: booking.eventName || "Event", detail: seats || tickets || "Tickets selected" });
+    group.total += Number(booking.totalAmount || 0);
+  }
+  const total = bookings.reduce((sum, booking) => sum + Number(booking.totalAmount || 0), 0);
+  const expiry = bookings.reduce((earliest, booking) => !earliest || new Date(booking.expiresAt) < earliest ? new Date(booking.expiresAt) : earliest, null);
+  const summary = [...groups.values()].map((group) => `<div style="padding:12px 0;border-bottom:1px solid #e8e0d0"><p style="margin:0 0 5px;font-size:14px;font-weight:800">${group.bundle ? "Bundle: " : "Event: "}${group.title}</p>${group.lines.map((line) => `<p style="margin:3px 0;font-size:13px;color:#5d5668">${group.bundle ? `${line.event}: ` : ""}${line.detail}</p>`).join("")}<p style="margin:6px 0 0;text-align:right;font-weight:800">${money(group.total)}</p></div>`).join("");
+  const contentHtml = `<p style="font-size:16px;margin:0 0 16px">Hi <strong>${primary.buyerName}</strong>,</p><p style="font-size:15px;margin:0 0 24px;color:#3d3848;line-height:1.6">Your cart checkout is waiting for payment. Complete payment before your selected tickets are released to other buyers.</p><div style="background:#f7f2e7;padding:20px;border-radius:10px;border-left:4px solid #c99a3c;margin:24px 0"><h3 style="margin:0 0 12px;color:#15182e;font-size:16px">Order Summary</h3>${summary}<p style="margin:14px 0 0;text-align:right;font-size:15px"><strong>Order total:</strong> ${money(total)}</p></div><div style="text-align:center;margin:32px 0"><a href="${paymentUrl}" style="background:#c99a3c;color:#1e1a0c;padding:14px 32px;border-radius:6px;text-decoration:none;font-weight:800;display:inline-block;font-size:16px">Complete Payment</a></div><p style="color:#8a8070;font-size:13px;margin-top:30px;border-top:1px solid #e8e0d0;padding-top:16px;line-height:1.5">${expiry ? `This payment link and ticket hold expire at <strong>${expiry.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</strong>. ` : ""}If you've already paid, please disregard this email.</p>`;
+  return transporter.sendMail({ from: process.env.EMAIL_FROM || '"StagePass" <noreply@stagepass.com>', to: primary.buyerEmail, subject: `Complete your StagePass payment (${bookings.length} booking${bookings.length === 1 ? "" : "s"})`, html: renderEmailTemplate("Your tickets are waiting", "Payment Reminder", contentHtml) });
+};
+
+const sendUnifiedBookingConfirmation = async (bookings) => {
+  const primary = bookings[0];
+  if (!primary) return;
+  const money = (amount) => `$${Number(amount || 0).toFixed(2)}`;
+  const groups = new Map();
+  for (const booking of bookings) {
+    const key = booking.isBundleBooking && booking.bundleId ? `bundle:${booking.bundleId}` : `event:${booking._id}`;
+    if (!groups.has(key)) groups.set(key, { title: booking.isBundleBooking ? (booking.bundleName || "Event Bundle") : (booking.eventName || "Event"), bundle: Boolean(booking.isBundleBooking), lines: [], total: 0 });
+    const group = groups.get(key);
+    const seats = (booking.selectedSeats || []).map((seat) => `${seat.sectionName || "Section"} - ${seat.seatName}`).join(", ");
+    const tickets = (booking.items || []).map((item) => `${item.ticketTypeName} x${item.quantity}`).join(", ");
+    group.lines.push({ event: booking.eventName || "Event", detail: seats || tickets || "Tickets confirmed", code: booking.confirmationCode });
+    group.total += Number(booking.totalAmount || 0);
+  }
+  const total = bookings.reduce((sum, booking) => sum + Number(booking.totalAmount || 0), 0);
+  const summary = [...groups.values()].map((group) => `<div style="padding:12px 0;border-bottom:1px solid #e8e0d0"><p style="margin:0 0 5px;font-size:14px;font-weight:800">${group.bundle ? "Bundle: " : "Event: "}${group.title}</p>${group.lines.map((line) => `<p style="margin:3px 0;font-size:13px;color:#5d5668">${group.bundle ? `${line.event}: ` : ""}${line.detail}<br/><strong>Confirmation: ${line.code}</strong></p>`).join("")}<p style="margin:6px 0 0;text-align:right;font-weight:800">${money(group.total)}</p></div>`).join("");
+  const organization = await Organization.findById(primary.organizationId).select("slug").lean();
+  const confirmationUrl = organization?.slug
+    ? `${process.env.FRONTEND_URL || "http://localhost:5173"}/o/${organization.slug}/bookings/${primary._id}/confirmation`
+    : `${process.env.FRONTEND_URL || "http://localhost:5173"}/my/bookings`;
+  const contentHtml = `<p style="font-size:16px;margin:0 0 16px">Hi <strong>${primary.buyerName}</strong>,</p><p style="font-size:15px;margin:0 0 24px;color:#3d3848;line-height:1.6">Your StagePass checkout is confirmed. Keep the confirmation codes below for entry.</p><div style="background:#f7f2e7;padding:20px;border-radius:10px;border-left:4px solid #c99a3c;margin:24px 0"><h3 style="margin:0 0 12px;color:#15182e;font-size:16px">Confirmed Order</h3>${summary}<p style="margin:14px 0 0;text-align:right;font-size:15px"><strong>Total paid:</strong> ${money(total)}</p></div><div style="text-align:center;margin:32px 0"><a href="${confirmationUrl}" style="background:#c99a3c;color:#1e1a0c;padding:14px 32px;border-radius:6px;text-decoration:none;font-weight:800;display:inline-block;font-size:16px">View Tickets and QR Codes</a></div>`;
+  return transporter.sendMail({ from: process.env.EMAIL_FROM || '"StagePass" <noreply@stagepass.com>', to: primary.buyerEmail, subject: `Booking Confirmed - ${bookings.length} booking${bookings.length === 1 ? "" : "s"}`, html: renderEmailTemplate("Your StagePass booking is confirmed", "Booking Confirmation", contentHtml) });
+};
+
 const sendTeamInvitation = async ({ email, orgName, orgSlug, inviterName, invitationToken }) => {
   console.log("📬 [Email Service] Sending Team Invitation to email:", email);
   const acceptUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/o/${orgSlug}/accept-invite?token=${invitationToken}`;
@@ -380,4 +428,4 @@ const sendPasswordResetOTP = async (email, otpCode) => {
   return transporter.sendMail(mailOptions);
 };
 
-module.exports = { sendBookingConfirmation, sendPaymentReminder, sendTeamInvitation, sendPasswordResetOTP };
+module.exports = { sendBookingConfirmation, sendPaymentReminder, sendUnifiedPaymentReminder, sendUnifiedBookingConfirmation, sendTeamInvitation, sendPasswordResetOTP };

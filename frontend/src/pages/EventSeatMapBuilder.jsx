@@ -6,7 +6,7 @@ import SeatMapBuilder from "../components/seatmap/SeatMapBuilder";
 export default function EventSeatMapBuilder() {
   const { orgSlug, eventId } = useParams();
   const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get("sessionId") || "";
+  const sessionId = searchParams.get("EventSeatMapSessionID") || searchParams.get("sessionId") || "";
 
   const [map, setMap] = useState(null);
   const [event, setEvent] = useState(null);

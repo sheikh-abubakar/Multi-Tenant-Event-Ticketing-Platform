@@ -4,6 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import GoogleSignInButton from "../components/GoogleSignInButton";
 import AnimatedEyeIcon from "../components/AnimatedEyeIcon";
 
+import { claimGuestCart } from "../utils/cart";
+
 const Signup = () => {
   const { signup, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
@@ -24,6 +26,7 @@ const Signup = () => {
     setError(""); setLoading(true);
     try {
       const result = await loginWithGoogle(credential);
+      await claimGuestCart();
       navigate(result.user.platformRole === "super_admin" ? "/platform-admin" : result.user.requiresPasswordSetup ? "/set-password" : "/browse");
     }
     catch (err) { setError(err.response?.data?.message || "Google sign-up failed. Please try again."); }
@@ -36,6 +39,7 @@ const Signup = () => {
     setLoading(true);
     try {
       await signup(form);
+      await claimGuestCart();
       navigate("/browse");
     } catch (err) {
       setError(err.response?.data?.message || "Something went wrong. Try again.");

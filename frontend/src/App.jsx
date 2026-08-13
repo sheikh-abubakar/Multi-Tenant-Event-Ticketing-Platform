@@ -38,7 +38,6 @@ const MyReferrals = lazy(() => import("./pages/MyReferrals"));
 const VenueSeatMapBuilder = lazy(() => import("./pages/VenueSeatMapBuilder"));
 const EventSeatMapBuilder = lazy(() => import("./pages/EventSeatMapBuilder"));
 const SeatSelection = lazy(() => import("./pages/SeatSelection"));
-const GlobalCart = lazy(() => import("./pages/GlobalCart"));
 const UserProfile = lazy(() => import("./pages/UserProfile"));
 const SetPassword = lazy(() => import("./pages/SetPassword"));
 const PlatformAdminOverview = lazy(() => import("./pages/PlatformAdminOverview"));
@@ -114,7 +113,7 @@ function App() {
           }
         />
         <Route path="/browse" element={<Home />} />
-        <Route path="/cart" element={<ProtectedRoute><GlobalCart /></ProtectedRoute>} />
+        <Route path="/cart" element={<CartPage />} />
         
         {/* Auth routes */}
         <Route path="/signup" element={<Signup />} />
@@ -267,8 +266,7 @@ function App() {
         <Route path="/o/:orgSlug/accept-invite" element={<AcceptInvite />} />
         
         {/* Cart & Checkout */}
-        <Route path="/o/:orgSlug/cart/:eventId" element={<CartPage />} />
-        <Route path="/o/:orgSlug/checkout/:eventId" element={<CheckoutPage />} />
+        <Route path="/o/:orgSlug/cart" element={<Navigate to="/cart" replace />} />
         
         {/* Booking confirmation */}
         <Route path="/o/:orgSlug/bookings/:bookingId/confirmation" element={<BookingConfirmation />} />

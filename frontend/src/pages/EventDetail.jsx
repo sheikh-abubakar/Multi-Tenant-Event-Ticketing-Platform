@@ -272,7 +272,7 @@ const EventDetail = () => {
     </div>
   );
 
-  const selectedSessionId = searchParams.get("sessionId") || (sessions[0]?._id) || "";
+  const selectedSessionId = searchParams.get("EventSeatMapSessionID") || searchParams.get("sessionId") || (sessions[0]?._id) || "";
   const activeSession = sessions.find(s => String(s._id) === String(selectedSessionId)) || sessions[0] || event;
   const { full: dateStr, time } = formatEventDate(activeSession.dateTime || event.dateTime);
 
@@ -317,7 +317,7 @@ const EventDetail = () => {
               </label>
               <select
                 value={selectedSessionId}
-                onChange={(e) => navigate(`/o/${orgSlug}/events/${eventId}?sessionId=${e.target.value}`)}
+                onChange={(e) => navigate(`/o/${orgSlug}/events/${eventId}?EventSeatMapSessionID=${e.target.value}`)}
                 style={{
                   width: "100%",
                   padding: "10px 14px",
@@ -443,7 +443,7 @@ const EventDetail = () => {
                 </label>
                 <select
                   value={selectedSessionId}
-                  onChange={(e) => navigate(`/o/${orgSlug}/events/${eventId}?sessionId=${e.target.value}`)}
+                  onChange={(e) => navigate(`/o/${orgSlug}/events/${eventId}?EventSeatMapSessionID=${e.target.value}`)}
                   style={{
                     width: "100%",
                     padding: "10px 14px",
@@ -475,10 +475,10 @@ const EventDetail = () => {
             {isBookingOpen ? (
               <>
                 <Link
-                  to={`/o/${orgSlug}/events/${eventId}/seats?sessionId=${selectedSessionId}`}
+                  to={`/o/${orgSlug}/events/${eventId}/seats?EventSeatMapSessionID=${selectedSessionId}`}
                   className="ed-sm-cta"
-                  onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${selectedSessionId}`, 3_000)}
-                  onFocus={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${selectedSessionId}`, 3_000)}
+                  onMouseEnter={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?EventSeatMapSessionID=${selectedSessionId}`, 3_000)}
+                  onFocus={() => prefetch(`/o/${orgSlug}/events/${eventId}/seatmap?EventSeatMapSessionID=${selectedSessionId}`, 3_000)}
                 >
                   <span className="ed-sm-cta-icon">🗺️</span>
                   Choose Your Seats
@@ -725,7 +725,7 @@ const EventDetail = () => {
             )}
 
             {event.ticketTypes?.length > 0 && (
-              <button className="ed-go-cart-btn" onClick={() => navigate(`/o/${orgSlug}/cart/${eventId}`)}>
+              <button className="ed-go-cart-btn" onClick={() => navigate("/cart")}>
                 Proceed to Cart →
               </button>
             )}

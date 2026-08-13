@@ -6,6 +6,7 @@ const router = express.Router();
 
 // Public endpoints — no authentication required
 router.get("/events", publicController.getAllPublicEvents);
+router.get("/events/public/:eventId", publicController.getPublicEventById);
 router.get("/bundles", publicController.getAllPublicBundles);
 router.get("/organizations/public", publicController.getAllOrganizations);
 

@@ -495,7 +495,7 @@ export default function Events() {
                     <div className="flex gap-2 items-center">
                       <button
                         onClick={() =>
-                          navigate(`/o/${orgSlug}/manage/events/${item._id}/seatmap?sessionId=${currentSessionId}`)
+                          navigate(`/o/${orgSlug}/manage/events/${item._id}/seatmap?EventSeatMapSessionID=${currentSessionId}`)
                         }
                         className="rounded-md bg-gold px-3 py-2 text-sm font-bold text-ink shadow-sm"
                       >

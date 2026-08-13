@@ -60,30 +60,30 @@ const getCart = async (req, res) => {
       req,
       req.organizationId,
       req.params.eventId,
-      req.query.sessionId
+      req.query.EventSeatMapSessionID || req.query.sessionId
     );
     return res.json(result);
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message, isProtected: error.isProtected });
   }
-};
-
-const addItem = async (req, res) => {
+ };
+ 
+ const addItem = async (req, res) => {
   try {
     await verifyAccessForEvent(req, req.params.eventId, req.organizationId);
     const cart = await cartService.addItem(
       req,
       req.organizationId,
       req.params.eventId,
-      { ...req.body, sessionId: req.query.sessionId || req.body.sessionId }
+      { ...req.body, sessionId: req.query.EventSeatMapSessionID || req.query.sessionId || req.body.EventSeatMapSessionID || req.body.sessionId }
     );
     return res.status(200).json({ cart });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message, isProtected: error.isProtected });
   }
-};
-
-const updateItem = async (req, res) => {
+ };
+ 
+ const updateItem = async (req, res) => {
   try {
     await verifyAccessForEvent(req, req.params.eventId, req.organizationId);
     const cart = await cartService.updateItem(
@@ -96,11 +96,11 @@ const updateItem = async (req, res) => {
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message, isProtected: error.isProtected });
   }
-};
-
-const removeItem = async (req, res) => {
+ };
+ 
+ const removeItem = async (req, res) => {
   try {
-    const cart = cartService.removeItem(
+    const cart = await cartService.removeItem(
       req,
       req.organizationId,
       req.params.eventId,
@@ -110,25 +110,25 @@ const removeItem = async (req, res) => {
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
-};
-
-const clearCart = async (req, res) => {
+ };
+ 
+ const clearCart = async (req, res) => {
   try {
-    const cart = cartService.clearCart(
+    const cart = await cartService.clearCart(
       req,
       req.organizationId,
       req.params.eventId,
-      req.query.sessionId || req.body.sessionId
+      req.query.EventSeatMapSessionID || req.query.sessionId || req.body.EventSeatMapSessionID || req.body.sessionId
     );
     return res.status(200).json({ cart });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
-};
-
-const removeSeat = async (req, res) => {
-  try { const cart = cartService.removeSeat(req, req.organizationId, req.params.eventId, req.params.blockId, req.params.seatId, req.query.sessionId); return res.json({ cart }); }
-  catch (error) { return res.status(error.statusCode || 500).json({ message: error.message }); }
-};
-
-module.exports = { getCart, addItem, updateItem, removeItem, removeSeat, clearCart };
+ };
+ 
+ const removeSeat = async (req, res) => {
+   try { const cart = await cartService.removeSeat(req, req.organizationId, req.params.eventId, req.params.blockId, req.params.seatId, req.query.EventSeatMapSessionID || req.query.sessionId); return res.json({ cart }); }
+   catch (error) { return res.status(error.statusCode || 500).json({ message: error.message }); }
+ };
+ 
+ module.exports = { getCart, addItem, updateItem, removeItem, removeSeat, clearCart };

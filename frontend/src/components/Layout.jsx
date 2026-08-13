@@ -21,6 +21,24 @@ const Layout = ({ children }) => {
   // ── User profile dropdown state ────────────────────────────────
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef(null);
+  const [cartCount, setCartCount] = useState(0);
+
+  const updateCartCount = () => {
+    try {
+      const raw = localStorage.getItem("stagepass_cart");
+      const items = raw ? JSON.parse(raw) : [];
+      const count = items.reduce((sum, item) => sum + (item.quantity || 1), 0);
+      setCartCount(count);
+    } catch (e) {
+      setCartCount(0);
+    }
+  };
+
+  useEffect(() => {
+    updateCartCount();
+    window.addEventListener("cart-updated", updateCartCount);
+    return () => window.removeEventListener("cart-updated", updateCartCount);
+  }, []);
 
   // Close profile dropdown on outside click
   useEffect(() => {
@@ -187,9 +205,20 @@ const Layout = ({ children }) => {
             {user ? (
               <>
                 {/* Desktop links — hidden on mobile */}
-                <Link to="/browse" className="nav-login nav-desktop-only">My Organizations</Link>
-                <Link to="/cart" className="nav-personal-link nav-desktop-only" aria-label="View cart">
-                  <ShoppingCart size={15} aria-hidden="true" /> <span>Cart</span>
+                 <Link to="/browse" className="nav-login nav-desktop-only">My Organizations</Link>
+                <Link to="/cart" className="nav-personal-link nav-desktop-only" aria-label="View cart" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <ShoppingCart size={15} aria-hidden="true" /> 
+                  <span>Cart</span>
+                  {cartCount > 0 && (
+                    <span style={{
+                      background: "var(--gold)",
+                      color: "var(--ink)",
+                      fontWeight: "bold",
+                      fontSize: "11px",
+                      padding: "2px 6px",
+                      borderRadius: "10px",
+                    }}>{cartCount}</span>
+                  )}
                 </Link>
                 <Link to="/my/dashboard" className="nav-personal-link nav-desktop-only" aria-label="Open wallet">
                   <WalletCards size={15} aria-hidden="true" /> <span>Wallet</span>
@@ -223,8 +252,20 @@ const Layout = ({ children }) => {
                       <Link to="/browse" className="nav-dropdown-item" onClick={() => setProfileOpen(false)}>
                         <Building2 size={15} /> My Organizations
                       </Link>
-                      <Link to="/cart" className="nav-dropdown-item" onClick={() => setProfileOpen(false)}>
-                        <ShoppingCart size={15} /> Cart
+                      <Link to="/cart" className="nav-dropdown-item" onClick={() => setProfileOpen(false)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <ShoppingCart size={15} /> <span>Cart</span>
+                        </div>
+                        {cartCount > 0 && (
+                          <span style={{
+                            background: "var(--gold)",
+                            color: "var(--ink)",
+                            fontWeight: "bold",
+                            fontSize: "11px",
+                            padding: "2px 6px",
+                            borderRadius: "10px",
+                          }}>{cartCount}</span>
+                        )}
                       </Link>
                       <Link to="/my/dashboard" className="nav-dropdown-item" onClick={() => setProfileOpen(false)}>
                         <WalletCards size={15} /> Wallet
@@ -241,6 +282,19 @@ const Layout = ({ children }) => {
               </>
             ) : (
               <>
+                <Link to="/cart" className="nav-personal-link" aria-label="View cart" style={{ display: "flex", alignItems: "center", gap: 6, marginRight: 16 }}>
+                  <ShoppingCart size={15} aria-hidden="true" />
+                  {cartCount > 0 && (
+                    <span style={{
+                      background: "var(--gold)",
+                      color: "var(--ink)",
+                      fontWeight: "bold",
+                      fontSize: "11px",
+                      padding: "2px 6px",
+                      borderRadius: "10px",
+                    }}>{cartCount}</span>
+                  )}
+                </Link>
                 <Link to="/login" className="nav-login">Log in</Link>
                 <Link to="/signup" className="nav-signup">Sign up <span>→</span></Link>
               </>

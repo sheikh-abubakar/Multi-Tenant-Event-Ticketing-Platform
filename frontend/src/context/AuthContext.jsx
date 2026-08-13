@@ -1,5 +1,6 @@
 import { createContext, useContext, useState } from "react";
 import apiClient from "../api/client";
+import { resetCartForNewGuest } from "../utils/cart";
 
 /**
  * AuthContext holds the GLOBAL identity — token + user — exactly
@@ -49,6 +50,7 @@ export const AuthProvider = ({ children }) => {
     });
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    resetCartForNewGuest();
     sessionStorage.removeItem("unlockedCodes");
     setToken(null);
     setUser(null);

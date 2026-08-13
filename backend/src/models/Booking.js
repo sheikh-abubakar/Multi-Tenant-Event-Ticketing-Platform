@@ -179,6 +179,12 @@ const bookingSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Temporary DB lease used by the scheduler so overlapping sweep ticks
+    // cannot send the same checkout reminder twice.
+    reminderSendingAt: {
+      type: Date,
+      default: null,
+    },
     // ─── Refund / Wallet fields ───────────────────────────────────────
     refundInfo: {
       method: {

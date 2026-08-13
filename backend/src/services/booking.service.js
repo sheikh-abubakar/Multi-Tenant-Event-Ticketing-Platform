@@ -2,10 +2,11 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const QRCode = require("qrcode");
 const Event = require("../models/Event");
+const EventBundle = require("../models/EventBundle");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
 const stripe = require("../config/stripe");
-const { sendBookingConfirmation } = require("../config/email");
+const { sendUnifiedBookingConfirmation } = require("../config/email");
 const walletService = require("./wallet.service");
 const referralService = require("./referral.service");
 const couponService = require("./coupon.service");
@@ -13,9 +14,7 @@ const couponService = require("./coupon.service");
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
-// How long a pending booking holds its tickets before the scheduler
-// releases them back to inventory. See services/bookingScheduler.js.
-const HOLD_DURATION_MS = 90 * 1000; // 90 seconds (1:30)
+const HOLD_DURATION_MS = 48 * 60 * 60 * 1000; // 48 hours (2 days)
 
 const generateConfirmationCode = () => {
   const randomPart = crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -728,6 +727,11 @@ const confirmBooking = async (stripeSessionId) => {
   }
 
   const confirmedBookings = [];
+  const newlyConfirmedBookings = [];
+  // A cart may create several bookings from one Stripe session. A coupon is a
+  // single redemption per organization/code in that checkout, never once per
+  // generated booking record.
+  const consumedCouponKeys = new Set();
 
   for (const booking of bookings) {
     if (booking.status === "confirmed" && booking.paymentStatus === "paid") {
@@ -879,26 +883,32 @@ const confirmBooking = async (stripeSessionId) => {
       }
     }
 
-    // Increment coupon usage count if coupon was used
-    if (booking.couponCode && (!booking.isBundleBooking || String(booking._id) === String(bookings[0]._id))) {
+    // Increment coupon usage once per coupon redemption. This also covers a
+    // bundle whose booking records are not the first entries in the cart.
+    const couponUsageKey = booking.couponCode
+      ? `${String(booking.organizationId)}:${String(booking.couponCode).toUpperCase()}`
+      : null;
+    if (couponUsageKey && !consumedCouponKeys.has(couponUsageKey)) {
       try {
         await couponService.incrementCouponUses(booking.organizationId, booking.couponCode);
+        consumedCouponKeys.add(couponUsageKey);
       } catch (couponErr) {
         console.error("Incrementing coupon uses failed:", couponErr.message);
       }
     }
 
-    // Send confirmation email in background
-    try {
-      const event = await Event.findById(booking.eventId).populate("venueId", "name address city");
-      if (event) {
-        await sendBookingConfirmation(booking, event, qrCodeUrl, booking.organizationId);
-      }
-    } catch (emailError) {
-      console.error("Confirmation email failed:", emailError.message);
-    }
-
     confirmedBookings.push(booking);
+    newlyConfirmedBookings.push(booking);
+  }
+
+  // One Stripe checkout produces one buyer-facing receipt, even when its
+  // internal fulfillment consists of several events or bundle components.
+  if (newlyConfirmedBookings.length) {
+    try {
+      await sendUnifiedBookingConfirmation(newlyConfirmedBookings);
+    } catch (emailError) {
+      console.error("Unified confirmation email failed:", emailError.message);
+    }
   }
 
   // Return the first booking to satisfy controller redirect / page title info
@@ -973,7 +983,7 @@ const expireBookingIfStillPending = async (booking) => {
 };
 
 const getBooking = async (bookingId, organizationId) => {
-  const booking = await Booking.findOne({ _id: bookingId, organizationId }).populate("eventId", "name dateTime bannerImageUrl venueId");
+  const booking = await Booking.findById(bookingId).populate("eventId", "name dateTime bannerImageUrl venueId");
   if (!booking) {
     const error = new Error("Booking not found");
     error.statusCode = 404;
@@ -1015,7 +1025,7 @@ const getEventBookings = async (eventId, organizationId) => {
 };
 
 const getBundleBookings = async (bundleBookingId, organizationId) => {
-  return Booking.find({ bundleBookingId, organizationId }).populate("eventId", "name dateTime bannerImageUrl venueId");
+  return Booking.find({ bundleBookingId }).populate("eventId", "name dateTime bannerImageUrl venueId");
 };
 
 const handleStripeWebhook = async (event) => {
@@ -1482,6 +1492,370 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
   }
 };
 
+const createUnifiedCheckout = async (organizationId, orgSlug, data) => {
+  const { buyerName, buyerEmail, items, useWallet, walletDeduction, refCode, couponCode, rewardsToApply, userId, cartId } = data;
+
+  if (!buyerName || !buyerEmail || !Array.isArray(items) || items.length === 0) {
+    const error = new Error("buyerName, buyerEmail, and non-empty items array are required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedEmail = buyerEmail.trim().toLowerCase();
+  const cleanRefCode = refCode ? String(refCode).trim() : null;
+  const requestedRewardsCount = rewardsToApply ? parseInt(rewardsToApply, 10) : 0;
+
+  const dbSession = await mongoose.startSession();
+  try {
+    dbSession.startTransaction();
+
+    const bundleBookingId = new mongoose.Types.ObjectId();
+    const createdBookings = [];
+    let overallTotal = 0;
+
+    // Expand each bundle cart item using the server's bundle configuration.
+    // The browser never decides a bundle's final price or included seats.
+    const checkoutItems = [];
+    for (const item of items) {
+      if (item.itemType !== "bundle") {
+        checkoutItems.push(item);
+        continue;
+      }
+
+      const bundle = await EventBundle.findById(item.bundleId).session(dbSession);
+      if (!bundle) throw new Error("A bundle in your cart is no longer available.");
+      if (bundle.bookingOpeningDateTime && new Date(bundle.bookingOpeningDateTime) > new Date()) {
+        throw new Error(`Bookings for bundle \"${bundle.name}\" are not open yet.`);
+      }
+
+      const selections = Array.isArray(item.bundleSelections) ? item.bundleSelections : [];
+      const eventIds = bundle.eventIds.map(String);
+      const quantities = eventIds.map((eventId) => selections.filter((selection) => String(selection.eventId) === eventId).length);
+      const quantity = quantities[0];
+      if (!quantity || quantities.some((count) => count !== quantity)) {
+        throw new Error(`Bundle \"${bundle.name}\" must include the same number of seats for every event.`);
+      }
+
+      const perSelectionPrice = Number(bundle.pricePerSeat) / selections.length;
+      selections.forEach((selection) => checkoutItems.push({
+        ...selection,
+        quantity: 1,
+        unitPrice: perSelectionPrice,
+        bundleId: bundle._id.toString(),
+        bundleName: bundle.name,
+      }));
+    }
+
+    // Group items by event, session and bundle so one event can be bought
+    // individually and through a bundle in the same unified payment.
+    const itemsByEvent = {};
+    for (const item of checkoutItems) {
+      const groupKey = `${item.eventId}:${item.eventSessionId || ""}:${item.bundleId || "individual"}`;
+      if (!itemsByEvent[groupKey]) {
+        itemsByEvent[groupKey] = { eventId: item.eventId, items: [] };
+      }
+      itemsByEvent[groupKey].items.push(item);
+    }
+
+    // Process each event's items
+    for (const { eventId, items: eventItems } of Object.values(itemsByEvent)) {
+      const event = await Event.findById(eventId).session(dbSession);
+      if (!event) {
+        throw new Error(`Event not found: ${eventId}`);
+      }
+
+      const bookingItems = [];
+      const selectedSeats = [];
+      let eventTotal = 0;
+
+      for (const item of eventItems) {
+        if (item.blockId && item.seatId) {
+          // Seatmap item
+          let targetSeatMap = event.selectedSeatMap;
+          let sessionDoc = null;
+          if (item.eventSessionId && event.sessions && event.sessions.length > 0) {
+            sessionDoc = event.sessions.find(s => String(s._id) === String(item.eventSessionId));
+            if (sessionDoc) {
+              targetSeatMap = sessionDoc.selectedSeatMap;
+            }
+          }
+
+          if (!targetSeatMap) {
+            throw new Error(`Seat map not configured for event ${event.name}`);
+          }
+
+          const block = targetSeatMap.blocks?.find(b => b.id === item.blockId);
+          const seat = block?.seats?.find(s => s.id === item.seatId);
+
+          if (!block || !seat) {
+            throw new Error(`Seat ${item.seatName} not found in event ${event.name}`);
+          }
+
+          // Verify or lock the seat
+          if (seat.status !== "checkout-held") {
+            seat.status = "checkout-held";
+            if (sessionDoc) {
+              sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+              event.markModified("sessions");
+            } else {
+              event.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+              event.markModified("selectedSeatMap");
+            }
+            await event.save({ session: dbSession });
+          }
+
+          selectedSeats.push({
+            blockId: block.id,
+            seatId: seat.id,
+            seatName: seat.seatName,
+            sectionName: block.name,
+            category: block.category || null,
+            unitPrice: item.unitPrice,
+          });
+
+          bookingItems.push({
+            ticketTypeName: `${block.name} — ${seat.seatName}`,
+            quantity: 1,
+            unitPrice: item.unitPrice,
+            lineTotal: item.unitPrice,
+          });
+
+          eventTotal += item.unitPrice;
+        } else {
+          // Regular ticket type item
+          const ticketType = event.ticketTypes[item.ticketTypeIndex];
+          if (!ticketType) {
+            throw new Error(`Invalid ticket type index ${item.ticketTypeIndex} for event ${event.name}`);
+          }
+
+          const remaining = Number(ticketType.quantityTotal) - Number(ticketType.quantityBooked || 0);
+          if (item.quantity > remaining) {
+            throw new Error(`Not enough tickets left for ${ticketType.name} in event ${event.name}`);
+          }
+
+          ticketType.quantityBooked = Number(ticketType.quantityBooked || 0) + item.quantity;
+          event.markModified("ticketTypes");
+          await event.save({ session: dbSession });
+
+          bookingItems.push({
+            ticketTypeName: ticketType.name,
+            ticketTypeIndex: item.ticketTypeIndex,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            lineTotal: item.unitPrice * item.quantity,
+          });
+
+          eventTotal += item.unitPrice * item.quantity;
+        }
+      }
+
+      overallTotal += eventTotal;
+
+      // Create Booking record
+      const confirmationCode = generateConfirmationCode();
+      const [booking] = await Booking.create(
+        [
+          {
+            organizationId: event.organizationId,
+            eventId,
+            sessionId: eventItems[0].eventSessionId || null,
+            eventName: event.name,
+            eventDateTime: event.dateTime,
+            buyerName: buyerName.trim(),
+            buyerEmail: normalizedEmail,
+            items: bookingItems,
+            selectedSeats,
+            totalAmount: eventTotal,
+            originalAmount: eventTotal,
+            walletDeduction: 0,
+            referredByCode: cleanRefCode,
+            referralRewardsUsedCount: 0,
+            discountAmount: 0,
+            couponCode: null,
+            couponDiscountAmount: 0,
+            userId: userId || null,
+            currency: "USD",
+            status: "pending",
+            paymentStatus: "pending",
+            confirmationCode,
+            isBundleBooking: Boolean(eventItems[0].bundleId),
+            bundleBookingId,
+            bundleId: eventItems[0].bundleId || null,
+            bundleName: eventItems[0].bundleName || null,
+            expiresAt: new Date(Date.now() + HOLD_DURATION_MS),
+          },
+        ],
+        { session: dbSession }
+      );
+      createdBookings.push(booking);
+    }
+
+    // Coupons are scoped per standalone event or per whole bundle. Recalculate
+    // from trusted bookings, never from browser-provided prices or discounts.
+    const couponPlan = await couponService.calculateCartCouponDiscounts(
+      createdBookings.map((booking) => ({
+        key: String(booking._id),
+        organizationId: booking.organizationId,
+        eventId: booking.eventId,
+        bundleId: booking.isBundleBooking ? booking.bundleId : null,
+        amount: booking.originalAmount,
+      })),
+      couponCode,
+    );
+    if (couponCode && !couponPlan.appliedCount) {
+      const error = new Error("This coupon is not active or applicable to any item in your cart.");
+      error.statusCode = 400;
+      throw error;
+    }
+    const discountRes = await calculateDiscounts(organizationId, createdBookings[0].eventId, overallTotal - couponPlan.totalDiscount, {
+      couponCode: null,
+      rewardsToApply,
+      userId,
+    });
+
+    const totalDiscount = couponPlan.totalDiscount + discountRes.referralDiscountAmount;
+    const discountedSubtotal = Math.max(0, overallTotal - couponPlan.totalDiscount);
+    const walletAmount = useWallet ? Math.min(Number(walletDeduction || 0), Math.max(0, discountedSubtotal - discountRes.referralDiscountAmount)) : 0;
+    const finalAmount = Math.max(0, discountedSubtotal - walletAmount - discountRes.referralDiscountAmount);
+
+    // Coupons stay on their eligible booking only; rewards/wallet share across
+    // the remaining discounted subtotal.
+    const sharedRatio = discountedSubtotal ? finalAmount / discountedSubtotal : 1;
+    for (const booking of createdBookings) {
+      const couponDiscountAmount = couponPlan.discountsByKey[String(booking._id)] || 0;
+      const couponAdjustedAmount = Math.max(0, booking.originalAmount - couponDiscountAmount);
+      booking.totalAmount = Math.max(0, Math.round(couponAdjustedAmount * sharedRatio * 100) / 100);
+      booking.walletDeduction = discountedSubtotal ? Math.max(0, Math.round(couponAdjustedAmount * (walletAmount / discountedSubtotal) * 100) / 100) : 0;
+      booking.discountAmount = discountedSubtotal ? Math.max(0, Math.round(couponAdjustedAmount * (discountRes.referralDiscountAmount / discountedSubtotal) * 100) / 100) : 0;
+      booking.couponCode = couponPlan.codesByKey[String(booking._id)] || null;
+      booking.couponDiscountAmount = couponDiscountAmount;
+      booking.referralRewardsUsedCount = discountedSubtotal ? Math.round(discountRes.referralRewardsUsedCount * (couponAdjustedAmount / discountedSubtotal)) : 0;
+
+      if (walletAmount > 0) {
+        booking.walletDeductionPending = booking.walletDeduction;
+      }
+      await booking.save({ session: dbSession });
+    }
+
+    if (finalAmount === 0) {
+      // Free transaction success
+      for (const booking of createdBookings) {
+        booking.status = "confirmed";
+        booking.paymentStatus = "paid";
+
+        const qrData = JSON.stringify({
+          bookingId: booking._id.toString(),
+          confirmationCode: booking.confirmationCode,
+          eventId: booking.eventId.toString(),
+          buyerEmail: booking.buyerEmail,
+        });
+        try {
+          booking.qrCodeUrl = await QRCode.toDataURL(qrData);
+        } catch (qrError) {
+          console.error("QR Code generation failed:", qrError.message);
+        }
+
+        if (booking.walletDeduction > 0) {
+          const targetUserId = userId || (await User.findOne({ email: booking.buyerEmail }).session(dbSession))?._id;
+          if (targetUserId) {
+            await walletService.debit(
+              targetUserId,
+              booking.walletDeduction,
+              `Wallet payment for ${booking.confirmationCode}`,
+              { type: "purchase", bookingId: booking._id, session: dbSession }
+            );
+          }
+          booking.walletDeductionPending = 0;
+        }
+
+        await booking.save({ session: dbSession });
+
+        try {
+          await referralService.processBookingReferral(booking);
+        } catch (refErr) {
+          console.error("Referral reward processing failed:", refErr.message);
+        }
+
+        if (booking.referralRewardsUsedCount > 0) {
+          try {
+            const consumerUserId = userId || (await User.findOne({ email: booking.buyerEmail }).session(dbSession))?._id;
+            if (consumerUserId) {
+              await referralService.consumeReferralRewards(consumerUserId, booking.referralRewardsUsedCount, booking._id);
+            }
+          } catch (refErr) {
+            console.error("Referral rewards consumption failed:", refErr.message);
+          }
+        }
+      }
+
+      await dbSession.commitTransaction();
+      return {
+        bundleBookingId,
+        success: true,
+        confirmationUrl: `${FRONTEND_URL}/o/${orgSlug}/bookings/${createdBookings[0]._id}/confirmation`,
+      };
+    }
+
+    // Prepare line items for Stripe Checkout
+    const stripeLineItems = [];
+    for (const booking of createdBookings) {
+      for (const item of booking.items) {
+        stripeLineItems.push({
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `${booking.eventName} — ${item.ticketTypeName}`,
+            },
+            unit_amount: Math.max(1, Math.round(item.unitPrice * 100 * (booking.originalAmount ? booking.totalAmount / booking.originalAmount : 1))),
+          },
+          quantity: item.quantity,
+        });
+      }
+    }
+
+    // Create Stripe Session
+    const stripeSession = await stripe.checkout.sessions.create(
+      {
+        payment_method_types: ["card"],
+        mode: "payment",
+        customer_email: normalizedEmail,
+        client_reference_id: createdBookings[0]._id.toString(),
+        metadata: {
+          bundleBookingId: bundleBookingId.toString(),
+          organizationId: organizationId.toString(),
+          useWallet: useWallet ? "true" : "false",
+          walletDeduction: walletAmount.toString(),
+          refCode: cleanRefCode || "",
+          couponCode: couponCode ? String(couponCode).trim().toUpperCase() : "",
+        },
+        line_items: stripeLineItems,
+        success_url: `${FRONTEND_URL}/o/${orgSlug}/bookings/${createdBookings[0]._id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${FRONTEND_URL}/o/${orgSlug}/cart`,
+      },
+      { idempotencyKey: `unified-${bundleBookingId}` }
+    );
+
+    // Save Stripe session ID to all bookings
+    for (const booking of createdBookings) {
+      booking.stripeSessionId = stripeSession.id;
+      await booking.save({ session: dbSession });
+    }
+
+    await dbSession.commitTransaction();
+
+    return {
+      bundleBookingId,
+      stripeSessionId: stripeSession.id,
+      stripeUrl: stripeSession.url,
+    };
+  } catch (error) {
+    await dbSession.abortTransaction();
+    throw error;
+  } finally {
+    dbSession.endSession();
+  }
+};
+
 module.exports = {
   createCheckoutSession,
   confirmBooking,
@@ -1493,4 +1867,5 @@ module.exports = {
   handleStripeWebhook,
   verifyTicket,
   createBundleCheckout,
+  createUnifiedCheckout,
 };

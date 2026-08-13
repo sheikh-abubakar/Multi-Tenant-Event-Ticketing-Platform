@@ -1,386 +1,555 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
+import { useAuth } from "../context/AuthContext";
+import { getLocalCart, setLocalCart, serverUnlockSeat, serverClearCart, getCartId, fetchCart } from "../utils/cart";
+import { Ticket, ShoppingBag, Trash2, Pencil, ShieldCheck, Mail, User as UserIcon, Timer, Tag } from "lucide-react";
 
-const CartPage = () => {
-  const { orgSlug, eventId } = useParams();
+export default function CartPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get("sessionId") || "";
-  const [event, setEvent] = useState(null);
-  const [cart, setCart] = useState(null);
+  const { user } = useAuth();
+
+  const [cartItems, setCartItems] = useState([]);
+  const [eventDetails, setEventDetails] = useState({});
+  const [checkoutOrgSlug, setCheckoutOrgSlug] = useState("");
+  const [bundleDetails, setBundleDetails] = useState({});
   const [walletBalance, setWalletBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  // Form states
+  const [buyerName, setBuyerName] = useState("");
+  const [buyerEmail, setBuyerEmail] = useState("");
   const [useWallet, setUseWallet] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponApplied, setCouponApplied] = useState("");
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponDiscountsByItem, setCouponDiscountsByItem] = useState({});
+  const [rewardsToApply, setRewardsToApply] = useState(0);
+  const [walletDeduction, setWalletDeduction] = useState(0);
+
+  // Expiry / Countdown State
+  const [expiresAt, setExpiresAt] = useState(null);
+  const [timeLeft, setTimeLeft] = useState("");
+
+  const loadCartData = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      let items = await fetchCart();
+
+      // Editing temporarily expands a bundle into its held seat selections.
+      // When the buyer returns to Cart with a complete selection, immediately
+      // fold those holds back into the one payable bundle item.
+      const draftBundleItems = [...new Map(
+        items
+          .filter((item) => item.itemType !== "bundle" && item.bundleId)
+          .map((item) => [String(item.bundleId), item])
+      ).values()];
+      for (const draftItem of draftBundleItems) {
+        try {
+          const eventRes = await apiClient.get(`/events/public/${draftItem.eventId}`);
+          const orgSlug = eventRes.data.event?.organizationId?.slug;
+          if (!orgSlug) continue;
+          const finalizeRes = await apiClient.post(`/o/${orgSlug}/bundles/${draftItem.bundleId}/cart`, {}, {
+            headers: { "X-Cart-Id": getCartId() },
+          });
+          if (finalizeRes.data.cart?.items) {
+            items = finalizeRes.data.cart.items;
+            setLocalCart(items);
+          }
+        } catch {
+          // A partly edited bundle cannot be paid for. Keep it in the seat
+          // editor until every included event has the required selection.
+        }
+      }
+      items = await fetchCart();
+
+      setCartItems(items);
+
+      // Fetch event info for all unique events in the cart
+      const uniqueEventIds = [...new Set(items.map((i) => i.eventId))];
+      const details = {};
+      await Promise.all(
+        uniqueEventIds.map(async (id) => {
+          try {
+            const res = await apiClient.get(`/events/public/${id}`);
+            details[id] = res.data.event;
+          } catch (e) {
+            console.error("Failed to load details for event:", id, e);
+          }
+        })
+      );
+      setEventDetails(details);
+      const firstEvent = details[items.find((item) => item.eventId)?.eventId];
+      setCheckoutOrgSlug(firstEvent?.organizationId?.slug || "");
+
+      const bundles = {};
+      await Promise.all(
+        items.filter((item) => item.itemType === "bundle" && item.bundleId).map(async (item) => {
+          try {
+            const bundleOrgSlug = firstEvent?.organizationId?.slug;
+            if (!bundleOrgSlug) return;
+            const res = await apiClient.get(`/o/${bundleOrgSlug}/bundles/${item.bundleId}`);
+            bundles[item.bundleId] = res.data.bundle;
+          } catch {
+            // Cart snapshot remains usable even if a bundle's display data cannot load.
+          }
+        })
+      );
+      setBundleDetails(bundles);
+
+      // Load wallet if user is logged in
+      if (user) {
+        const walletRes = await apiClient.get("/wallet").catch(() => ({ data: { wallet: { balance: 0 } } }));
+        setWalletBalance(walletRes.data.wallet?.balance || 0);
+      }
+
+      // Load backend cart expiration
+      const cartId = getCartId();
+      const cartRes = await apiClient.get("/cart-sync", { headers: { "X-Cart-Id": cartId } }).catch(() => null);
+      if (cartRes?.data?.cart?.expiresAt) {
+        setExpiresAt(new Date(cartRes.data.cart.expiresAt));
+      } else {
+        setExpiresAt(new Date(Date.now() + 48 * 60 * 60 * 1000));
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not load your shopping cart.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    let cancelled = false;
+    loadCartData();
+  }, [user]);
 
-    const load = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const [cartRes, walletRes] = await Promise.all([
-          apiClient.get(`/o/${orgSlug}/cart/${eventId}?sessionId=${sessionId}`),
-          apiClient.get("/wallet").catch(() => ({ data: { wallet: { balance: 0 } } })),
-        ]);
-        if (!cancelled) {
-          setEvent(cartRes.data.event);
-          setCart(cartRes.data.cart);
-          setWalletBalance(walletRes.data.wallet?.balance || 0);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.response?.data?.message || "Could not load cart.");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+  // Countdown timer effect
+  useEffect(() => {
+    if (!expiresAt) return;
+
+    const updateTimer = () => {
+      const diff = expiresAt.getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeLeft("Expired");
+        setCartItems([]);
+        localStorage.removeItem("stagepass_cart");
+        window.dispatchEvent(new Event("cart-updated"));
+      } else {
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
       }
     };
 
-    load();
-    return () => { cancelled = true; };
-  }, [orgSlug, eventId, sessionId]);
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
 
-  const handleQuantityChange = async (ticketTypeIndex, newQuantity) => {
+  const handleRemoveItem = async (item) => {
     try {
-      const res = await apiClient.put(`/o/${orgSlug}/cart/${eventId}/items?sessionId=${sessionId}`, {
-        ticketTypeIndex,
-        quantity: Math.max(0, newQuantity),
+      if (item.itemType === "bundle" && item.bundleId) {
+        const res = await apiClient.delete(`/o/${checkoutOrgSlug}/bundles/${item.bundleId}/cart`, {
+          headers: { "X-Cart-Id": getCartId() },
+        });
+        setLocalCart(res.data.cart?.items || []);
+      } else if (item.blockId && item.seatId) {
+        await serverUnlockSeat({
+          eventId: item.eventId,
+          eventSessionId: item.eventSessionId,
+          blockId: item.blockId,
+          seatId: item.seatId,
+        });
+      } else {
+        // Remove normal ticket type locally and sync
+        const items = getLocalCart().filter(
+          (i) => !(String(i.eventId) === String(item.eventId) && i.ticketTypeIndex === item.ticketTypeIndex)
+        );
+        setLocalCart(items);
+        const token = localStorage.getItem("token");
+        if (token) {
+          const cartId = getCartId();
+          await apiClient.post("/cart-sync/sync", { items }, { headers: { "X-Cart-Id": cartId } });
+        }
+      }
+      // Reload cart state
+      const updatedItems = await fetchCart();
+      setCartItems(updatedItems);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to remove item from cart.");
+    }
+  };
+
+  const handleEditItem = async (item) => {
+    try {
+      if (item.itemType === "bundle" && item.bundleId) {
+        const res = await apiClient.post(`/o/${checkoutOrgSlug}/bundles/${item.bundleId}/cart/edit`, {}, {
+          headers: { "X-Cart-Id": getCartId() },
+        });
+        setLocalCart(res.data.cart?.items || []);
+        navigate(`/o/${checkoutOrgSlug}/bundles/${item.bundleId}/seats?qty=${item.bundleQuantity || 1}`);
+        return;
+      }
+      const eventOrgSlug = eventDetails[item.eventId]?.organizationId?.slug || checkoutOrgSlug;
+      navigate(`/o/${eventOrgSlug}/events/${item.eventId}/seats${item.eventSessionId ? `?sessionId=${item.eventSessionId}` : ""}`);
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not open this selection for editing.");
+    }
+  };
+
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) return;
+    try {
+      const res = await apiClient.post("/cart/coupons/validate", {
+        code: couponCode.trim(),
+        items: cartItems.map((item) => ({ ...item, clientKey: getCartItemKey(item) })),
       });
-      setCart(res.data.cart);
+      setCouponApplied(couponCode.trim());
+      setCouponDiscount(res.data.totalDiscount || 0);
+      setCouponDiscountsByItem(res.data.discountsByKey || {});
+      setError("");
     } catch (err) {
-      setError(err.response?.data?.message || "Could not update item.");
+      setError(err.response?.data?.message || "Invalid coupon code.");
     }
   };
 
-  const handleRemoveItem = async (ticketTypeIndex) => {
+  const handleCheckout = async (e) => {
+    e.preventDefault();
+    if (!user && (!buyerName.trim() || !buyerEmail.trim())) {
+      setError("Please fill in your name and email to proceed.");
+      return;
+    }
+
+    setCheckoutLoading(true);
+    setError("");
+
     try {
-      const res = await apiClient.delete(
-        `/o/${orgSlug}/cart/${eventId}/items/${ticketTypeIndex}?sessionId=${sessionId}`,
-      );
-      setCart(res.data.cart);
+      const checkoutData = {
+        buyerName: user ? user.name : buyerName.trim(),
+        buyerEmail: user ? user.email : buyerEmail.trim().toLowerCase(),
+        items: cartItems,
+        useWallet,
+        walletDeduction: useWallet ? walletDeduction : 0,
+        couponCode: couponApplied || null,
+        rewardsToApply,
+        refCode: sessionStorage.getItem("referralCode") || null,
+        cartId: getCartId(),
+      };
+
+      if (!checkoutOrgSlug) throw new Error("Cart organizer could not be resolved.");
+      const res = await apiClient.post(`/o/${checkoutOrgSlug}/bookings/checkout`, checkoutData);
+
+      // Clear LocalStorage cart on success
+      localStorage.removeItem("stagepass_cart");
+      window.dispatchEvent(new Event("cart-updated"));
+
+      if (res.data.success && res.data.confirmationUrl) {
+        window.location.href = res.data.confirmationUrl;
+      } else if (res.data.stripeUrl) {
+        window.location.href = res.data.stripeUrl;
+      }
     } catch (err) {
-      setError(err.response?.data?.message || "Could not remove item.");
+      setError(err.response?.data?.message || "Checkout failed. Please try again.");
+      setCheckoutLoading(false);
     }
   };
 
-  const cartTotal = (cart?.items || []).reduce(
-    (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0),
-    0,
+  const cartTotal = cartItems.reduce(
+    (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 1),
+    0
   );
 
-  const walletDeduction = useWallet ? Math.min(walletBalance, cartTotal) : 0;
-  const remainingAfterWallet = cartTotal - walletDeduction;
+  const finalTotal = Math.max(0, cartTotal - couponDiscount - walletDeduction);
 
-  if (loading) return <p style={{ color: "var(--muted)" }}>Loading cart…</p>;
-
-  if (error) {
+  if (loading) {
     return (
-      <div className="card" style={{ maxWidth: 640 }}>
-        <p style={{ marginTop: 0 }}>
-          <Link to={`/o/${orgSlug}/events/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>&larr; Back to event</Link>
-        </p>
-        <h3 style={{ marginTop: 0, color: "var(--danger)" }}>Cart error</h3>
-        <p>{error}</p>
+      <div style={{ padding: "80px 20px", textAlign: "center", color: "var(--muted)" }}>
+        <div className="spinner" style={{ margin: "0 auto 20px" }} />
+        <p style={{ fontSize: "16px", fontWeight: 600 }}>Loading your unified cart...</p>
       </div>
     );
   }
 
-  if (!event) return null;
-
-  const items = cart?.items || [];
-  const eventDate = new Date(event.dateTime);
-
   return (
-    <div className="cart-page" style={{ maxWidth: 900, margin: "0 auto" }}>
-      <p style={{ marginBottom: 16 }}>
-        <Link to={`/o/${orgSlug}/events/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>&larr; Back to event</Link>
-        <span style={{ marginLeft: 16 }}>
-          <Link to={`/o/${orgSlug}/events/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>+ Add more tickets</Link>
-        </span>
-      </p>
-
-      {/* Event Info Card */}
-      <div className="card cart-event-card" style={{ marginBottom: 20, padding: 0, overflow: "hidden" }}>
-        {event.bannerImageUrl && (
-          <div
-            style={{
-              width: "100%",
-              height: 200,
-              backgroundImage: `url(${event.bannerImageUrl})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }}
-          />
-        )}
-        <div style={{ padding: "20px 24px" }}>
-          <p style={styles.kicker}>Your Cart</p>
-          <h1 style={{ color: "var(--paper)", margin: "4px 0 12px", fontSize: 28 }}>{event.name}</h1>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14, color: "var(--muted)" }}>
-            <span>📅 {eventDate.toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}</span>
-            <span>📍 {event.venueId?.name || "TBA"}{event.venueId?.city ? `, ${event.venueId.city}` : ""}</span>
+    <div className="cart-page" style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 16px" }}>
+      {/* Expiry Header */}
+      {cartItems.length > 0 && (
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          background: "rgba(201, 154, 60, 0.1)",
+          border: "1px solid rgba(201, 154, 60, 0.2)",
+          padding: "12px 20px",
+          borderRadius: "12px",
+          marginBottom: "24px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--gold)" }}>
+            <Timer size={18} />
+            <span style={{ fontSize: "14px", fontWeight: 600 }}>Cart Expiration Hold:</span>
           </div>
+          <span style={{ fontSize: "16px", fontWeight: "bold", fontFamily: "monospace", color: "#fff" }}>
+            {timeLeft}
+          </span>
         </div>
-      </div>
+      )}
 
-      {items.length === 0 ? (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Your cart is empty</h3>
-          <p style={{ color: "var(--muted)" }}>
-            <Link to={`/o/${orgSlug}/events/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`}>Browse ticket types</Link> to add tickets.
+      {error && (
+        <div style={{
+          background: "rgba(239, 68, 68, 0.1)",
+          border: "1px solid rgba(239, 68, 68, 0.25)",
+          color: "#ef4444",
+          padding: "14px 20px",
+          borderRadius: "12px",
+          marginBottom: "24px",
+          fontSize: "14px",
+          fontWeight: 500,
+        }}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      {cartItems.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "80px 20px" }}>
+          <ShoppingBag size={64} style={{ color: "var(--muted)", marginBottom: 20 }} />
+          <h2 style={{ color: "#fff", margin: "0 0 8px" }}>Your shopping cart is empty</h2>
+          <p style={{ color: "var(--muted)", margin: "0 0 24px" }}>
+            Select events and add tickets or seats to see them here.
           </p>
+          <Link to="/browse" className="btn btn-primary" style={{ display: "inline-block" }}>
+            Browse Events &rarr;
+          </Link>
         </div>
       ) : (
-        <>
-          <div style={{ display: "grid", gap: 12 }}>
-            {items.map((item) => {
-              const ticketType = event.ticketTypes?.[item.ticketTypeIndex];
-              const remaining = ticketType
-                ? Math.max(0, Number(ticketType.quantityTotal) - Number(ticketType.quantityBooked || 0))
-                : 0;
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: "32px", alignItems: "start" }}>
+
+          {/* Left Column: Cart items grouped by Event */}
+          <div style={{ display: "grid", gap: "24px" }}>
+            {cartItems.filter((item) => item.itemType === "bundle").map((item) => (
+              <div key={`bundle:${item.bundleId}`} className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(201,154,60,0.35)", borderRadius: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
+                    {(item.bundleBannerImageUrl || bundleDetails[item.bundleId]?.bannerImageUrl) && <img src={item.bundleBannerImageUrl || bundleDetails[item.bundleId]?.bannerImageUrl} alt="" style={{ width: 108, height: 70, objectFit: "cover", borderRadius: 10, border: "1px solid rgba(201,154,60,0.25)" }} />}
+                    <div>
+                    <p style={{ margin: "0 0 4px", fontSize: "11px", color: "var(--gold)", fontWeight: 700, letterSpacing: "0.08em" }}>EVENT BUNDLE</p>
+                    <h3 style={{ margin: "0 0 6px", fontSize: "18px", color: "#fff" }}>{item.bundleName || "Bundle"}</h3>
+                    <p style={{ margin: 0, fontSize: "13px", color: "var(--muted)" }}>{item.bundleQuantity} seat{item.bundleQuantity !== 1 ? "s" : ""} in each included event · {item.bundleSelections?.length || 0} seats selected</p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                    <div style={{ textAlign: "right" }}>
+                      <strong style={{ color: "var(--gold)" }}>{formatUSD(item.unitPrice)}</strong>
+                      {couponDiscountsByItem[getCartItemKey(item)] > 0 && <small style={{ display: "block", color: "#4ade80", marginTop: 4 }}>−{formatUSD(couponDiscountsByItem[getCartItemKey(item)])} coupon</small>}
+                    </div>
+                    <button type="button" onClick={() => handleEditItem(item)} style={{ background: "none", border: "none", color: "var(--gold)", cursor: "pointer", padding: "6px" }} title="Edit bundle seats">
+                      <Pencil size={16} />
+                    </button>
+                    <button type="button" onClick={() => handleRemoveItem(item)} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: "6px" }} title="Remove bundle from cart">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {Object.entries(
+              cartItems.filter((item) => item.itemType !== "bundle").reduce((groups, item) => {
+                // Group by eventId + sessionId so different sessions are shown separately
+                const groupKey = `${item.eventId}::${item.eventSessionId || ""}`;
+                if (!groups[groupKey]) groups[groupKey] = [];
+                groups[groupKey].push(item);
+                return groups;
+              }, {})
+            ).map(([groupKey, items]) => {
+              const [eventId, sessionId] = groupKey.split("::");
+              const event = eventDetails[eventId];
+
+              // Find the correct session date if this is a multi-session event
+              const sessionDate = (() => {
+                if (sessionId && event?.sessions?.length) {
+                  const sess = event.sessions.find(s => String(s._id) === String(sessionId));
+                  if (sess?.dateTime) return new Date(sess.dateTime);
+                }
+                return event?.dateTime ? new Date(event.dateTime) : null;
+              })();
 
               return (
-                <div key={item.ticketTypeIndex || (item.blockId + ":" + item.seatId)} className="card cart-item-card" style={styles.itemCard}>
-                  <div style={styles.itemInfo}>
-                    <h4 style={{ margin: "0 0 4px", color: "var(--text)", fontSize: 16 }}>
-                      {item.ticketTypeName || `${item.sectionName || "Seat"} · ${item.seatName || "Selection"}`}
-                    </h4>
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
-                      $ {Number(item.unitPrice || 0)} per ticket
-                    </p>
-                    {item.blockId ? null : (
-                      <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
-                        {remaining > 0 ? `${remaining} tickets available` : "Sold out"}
-                      </p>
+                <div key={groupKey} className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px" }}>
+                  {/* Event details summary */}
+                  <div style={{ display: "flex", gap: "16px", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "16px" }}>
+                    {event?.bannerImageUrl && (
+                      <img src={event.bannerImageUrl} alt={event.name} style={{ width: "90px", height: "60px", objectFit: "cover", borderRadius: "8px" }} />
                     )}
-                  </div>
-
-                  <div style={styles.itemActions}>
-                    {item.blockId ? (
-                      <div style={{ padding: "6px 12px", minWidth: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
-                        Qty: 1
-                      </div>
-                    ) : (
-                      <div style={styles.qtyControl}>
-                        <button
-                          style={styles.qtyBtn}
-                          onClick={() => handleQuantityChange(item.ticketTypeIndex, Number(item.quantity) - 1)}
-                          disabled={Number(item.quantity) <= 1}
-                        >
-                          −
-                        </button>
-                        <span style={styles.qtyValue}>{item.quantity}</span>
-                        <button
-                          style={styles.qtyBtn}
-                          onClick={() => handleQuantityChange(item.ticketTypeIndex, Number(item.quantity) + 1)}
-                          disabled={Number(item.quantity) >= remaining}
-                        >
-                          +
-                        </button>
-                      </div>
-                    )}
-                    <div style={{ textAlign: "right", minWidth: 90 }}>
-                      <p style={styles.itemTotal}>$ {Number(item.unitPrice || 0) * Number(item.quantity || 0)}</p>
-                      <p style={{ fontSize: 11, color: "var(--muted)", margin: 0 }}>
-                        {item.quantity} x $ {Number(item.unitPrice || 0)}
+                    <div>
+                      <h3 style={{ margin: "0 0 4px", fontSize: "18px", color: "#fff" }}>{event?.name || "Event Loading..."}</h3>
+                      <p style={{ margin: 0, fontSize: "13px", color: "var(--muted)" }}>
+                        {sessionDate && sessionDate.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </p>
                     </div>
-                    <button
-                      style={styles.removeBtn}
-                      onClick={() => handleRemoveItem(item.ticketTypeIndex)}
-                      title="Remove"
-                    >
-                      ✕
-                    </button>
+                  </div>
+
+                  {/* List of seats/tickets for this event group */}
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    {items.map((item, idx) => (
+                      <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,0.03)", padding: "12px 16px", borderRadius: "10px" }}>
+                        <div>
+                          <p style={{ margin: "0 0 2px", color: "#fff", fontWeight: 600, fontSize: "14px" }}>
+                            {item.seatName ? `Seat ${item.seatName} (${item.sectionName})` : item.ticketTypeName || "Ticket Selection"}
+                          </p>
+                          <p style={{ margin: 0, fontSize: "12px", color: "var(--muted)" }}>
+                            Quantity: {item.quantity} &middot; Price: {formatUSD(item.unitPrice)}
+                          </p>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                          <span style={{ fontWeight: 600, color: "#fff" }}>
+                            {formatUSD(item.unitPrice * item.quantity)}
+                          </span>
+                          {couponDiscountsByItem[getCartItemKey(item)] > 0 && <span style={{ color: "#4ade80", fontSize: 12 }}>−{formatUSD(couponDiscountsByItem[getCartItemKey(item)])}</span>}
+                          <button
+                            type="button"
+                            onClick={() => handleEditItem(item)}
+                            style={{ background: "none", border: "none", color: "var(--gold)", cursor: "pointer", padding: "6px" }}
+                            title="Edit seat selection"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(item)}
+                            style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: "6px" }}
+                            title="Remove item"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          <div className="card cart-summary-card" style={{ marginTop: 16, ...styles.summaryCard }}>
-            <div style={styles.summaryRow}>
-              <div>
-                <span style={{ fontSize: 16, color: "var(--text)" }}>
-                  Subtotal ({items.reduce((s, i) => s + Number(i.quantity || 0), 0)} tickets)
-                </span>
+          {/* Right Column: Checkout Form & Summary */}
+          <div style={{ display: "grid", gap: "24px" }}>
+
+            {/* Checkout Form */}
+            {!user && (
+              <div className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px" }}>
+                <h3 style={{ margin: "0 0 16px", fontSize: "16px", color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+                  <ShieldCheck size={18} style={{ color: "var(--gold)" }} />
+                  Guest Details
+                </h3>
+                <div style={{ display: "grid", gap: "12px" }}>
+                  <div className="field">
+                    <label style={{ fontSize: "12px", color: "var(--muted)" }}>Full Name</label>
+                    <div style={{ position: "relative" }}>
+                      <UserIcon size={14} style={{ position: "absolute", left: "12px", top: "12px", color: "var(--muted)" }} />
+                      <input
+                        type="text"
+                        placeholder="John Doe"
+                        value={buyerName}
+                        onChange={(e) => setBuyerName(e.target.value)}
+                        style={{ width: "100%", padding: "10px 12px 10px 36px", background: "#14162b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", color: "#fff" }}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label style={{ fontSize: "12px", color: "var(--muted)" }}>Email Address</label>
+                    <div style={{ position: "relative" }}>
+                      <Mail size={14} style={{ position: "absolute", left: "12px", top: "12px", color: "var(--muted)" }} />
+                      <input
+                        type="email"
+                        placeholder="john@example.com"
+                        value={buyerEmail}
+                        onChange={(e) => setBuyerEmail(e.target.value)}
+                        style={{ width: "100%", padding: "10px 12px 10px 36px", background: "#14162b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", color: "#fff" }}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <span style={{ fontWeight: 700, fontSize: 20, color: "var(--paper)" }}>$ {cartTotal}</span>
+            )}
+
+            {/* Coupons & Discounts */}
+            <div className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px" }}>
+              <h3 style={{ margin: "0 0 16px", fontSize: "16px", color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+                <Tag size={18} style={{ color: "var(--gold)" }} />
+                Coupon Codes
+              </h3>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  type="text"
+                  placeholder="Enter code"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value)}
+                  style={{ flex: 1, padding: "8px 12px", background: "#14162b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", color: "#fff" }}
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyCoupon}
+                  className="btn"
+                  style={{ padding: "8px 16px", background: "rgba(255,255,255,0.1)", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: 600 }}
+                >
+                  Apply
+                </button>
+              </div>
+              {couponApplied && (
+                <p style={{ margin: "8px 0 0", color: "#4ade80", fontSize: "12px", fontWeight: 600 }}>
+                  ✓ Coupon "{couponApplied}" applied successfully!
+                </p>
+              )}
             </div>
 
-            {/* Wallet Payment Option */}
-            {walletBalance > 0 && (
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "12px 16px",
-                background: "rgba(201, 154, 60, 0.08)",
-                borderRadius: 10,
-                marginBottom: 12,
-                border: "1px solid rgba(201, 154, 60, 0.25)",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <input
-                    type="checkbox"
-                    id="useWallet"
-                    checked={useWallet}
-                    onChange={(e) => setUseWallet(e.target.checked)}
-                    style={{ width: 18, height: 18, accentColor: "#c99a3c", cursor: "pointer" }}
-                  />
-                  <label htmlFor="useWallet" style={{ margin: 0, cursor: "pointer", fontSize: 14, color: "var(--text)" }}>
-                    <strong>Pay with Wallet</strong>
-                    <br />
-                    <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                      Balance: $ {walletBalance}
-                    </span>
-                  </label>
+            {/* Billing Summary */}
+            <div className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px" }}>
+              <h3 style={{ margin: "0 0 16px", fontSize: "16px", color: "#fff" }}>Billing Summary</h3>
+
+              <div style={{ display: "grid", gap: "12px", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", color: "var(--muted)" }}>
+                  <span>Cart Subtotal:</span>
+                  <span style={{ color: "#fff" }}>{formatUSD(cartTotal)}</span>
                 </div>
-                {useWallet && (
-                  <div style={{ textAlign: "right" }}>
-                    <p style={{ margin: 0, fontSize: 13, color: "#4ade80", fontWeight: 600 }}>
-                      -$ {walletDeduction}
-                    </p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--muted)" }}>
-                      Remaining: $ {remainingAfterWallet}
-                    </p>
+                {couponDiscount > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", color: "#4ade80" }}>
+                    <span>Coupon Discount:</span>
+                    <span>-{formatUSD(couponDiscount)}</span>
                   </div>
                 )}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "16px", fontWeight: "bold", color: "#fff" }}>
+                  <span>Total Amount:</span>
+                  <span>{formatUSD(finalTotal)}</span>
+                </div>
               </div>
-            )}
 
-            <button
-              style={styles.checkoutBtn}
-              onClick={() =>
-                navigate(`/o/${orgSlug}/checkout/${eventId}${sessionId ? `?sessionId=${sessionId}` : ""}`, {
-                  state: { 
-                    useWallet, 
-                    walletDeduction,
-                    cartTotal,
-                    remainingAfterWallet 
-                  },
-                })
-              }
-            >
-              {useWallet && walletDeduction > 0
-                ? `Pay $ ${remainingAfterWallet} with Card`
-                : "Proceed to Checkout"}
-            </button>
-            {useWallet && walletDeduction > 0 && (
-              <p style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
-                $ {walletDeduction} will be deducted from your wallet
-              </p>
-            )}
+              <button
+                type="button"
+                onClick={handleCheckout}
+                disabled={checkoutLoading}
+                className="btn btn-primary"
+                style={{ width: "100%", padding: "14px", fontSize: "15px", fontWeight: "bold", cursor: "pointer" }}
+              >
+                {checkoutLoading ? "Processing Payment..." : "Proceed to Payment →"}
+              </button>
+            </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
-};
+}
 
-const styles = {
-  topBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 16,
-    alignItems: "flex-start",
-    marginBottom: 20,
-  },
-  kicker: {
-    margin: 0,
-    textTransform: "uppercase",
-    letterSpacing: "0.12em",
-    fontSize: 12,
-    color: "var(--muted)",
-  },
-  itemCard: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 16,
-    alignItems: "center",
-  },
-  itemInfo: {
-    flex: 1,
-  },
-  itemActions: {
-    display: "flex",
-    alignItems: "center",
-    gap: 16,
-  },
-  qtyControl: {
-    display: "flex",
-    alignItems: "center",
-    gap: 0,
-    borderRadius: 8,
-    overflow: "hidden",
-    border: "1px solid #d8d0bd",
-    background: "#fffdf8",
-  },
-  qtyBtn: {
-    background: "#efe9da",
-    border: "none",
-    color: "#1e2030",
-    padding: "6px 12px",
-    cursor: "pointer",
-    fontSize: 16,
-    fontWeight: 700,
-  },
-  qtyValue: {
-    padding: "6px 12px",
-    minWidth: 32,
-    textAlign: "center",
-    color: "#1e2030",
-    fontSize: 15,
-    fontWeight: 600,
-  },
-  itemTotal: {
-    margin: 0,
-    color: "#c99a3c",
-    fontWeight: 700,
-    minWidth: 80,
-    textAlign: "right",
-  },
-  removeBtn: {
-    background: "none",
-    border: "none",
-    color: "#c0503e",
-    cursor: "pointer",
-    fontSize: 16,
-    padding: 4,
-  },
-  summaryCard: {
-    borderTop: "2px dashed rgba(20, 22, 43, 0.15)",
-  },
-  summaryRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-    fontSize: 18,
-    color: "var(--text)",
-  },
-  checkoutBtn: {
-    display: "block",
-    width: "100%",
-    padding: "14px 24px",
-    background: "#c99a3c",
-    color: "#1e2030",
-    border: "none",
-    borderRadius: 12,
-    fontSize: 17,
-    fontWeight: 700,
-    cursor: "pointer",
-    transition: "opacity 0.2s",
-  },
-};
+const formatUSD = (value) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value || 0);
 
-export default CartPage;
+const getCartItemKey = (item) => item.itemType === "bundle"
+  ? `bundle:${item.bundleId}`
+  : `${item.eventId}:${item.eventSessionId || ""}:${item.blockId || item.ticketTypeIndex || "ticket"}:${item.seatId || ""}`;

@@ -7,6 +7,29 @@ const router = express.Router({ mergeParams: true });
 // Stripe redirects to: /o/:orgSlug/bookings/:bookingId/confirmation?session_id=xxx
 // But our frontend handles that page directly. So we just need the API endpoints:
 
+const { verifyToken } = require("../utils/jwt");
+const User = require("../models/User");
+
+const optionalAuthenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      const decoded = verifyToken(token);
+      const user = await User.findById(decoded.userId).select("-passwordHash");
+      if (user) {
+        req.user = user;
+      }
+    }
+    next();
+  } catch (error) {
+    next();
+  }
+};
+
+// Unified cart checkout endpoint
+router.post("/checkout", resolveTenant, optionalAuthenticate, bookingController.createUnifiedCheckout);
+
 // Confirm a booking via session_id query param
 router.get("/:bookingId/confirm", resolveTenant, bookingController.confirm);
 router.post("/:bookingId/confirm", resolveTenant, bookingController.confirm);

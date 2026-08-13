@@ -165,7 +165,7 @@ const getEventMap = async (req, res) => {
       }
     }
 
-    let sessionId = req.query.sessionId;
+    let sessionId = req.query.EventSeatMapSessionID || req.query.sessionId;
     if (!sessionId && (req.query.bookingId || req.headers["x-booking-id"])) {
       const Booking = require("../models/Booking");
       const booking = await Booking.findById(req.query.bookingId || req.headers["x-booking-id"]);
@@ -179,7 +179,7 @@ const getEventMap = async (req, res) => {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
-const saveEventMap = respond(async (req) => ({ seatmap: await seatmapService.saveEventSeatmap(req.params.eventId, req.organizationId, req.body.seatmap || req.body, req.query.sessionId || req.body.sessionId) }));
-const seedEventMap = respond(async (req) => ({ seatmap: await seatmapService.seedEventSeatmapFromTemplate(req.params.eventId, req.organizationId, req.body.seatmapId, req.body.sessionId) }));
+const saveEventMap = respond(async (req) => ({ seatmap: await seatmapService.saveEventSeatmap(req.params.eventId, req.organizationId, req.body.seatmap || req.body, req.query.EventSeatMapSessionID || req.query.sessionId || req.body.EventSeatMapSessionID || req.body.sessionId) }));
+const seedEventMap = respond(async (req) => ({ seatmap: await seatmapService.seedEventSeatmapFromTemplate(req.params.eventId, req.organizationId, req.body.seatmapId, req.body.EventSeatMapSessionID || req.body.sessionId) }));
 
 module.exports = { listTemplates, createTemplate, updateTemplate, removeTemplate, getEventMap, saveEventMap, seedEventMap };

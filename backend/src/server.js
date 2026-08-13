@@ -32,12 +32,18 @@ const validateProductionEnvironment = () => {
 const startServer = async () => {
   validateProductionEnvironment();
   await connectDB();
+  // Bind the HTTP port first. A second accidentally started dev server must
+  // never start a scheduler if port 5000 is already owned by the real one.
+  const server = await new Promise((resolve, reject) => {
+    const httpServer = app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      resolve(httpServer);
+    });
+    httpServer.once("error", reject);
+  });
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_BOOKING_SCHEDULER === "true") {
     startBookingScheduler();
   }
-  const server = app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
 
   const shutdown = (signal) => {
     console.log(`${signal} received. Shutting down gracefully.`);
@@ -52,7 +58,16 @@ const startServer = async () => {
   process.once("SIGINT", () => shutdown("SIGINT"));
 };
 
-startServer().catch((error) => {
-  console.error("Server startup failed:", error.message);
-  process.exit(1);
-});
+const startWithRetry = async () => {
+  try {
+    await startServer();
+  } catch (error) {
+    // Atlas can briefly be unreachable because of DNS/VPN/network changes.
+    // Keep one process alive and retry instead of leaving nodemon in a
+    // crashed state waiting for an unrelated file save.
+    console.error("Server startup failed:", error.message);
+    setTimeout(startWithRetry, 15_000);
+  }
+};
+
+startWithRetry();

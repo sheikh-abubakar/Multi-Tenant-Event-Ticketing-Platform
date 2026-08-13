@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import apiClient from "../api/client";
 import { cachedGet } from "../api/requestCache";
 import SeatMapCanvas from "../components/seatmap/SeatMapCanvas";
+import { fetchCart, serverLockSeat, serverUnlockSeat } from "../utils/cart";
 import "./SeatSelection.css";
 
 const seatKey = (blockId, seatId) => `${blockId}:${seatId}`;
@@ -18,22 +19,30 @@ export default function SeatSelection() {
   const { orgSlug, eventId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get("sessionId") || "";
+  const sessionId = searchParams.get("EventSeatMapSessionID") || searchParams.get("sessionId") || "";
   const [map, setMap] = useState(null);
   const [event, setEvent] = useState(null);
   const [cart, setCart] = useState({ items: [] });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState("");
+
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(""), 3000);
+  };
 
   const load = useCallback(async () => {
     try {
-      const [mapResponse, cartResponse, eventResponse] = await Promise.all([
-        apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?sessionId=${sessionId}`),
-        apiClient.get(`/o/${orgSlug}/cart/${eventId}?sessionId=${sessionId}`),
-        apiClient.get(`/o/${orgSlug}/events/${eventId}?sessionId=${sessionId}`),
+      const [mapResponse, cartItems, eventResponse] = await Promise.all([
+        apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?EventSeatMapSessionID=${sessionId}`),
+        fetchCart(),
+        apiClient.get(`/o/${orgSlug}/events/${eventId}?EventSeatMapSessionID=${sessionId}`),
       ]);
       setMap(mapResponse.data.seatmap);
-      setCart(cartResponse.data.cart);
+      // Filter cart items only for this event to display in the sidebar
+      const eventItems = cartItems.filter(item => String(item.eventId) === String(eventId));
+      setCart({ items: eventItems });
       setEvent(eventResponse.data.event);
     } catch (err) {
       setError(err.response?.data?.message || "Could not load this seating plan.");
@@ -63,15 +72,38 @@ export default function SeatSelection() {
   );
 
   const toggle = async (block, seat) => {
-    if (seat.status !== "available" || busy) return;
+    const exists = selected.has(seatKey(block.id, seat.id));
+    if (!exists && seat.status !== "available") return;
+    if (busy) return;
+
     setBusy(true);
     setError("");
     try {
-      const exists = selected.has(seatKey(block.id, seat.id));
-      const response = exists
-        ? await apiClient.delete(`/o/${orgSlug}/cart/${eventId}/seats/${block.id}/${seat.id}?sessionId=${sessionId}`)
-        : await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items?sessionId=${sessionId}`, { blockId: block.id, seatId: seat.id });
-      setCart(response.data.cart);
+      if (exists) {
+        await serverUnlockSeat({ eventId, eventSessionId: sessionId, blockId: block.id, seatId: seat.id });
+        showToast("🗑️ Seat removed from cart!");
+      } else {
+        await serverLockSeat({
+          eventId,
+          eventSessionId: sessionId,
+          blockId: block.id,
+          seatId: seat.id,
+          seatName: seat.seatName,
+          sectionName: block.name,
+          category: block.category || null,
+          unitPrice: Number(block.price || 0),
+        });
+        showToast("✨ Seat added to cart!");
+      }
+      
+      // Reload cart items from LocalStorage
+      const cartItems = await fetchCart();
+      const eventItems = cartItems.filter(item => String(item.eventId) === String(eventId));
+      setCart({ items: eventItems });
+      
+      // Reload map to show updated database status of seat
+      const mapResponse = await apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?EventSeatMapSessionID=${sessionId}`);
+      setMap(mapResponse.data.seatmap);
     } catch (err) {
       setError(err.response?.data?.message || "Could not update your selection.");
     } finally {
@@ -91,10 +123,31 @@ export default function SeatSelection() {
     setBusy(true);
     setError("");
     try {
-      const response = increment
-        ? await apiClient.post(`/o/${orgSlug}/cart/${eventId}/items?sessionId=${sessionId}`, { blockId: block.id, seatId: candidate.id })
-        : await apiClient.delete(`/o/${orgSlug}/cart/${eventId}/seats/${block.id}/${candidate.seatId}?sessionId=${sessionId}`);
-      setCart(response.data.cart);
+      if (increment) {
+        await serverLockSeat({
+          eventId,
+          eventSessionId: sessionId,
+          blockId: block.id,
+          seatId: candidate.id,
+          seatName: candidate.seatName || "GA Ticket",
+          sectionName: block.name,
+          category: block.category || null,
+          unitPrice: Number(block.price || 0),
+        });
+        showToast("✨ Ticket added to cart!");
+      } else {
+        await serverUnlockSeat({ eventId, eventSessionId: sessionId, blockId: block.id, seatId: candidate.seatId });
+        showToast("🗑️ Ticket removed from cart!");
+      }
+      
+      // Reload cart items
+      const cartItems = await fetchCart();
+      const eventItems = cartItems.filter(item => String(item.eventId) === String(eventId));
+      setCart({ items: eventItems });
+      
+      // Reload map
+      const mapResponse = await apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?EventSeatMapSessionID=${sessionId}`);
+      setMap(mapResponse.data.seatmap);
     } catch (err) {
       setError(err.response?.data?.message || "Could not update General Admission quantity.");
     } finally {
@@ -269,26 +322,44 @@ export default function SeatSelection() {
                 type="button"
                 disabled={!hasSelections || busy}
                 onClick={() => navigate("/cart")}
-                className="ss-btn ss-btn--secondary"
-              >
-                Save to Cart
-              </button>
-              <button
-                type="button"
-                disabled={!hasSelections || busy}
-                onClick={() => navigate(`/o/${orgSlug}/checkout/${eventId}?sessionId=${sessionId}`)}
                 className="ss-btn ss-btn--primary"
+                style={{ width: "100%" }}
               >
-                {busy ? "Processing…" : "Proceed to Payment →"}
+                Go to Cart &rarr;
               </button>
             </div>
 
             <p className="ss-sidebar__note">
-              🔒 Selections are held in your cart and expire after a short time.
+              🔒 Selections are held in your cart for 2 days from the first item added.
             </p>
           </div>
         </aside>
       </div>
+
+      {/* Glassmorphic Toast Notification */}
+      {toast && (
+        <div style={{
+          position: "fixed",
+          top: "24px",
+          right: "24px",
+          zIndex: 1000,
+          background: "rgba(15, 23, 42, 0.75)",
+          backdropFilter: "blur(12px)",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
+          boxShadow: "0 10px 30px rgba(0, 0, 0, 0.5)",
+          color: "#fff",
+          padding: "12px 24px",
+          borderRadius: "12px",
+          fontWeight: 600,
+          fontSize: "14px",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          animation: "slideIn 0.3s ease"
+        }}>
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

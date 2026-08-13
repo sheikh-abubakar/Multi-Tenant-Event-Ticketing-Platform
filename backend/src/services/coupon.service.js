@@ -155,6 +155,60 @@ async function validateAndApplyCoupon(organizationId, code, originalTotal, conte
   };
 }
 
+// Calculates one pasted code across independent cart targets. A bundle is one
+// target; its child event bookings are never eligible for an event-only coupon.
+async function calculateCartCouponDiscounts(purchases, code) {
+  if (!code || !String(code).trim() || !purchases.length) {
+    return { totalDiscount: 0, discountsByKey: {}, codesByKey: {}, appliedCount: 0 };
+  }
+  const cleanCode = String(code).trim().toUpperCase();
+  const organizationIds = [...new Set(purchases.map((item) => String(item.organizationId)))];
+  const coupons = await Coupon.find({ organizationId: { $in: organizationIds }, code: cleanCode }).lean();
+  const now = new Date();
+  const couponByOrg = new Map(coupons.map((coupon) => [String(coupon.organizationId), coupon]));
+  const groups = new Map();
+
+  purchases.forEach((purchase) => {
+    const groupKey = purchase.bundleId ? `bundle:${purchase.bundleId}` : `item:${purchase.key}`;
+    if (!groups.has(groupKey)) groups.set(groupKey, { purchases: [], amount: 0 });
+    const group = groups.get(groupKey);
+    group.purchases.push(purchase);
+    group.amount += Number(purchase.amount || 0);
+  });
+
+  const discountsByKey = {};
+  const codesByKey = {};
+  let totalDiscount = 0;
+  let appliedCount = 0;
+  for (const group of groups.values()) {
+    const first = group.purchases[0];
+    const coupon = couponByOrg.get(String(first.organizationId));
+    if (!coupon || !coupon.isActive || (coupon.expiresAt && new Date(coupon.expiresAt) < now) || (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses)) continue;
+
+    const matchesBundle = first.bundleId && coupon.bundleId && String(coupon.bundleId) === String(first.bundleId);
+    const matchesEvent = !first.bundleId && coupon.eventId && String(coupon.eventId) === String(first.eventId);
+    const isOrgWide = !coupon.eventId && !coupon.bundleId;
+    if (!matchesBundle && !matchesEvent && !isOrgWide) continue;
+
+    const groupDiscount = Math.min(
+      group.amount,
+      coupon.discountType === "percentage" ? Math.round((group.amount * coupon.discountValue) / 100) : Math.round(coupon.discountValue),
+    );
+    if (!groupDiscount) continue;
+    appliedCount += 1;
+    totalDiscount += groupDiscount;
+    group.purchases.forEach((purchase, index) => {
+      const isLast = index === group.purchases.length - 1;
+      const allocated = isLast
+        ? Math.max(0, groupDiscount - group.purchases.slice(0, index).reduce((sum, item) => sum + (discountsByKey[item.key] || 0), 0))
+        : Math.round((groupDiscount * Number(purchase.amount || 0) / group.amount) * 100) / 100;
+      discountsByKey[purchase.key] = allocated;
+      codesByKey[purchase.key] = coupon.code;
+    });
+  }
+  return { totalDiscount, discountsByKey, codesByKey, appliedCount };
+}
+
 /**
  * Increment usage counter for a coupon upon confirmed payment
  */
@@ -231,5 +285,6 @@ module.exports = {
   deleteCoupon,
   updateCoupon,
   validateAndApplyCoupon,
+  calculateCartCouponDiscounts,
   incrementCouponUses,
 };

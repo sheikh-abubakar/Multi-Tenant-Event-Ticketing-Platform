@@ -22,7 +22,9 @@ const connectDB = async () => {
     }
   } catch (error) {
     console.error(`MongoDB connection error: ${error.message}`);
-    process.exit(1);
+    // Let the server bootstrapper decide how to retry. Exiting here made
+    // transient Atlas/DNS delays look like a nodemon application crash.
+    throw error;
   }
 };
 

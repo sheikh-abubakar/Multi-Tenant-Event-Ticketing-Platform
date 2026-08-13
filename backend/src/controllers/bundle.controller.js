@@ -330,6 +330,36 @@ const checkout = async (req, res) => {
   }
 };
 
+const addToCart = async (req, res) => {
+  try {
+    const cartService = require("../services/cart.service");
+    const cart = await cartService.addBundleToCart(req, req.organizationId, req.params.bundleId);
+    return res.json({ cart });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+const removeFromCart = async (req, res) => {
+  try {
+    const cartService = require("../services/cart.service");
+    const cart = await cartService.removeBundleFromCart(req, req.params.bundleId);
+    return res.json({ cart });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+const editCartSelections = async (req, res) => {
+  try {
+    const cartService = require("../services/cart.service");
+    const cart = await cartService.restoreBundleSelections(req, req.organizationId, req.params.bundleId);
+    return res.json({ cart });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 const getOneManage = async (req, res) => {
   try {
     const bundle = await EventBundle.findOne({
@@ -375,4 +405,4 @@ const verifyAccess = async (req, res) => {
   }
 };
 
-module.exports = { create, listPublic, getOne, getOneManage, update, remove, checkout, verifyAccess };
+module.exports = { create, listPublic, getOne, getOneManage, update, remove, checkout, addToCart, removeFromCart, editCartSelections, verifyAccess };

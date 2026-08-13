@@ -1,8 +1,9 @@
 const mongoose = require("mongoose");
 const Event = require("../models/Event");
 const Booking = require("../models/Booking");
+const Cart = require("../models/Cart");
 const stripe = require("../config/stripe");
-const { sendPaymentReminder } = require("../config/email");
+const { sendUnifiedPaymentReminder } = require("../config/email");
 
 // How often the background sweep runs. Needs to be smaller than both
 // the reminder window (30s) and the hold window (90s) so neither event
@@ -31,13 +32,31 @@ const sendPendingReminders = async () => {
     createdAt: { $lte: reminderCutoff },
   });
 
-  for (const booking of candidates) {
+  const sessionIds = [...new Set(candidates.map((booking) => booking.stripeSessionId).filter(Boolean))];
+  for (const stripeSessionId of sessionIds) {
     try {
-      if (!booking.stripeSessionId) continue;
+      // Atomically claim every still-unsent booking in this checkout before
+      // contacting Stripe/email. A later 5-second sweep will see the lease
+      // and skip this session instead of duplicating the reminder.
+      const claimTime = new Date();
+      const staleLeaseCutoff = new Date(Date.now() - 5 * 60 * 1000);
+      const claim = await Booking.updateMany(
+        {
+          stripeSessionId,
+          status: "pending",
+          paymentStatus: "pending",
+          reminderSentAt: null,
+          $or: [{ reminderSendingAt: null }, { reminderSendingAt: { $lte: staleLeaseCutoff } }],
+        },
+        { $set: { reminderSendingAt: claimTime } },
+      );
+      if (!claim.modifiedCount) continue;
+      const bookings = await Booking.find({ stripeSessionId, status: "pending", paymentStatus: "pending" });
+      if (!bookings.length || bookings.every((booking) => booking.reminderSentAt)) continue;
 
       // Stripe keeps a Checkout Session's hosted URL retrievable for the
       // life of the session, so we don't need to store the URL ourselves.
-      const session = await stripe.checkout.sessions.retrieve(booking.stripeSessionId);
+      const session = await stripe.checkout.sessions.retrieve(stripeSessionId);
 
       // If Stripe already shows this as paid, don't send a reminder —
       // confirmBooking just hasn't caught up yet (e.g. buyer paid right
@@ -45,19 +64,21 @@ const sendPendingReminders = async () => {
       if (session.payment_status === "paid") continue;
       if (!session.url) continue;
 
-      const event = await Event.findById(booking.eventId);
-      if (!event) continue;
+      await sendUnifiedPaymentReminder(bookings, session.url);
+      await Booking.updateMany(
+        { _id: { $in: bookings.map((booking) => booking._id) }, reminderSentAt: null, reminderSendingAt: claimTime },
+        { $set: { reminderSentAt: new Date() }, $unset: { reminderSendingAt: "" } },
+      );
 
-      await sendPaymentReminder(booking, event, session.url);
-
-      booking.reminderSentAt = new Date();
-      await booking.save();
-
-      console.log(`[Scheduler] Sent payment reminder for booking ${booking._id}`);
+      console.log(`[Scheduler] Sent one payment reminder for checkout ${stripeSessionId}`);
     } catch (err) {
+      await Booking.updateMany(
+        { stripeSessionId, reminderSentAt: null },
+        { $unset: { reminderSendingAt: "" } },
+      ).catch(() => {});
       // One booking failing (bad email, Stripe hiccup) should never stop
       // the rest of the sweep from running.
-      console.error(`[Scheduler] Reminder failed for booking ${booking._id}:`, err.message);
+      console.error(`[Scheduler] Reminder failed for checkout ${stripeSessionId}:`, err.message);
     }
   }
 };
@@ -202,10 +223,69 @@ const releaseExpiredBookings = async () => {
   }
 };
 
+const releaseExpiredCarts = async () => {
+  const now = new Date();
+  const expiredCarts = await Cart.find({ expiresAt: { $lte: now } });
+
+  for (const cart of expiredCarts) {
+    const session = await mongoose.startSession();
+    try {
+      session.startTransaction();
+
+      // Release regular cart seats and every seat stored inside a bundle cart item.
+      for (const item of cart.items) {
+        const seatReferences = item.itemType === "bundle" ? item.bundleSelections : [item];
+        for (const reference of seatReferences) {
+          if (!reference.blockId || !reference.seatId) continue;
+          const event = await Event.findOne({ _id: reference.eventId }).session(session);
+          if (event) {
+            let targetSeatMap = event.selectedSeatMap;
+            let sessionDoc = null;
+            if (reference.eventSessionId && event.sessions && event.sessions.length > 0) {
+              sessionDoc = event.sessions.find(s => String(s._id) === String(reference.eventSessionId));
+              if (sessionDoc) {
+                targetSeatMap = sessionDoc.selectedSeatMap;
+              }
+            }
+            if (targetSeatMap) {
+              const block = targetSeatMap.blocks?.find(b => b.id === reference.blockId);
+              const seat = block?.seats?.find(s => s.id === reference.seatId);
+              if (seat && seat.status === "checkout-held") {
+                seat.status = "available";
+              }
+
+              if (sessionDoc) {
+                sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+                event.markModified("sessions");
+              } else {
+                event.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+                event.markModified("selectedSeatMap");
+              }
+              await event.save({ session });
+            }
+          }
+        }
+      }
+
+      // Delete the expired cart
+      await Cart.deleteOne({ _id: cart._id }).session(session);
+
+      await session.commitTransaction();
+      console.log(`[Scheduler] Released expired cart ${cart._id}`);
+    } catch (err) {
+      await session.abortTransaction();
+      console.error(`[Scheduler] Failed to release expired cart ${cart._id}:`, err.message);
+    } finally {
+      session.endSession();
+    }
+  }
+};
+
 const runSweep = async () => {
   try {
     await sendPendingReminders();
     await releaseExpiredBookings();
+    await releaseExpiredCarts();
   } catch (err) {
     // Should be unreachable (each function already catches its own
     // per-booking errors), but guards against the sweep itself dying.
@@ -232,4 +312,4 @@ const stopBookingScheduler = () => {
   schedulerInterval = undefined;
 };
 
-module.exports = { startBookingScheduler, stopBookingScheduler, sendPendingReminders, releaseExpiredBookings };
+module.exports = { startBookingScheduler, stopBookingScheduler, sendPendingReminders, releaseExpiredBookings, releaseExpiredCarts };

@@ -261,7 +261,7 @@ const getOwnerAnalytics = async (organizationId) => {
   const individualBookings = [];
 
   recentBookings.forEach((b) => {
-    if (b.isBundleBooking && b.bundleBookingId) {
+    if (b.isBundleBooking && b.bundleBookingId && b.bundleId) {
       const key = b.bundleBookingId.toString();
       if (!groupedBookingsMap.has(key)) {
         groupedBookingsMap.set(key, {

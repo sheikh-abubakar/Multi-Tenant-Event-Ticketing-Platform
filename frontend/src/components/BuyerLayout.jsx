@@ -20,15 +20,37 @@ const BuyerLayout = ({ children }) => {
   const [orgsOpen, setOrgsOpen] = useState(false);
   const [organizations, setOrganizations] = useState([]);
   const [orgsLoading, setOrgsLoading] = useState(true);
+  const [cartCount, setCartCount] = useState(0);
+
+  const updateCartCount = () => {
+    try {
+      const raw = localStorage.getItem("stagepass_cart");
+      const items = raw ? JSON.parse(raw) : [];
+      const count = items.reduce((sum, item) => sum + (item.quantity || 1), 0);
+      setCartCount(count);
+    } catch (e) {
+      setCartCount(0);
+    }
+  };
+
+  useEffect(() => {
+    updateCartCount();
+    window.addEventListener("cart-updated", updateCartCount);
+    return () => window.removeEventListener("cart-updated", updateCartCount);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    apiClient.get("/organizations/mine")
-      .then(({ data }) => { if (!cancelled) setOrganizations(data.organizations || []); })
-      .catch(() => { if (!cancelled) setOrganizations([]); })
-      .finally(() => { if (!cancelled) setOrgsLoading(false); });
+    if (user) {
+      apiClient.get("/organizations/mine")
+        .then(({ data }) => { if (!cancelled) setOrganizations(data.organizations || []); })
+        .catch(() => { if (!cancelled) setOrganizations([]); })
+        .finally(() => { if (!cancelled) setOrgsLoading(false); });
+    } else {
+      setOrgsLoading(false);
+    }
     return () => { cancelled = true; };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -91,7 +113,19 @@ const BuyerLayout = ({ children }) => {
           <span className="buyer-sidebar__divider" />
           {links.slice(1).map(([label, to, Icon]) => (
             <NavLink key={to} to={to} className={({ isActive }) => `buyer-sidebar__link${isActive ? " is-active" : ""}`}>
-              <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
+              <Icon size={18} strokeWidth={1.8} />
+              <span>{label}</span>
+              {label === "Cart" && cartCount > 0 && (
+                <span className="cart-badge-count" style={{
+                  marginLeft: "auto",
+                  background: "var(--gold)",
+                  color: "var(--ink)",
+                  fontWeight: "bold",
+                  fontSize: "11px",
+                  padding: "2px 6px",
+                  borderRadius: "10px",
+                }}>{cartCount}</span>
+              )}
             </NavLink>
           ))}
         </nav>

@@ -27,9 +27,12 @@ const filterByAssignedVenues = async (req, res, next) => {
     // Staff member — load assigned venues
     const assigned = req.membership.assignedVenues || [];
 
-    // If no venues assigned, return empty array so they see nothing
+    // No explicit venue assignment means the staff member is not scoped to a
+    // subset of venues. Their normal permissions (for example events:read)
+    // should still allow them to work with the organization's existing events.
+    // A non-empty assignment remains an intentional restriction.
     if (!assigned.length) {
-      req.assignedVenueIds = [];
+      req.assignedVenueIds = null;
     } else {
       req.assignedVenueIds = assigned.map((v) =>
         typeof v === "object" ? v._id?.toString() : v.toString(),

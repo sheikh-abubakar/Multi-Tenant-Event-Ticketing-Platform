@@ -1048,6 +1048,22 @@ const getBundleBookings = async (bundleBookingId, organizationId) => {
   return Booking.find({ bundleBookingId }).populate("eventId", "name dateTime bannerImageUrl venueId");
 };
 
+const getCheckoutBookings = async (bookingId, organizationId) => {
+  const primaryBooking = await Booking.findOne({ _id: bookingId, organizationId });
+  if (!primaryBooking) {
+    const error = new Error("Booking not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const query = primaryBooking.stripeSessionId
+    ? { stripeSessionId: primaryBooking.stripeSessionId }
+    : primaryBooking.bundleBookingId
+      ? { bundleBookingId: primaryBooking.bundleBookingId }
+      : { _id: primaryBooking._id };
+  return Booking.find(query).populate("eventId", "name dateTime bannerImageUrl venueId");
+};
+
 const handleStripeWebhook = async (event) => {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
@@ -1885,6 +1901,7 @@ module.exports = {
   lookupBooking,
   getEventBookings,
   getBundleBookings,
+  getCheckoutBookings,
   handleStripeWebhook,
   verifyTicket,
   createBundleCheckout,

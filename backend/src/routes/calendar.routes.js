@@ -12,5 +12,7 @@ const router = express.Router({ mergeParams: true });
 router.use(resolveTenant);
 
 router.get("/bookings/:bookingId/calendar.ics", calendarController.getCalendarEvent);
+// One calendar file for every confirmed event paid in the same checkout.
+router.get("/bookings/:bookingId/calendar-all.ics", calendarController.getCheckoutCalendar);
 
 module.exports = router;

@@ -1,6 +1,7 @@
 const nodemailer = require("nodemailer");
 const moment = require("moment-timezone");
 const Organization = require("../models/Organization");
+const Event = require("../models/Event");
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || "smtp.gmail.com",
@@ -329,6 +330,11 @@ const sendUnifiedBookingConfirmation = async (bookings) => {
   const primary = bookings[0];
   if (!primary) return;
   const money = (amount) => `$${Number(amount || 0).toFixed(2)}`;
+  const events = await Event.find({ _id: { $in: bookings.map((booking) => booking.eventId).filter(Boolean) } })
+    .select("venueId")
+    .populate("venueId", "name address city")
+    .lean();
+  const eventById = new Map(events.map((event) => [String(event._id), event]));
   const groups = new Map();
   for (const booking of bookings) {
     const key = booking.isBundleBooking && booking.bundleId ? `bundle:${booking.bundleId}` : `event:${booking._id}`;
@@ -336,16 +342,26 @@ const sendUnifiedBookingConfirmation = async (bookings) => {
     const group = groups.get(key);
     const seats = (booking.selectedSeats || []).map((seat) => `${seat.sectionName || "Section"} - ${seat.seatName}`).join(", ");
     const tickets = (booking.items || []).map((item) => `${item.ticketTypeName} x${item.quantity}`).join(", ");
-    group.lines.push({ event: booking.eventName || "Event", detail: seats || tickets || "Tickets confirmed", code: booking.confirmationCode });
+    const venue = eventById.get(String(booking.eventId))?.venueId;
+    const venueLabel = [venue?.name, venue?.address, venue?.city].filter(Boolean).join(", ");
+    group.lines.push({
+      event: booking.eventName || "Event",
+      detail: seats || tickets || "Tickets confirmed",
+      code: booking.confirmationCode,
+      mapUrl: venueLabel ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venueLabel)}` : null,
+    });
     group.total += Number(booking.totalAmount || 0);
   }
   const total = bookings.reduce((sum, booking) => sum + Number(booking.totalAmount || 0), 0);
-  const summary = [...groups.values()].map((group) => `<div style="padding:12px 0;border-bottom:1px solid #e8e0d0"><p style="margin:0 0 5px;font-size:14px;font-weight:800">${group.bundle ? "Bundle: " : "Event: "}${group.title}</p>${group.lines.map((line) => `<p style="margin:3px 0;font-size:13px;color:#5d5668">${group.bundle ? `${line.event}: ` : ""}${line.detail}<br/><strong>Confirmation: ${line.code}</strong></p>`).join("")}<p style="margin:6px 0 0;text-align:right;font-weight:800">${money(group.total)}</p></div>`).join("");
+  const summary = [...groups.values()].map((group) => `<div style="padding:12px 0;border-bottom:1px solid #e8e0d0"><p style="margin:0 0 5px;font-size:14px;font-weight:800">${group.bundle ? "Bundle: " : "Event: "}${group.title}</p>${group.lines.map((line) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:5px 0;border-collapse:collapse"><tr><td style="font-size:13px;color:#5d5668">${group.bundle ? `${line.event}: ` : ""}${line.detail}<br/><strong>Confirmation: ${line.code}</strong></td><td align="right" valign="top" style="padding-left:12px;white-space:nowrap">${line.mapUrl ? `<a href="${line.mapUrl}" style="color:#a47620;font-size:12px;font-weight:800;text-decoration:none">View on Map</a>` : ""}</td></tr></table>`).join("")}<p style="margin:6px 0 0;text-align:right;font-weight:800">${money(group.total)}</p></div>`).join("");
   const organization = await Organization.findById(primary.organizationId).select("slug").lean();
   const confirmationUrl = organization?.slug
     ? `${process.env.FRONTEND_URL || "http://localhost:5173"}/o/${organization.slug}/bookings/${primary._id}/confirmation`
     : `${process.env.FRONTEND_URL || "http://localhost:5173"}/my/bookings`;
-  const contentHtml = `<p style="font-size:16px;margin:0 0 16px">Hi <strong>${primary.buyerName}</strong>,</p><p style="font-size:15px;margin:0 0 24px;color:#3d3848;line-height:1.6">Your StagePass checkout is confirmed. Keep the confirmation codes below for entry.</p><div style="background:#f7f2e7;padding:20px;border-radius:10px;border-left:4px solid #c99a3c;margin:24px 0"><h3 style="margin:0 0 12px;color:#15182e;font-size:16px">Confirmed Order</h3>${summary}<p style="margin:14px 0 0;text-align:right;font-size:15px"><strong>Total paid:</strong> ${money(total)}</p></div><div style="text-align:center;margin:32px 0"><a href="${confirmationUrl}" style="background:#c99a3c;color:#1e1a0c;padding:14px 32px;border-radius:6px;text-decoration:none;font-weight:800;display:inline-block;font-size:16px">View Tickets and QR Codes</a></div>`;
+  const publicApiUrl = (process.env.PUBLIC_API_URL || process.env.BACKEND_URL || process.env.FRONTEND_URL || "http://localhost:5000").replace(/\/$/, "");
+  const calendarUrl = organization?.slug ? `${publicApiUrl}/api/o/${organization.slug}/bookings/${primary._id}/calendar-all.ics` : null;
+  const calendarButton = calendarUrl ? `<a href="${calendarUrl}" style="background:#15182e;color:#fffdf8;padding:14px 24px;border-radius:6px;text-decoration:none;font-weight:800;display:inline-block;font-size:14px;margin:10px 6px">Add all events to calendar</a>` : "";
+  const contentHtml = `<p style="font-size:16px;margin:0 0 16px">Hi <strong>${primary.buyerName}</strong>,</p><p style="font-size:15px;margin:0 0 24px;color:#3d3848;line-height:1.6">Your StagePass checkout is confirmed. Keep the confirmation codes below for entry.</p><div style="background:#f7f2e7;padding:20px;border-radius:10px;border-left:4px solid #c99a3c;margin:24px 0"><h3 style="margin:0 0 12px;color:#15182e;font-size:16px">Confirmed Order</h3>${summary}<p style="margin:14px 0 0;text-align:right;font-size:15px"><strong>Total paid:</strong> ${money(total)}</p></div><p style="font-size:13px;color:#5d5668;margin:0 0 12px">Each event has its own venue link. The calendar download contains every event from this checkout.</p><div style="text-align:center;margin:32px 0"><a href="${confirmationUrl}" style="background:#c99a3c;color:#1e1a0c;padding:14px 24px;border-radius:6px;text-decoration:none;font-weight:800;display:inline-block;font-size:14px;margin:10px 6px">View Tickets and QR Codes</a>${calendarButton}</div>`;
   return transporter.sendMail({ from: process.env.EMAIL_FROM || '"StagePass" <noreply@stagepass.com>', to: primary.buyerEmail, subject: `Booking Confirmed - ${bookings.length} booking${bookings.length === 1 ? "" : "s"}`, html: renderEmailTemplate("Your StagePass booking is confirmed", "Booking Confirmation", contentHtml) });
 };
 

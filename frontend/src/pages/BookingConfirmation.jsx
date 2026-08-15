@@ -16,6 +16,7 @@ const BookingConfirmation = () => {
 
   const [booking, setBooking] = useState(null);
   const [bundleBookings, setBundleBookings] = useState([]);
+  const [checkoutBookings, setCheckoutBookings] = useState([]);
   const [seatChangeRequests, setSeatChangeRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -45,6 +46,14 @@ const BookingConfirmation = () => {
           const mainBooking = res.data.booking;
           setBooking(mainBooking);
 
+          try {
+            const checkoutRes = await apiClient.get(`/o/${orgSlug}/bookings/${bookingId}/checkout`);
+            setCheckoutBookings(checkoutRes.data.bookings || [mainBooking]);
+          } catch (checkoutError) {
+            console.warn("Could not load the complete checkout total:", checkoutError);
+            setCheckoutBookings([mainBooking]);
+          }
+
           // If this is a bundle, fetch all linked bookings
           if (mainBooking.isBundleBooking && mainBooking.bundleBookingId) {
             const bundleRes = await apiClient.get(`/o/${orgSlug}/bookings/bundle/${mainBooking.bundleBookingId}`);
@@ -61,6 +70,14 @@ const BookingConfirmation = () => {
             if (!cancelled) {
               const mainBooking = res.data.booking;
               setBooking(mainBooking);
+
+              try {
+                const checkoutRes = await apiClient.get(`/o/${orgSlug}/bookings/${bookingId}/checkout`);
+                setCheckoutBookings(checkoutRes.data.bookings || [mainBooking]);
+              } catch (checkoutError) {
+                console.warn("Could not load the complete checkout total:", checkoutError);
+                setCheckoutBookings([mainBooking]);
+              }
 
               if (mainBooking.isBundleBooking && mainBooking.bundleBookingId) {
                 const bundleRes = await apiClient.get(`/o/${orgSlug}/bookings/bundle/${mainBooking.bundleBookingId}`);
@@ -127,6 +144,10 @@ const BookingConfirmation = () => {
   const isConfirmed =
     booking.status === "confirmed" && booking.paymentStatus === "paid";
   const bookedEventDateTime = booking.eventDateTime || booking.eventId?.dateTime;
+  const checkoutTotal = checkoutBookings.length
+    ? checkoutBookings.reduce((total, currentBooking) => total + Number(currentBooking.totalAmount || 0), 0)
+    : Number(booking.totalAmount || 0);
+  const isCombinedCheckout = checkoutBookings.length > 1;
 
   return (
     <div className="confirmation-page buyer-context-page" style={{ maxWidth: 820, margin: "0 auto" }}>
@@ -200,7 +221,7 @@ const BookingConfirmation = () => {
             </p>
           </div>
           <div>
-            <p style={styles.label}>Total Paid</p>
+            <p style={styles.label}>{isCombinedCheckout ? "Order Total Paid" : "Total Paid"}</p>
             <p
               style={{
                 ...styles.value,
@@ -208,7 +229,7 @@ const BookingConfirmation = () => {
                 color: "var(--gold)",
               }}
             >
-              $ {booking.totalAmount}
+              ${checkoutTotal.toFixed(2)}
             </p>
           </div>
           <div>

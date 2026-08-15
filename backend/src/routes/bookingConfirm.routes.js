@@ -34,6 +34,9 @@ router.post("/checkout", resolveTenant, optionalAuthenticate, bookingController.
 router.get("/:bookingId/confirm", resolveTenant, bookingController.confirm);
 router.post("/:bookingId/confirm", resolveTenant, bookingController.confirm);
 
+// Get every booking paid in the same checkout, for an accurate buyer receipt total.
+router.get("/:bookingId/checkout", resolveTenant, bookingController.getCheckoutBookings);
+
 // Get a single booking by ID
 router.get("/:bookingId", resolveTenant, bookingController.getOne);
 

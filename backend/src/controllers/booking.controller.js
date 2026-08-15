@@ -72,6 +72,18 @@ const getOne = async (req, res) => {
   }
 };
 
+const getCheckoutBookings = async (req, res) => {
+  try {
+    const bookings = await bookingService.getCheckoutBookings(
+      req.params.bookingId,
+      req.organizationId,
+    );
+    return res.json({ bookings });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 const lookup = async (req, res) => {
   try {
     const booking = await bookingService.lookupBooking(req.params.identifier, req.organizationId);
@@ -161,6 +173,7 @@ module.exports = {
   createCheckout,
   confirm,
   getOne,
+  getCheckoutBookings,
   lookup,
   getByEvent,
   handleWebhook,

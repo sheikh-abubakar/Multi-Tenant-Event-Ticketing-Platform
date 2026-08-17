@@ -24,4 +24,13 @@ const getEventAnalytics = async (req, res) => {
   }
 };
 
-module.exports = { getAnalytics, getEventAnalytics };
+const getBookingDetail = async (req, res) => {
+  try {
+    const detail = await analyticsService.getBookingDetail(req.organizationId, req.params.bookingId);
+    return res.json({ detail });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message || "Could not load booking details." });
+  }
+};
+
+module.exports = { getAnalytics, getEventAnalytics, getBookingDetail };

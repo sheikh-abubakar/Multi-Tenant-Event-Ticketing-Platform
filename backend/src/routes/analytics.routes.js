@@ -14,5 +14,6 @@ router.use(authenticate, resolveTenant, loadMembership);
 // Analytics view requires settings:read or higher (owner/admin by default)
 router.get("/", checkPermission("settings:read"), analyticsController.getAnalytics);
 router.get("/events/:eventId", checkPermission("settings:read"), analyticsController.getEventAnalytics);
+router.get("/bookings/:bookingId/details", checkPermission("settings:read"), analyticsController.getBookingDetail);
 
 module.exports = router;

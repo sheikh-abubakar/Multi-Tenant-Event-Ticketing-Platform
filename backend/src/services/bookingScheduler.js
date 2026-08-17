@@ -5,6 +5,7 @@ const Cart = require("../models/Cart");
 const stripe = require("../config/stripe");
 const { sendUnifiedPaymentReminder } = require("../config/email");
 const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
+const { notifyOrganizationBookingUpdate } = require("./organizationUpdate.service");
 
 // How often the background sweep runs. Needs to be smaller than both
 // the reminder window (30s) and the hold window (90s) so neither event
@@ -216,6 +217,7 @@ const releaseExpiredBookings = async () => {
       await session.commitTransaction();
       released = true;
       paymentTrace("booking-hold-released", bookingContext(booking), "warn");
+      notifyOrganizationBookingUpdate(booking.organizationId, { type: "booking-expired", bookingId: booking._id.toString() });
       console.log(`[Scheduler] Released expired booking ${booking._id} — tickets returned to inventory`);
     } catch (err) {
       await session.abortTransaction();

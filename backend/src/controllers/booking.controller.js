@@ -4,6 +4,7 @@ const cartService = require("../services/cart.service");
 const { recordPlatformAudit } = require("../utils/platformAudit");
 const { invalidateOrgCache } = require("../services/analytics.service");
 const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
+const { notifyOrganizationBookingUpdate } = require("../services/organizationUpdate.service");
 
 const create = async (req, res) => {
   try {
@@ -74,6 +75,7 @@ const confirm = async (req, res) => {
         buyerEmail: booking.buyerEmail.replace(/(^.).*(@.*$)/, "$1***$2"),
       },
     });
+    notifyOrganizationBookingUpdate(booking.organizationId, { type: "ticket-verified", bookingId: booking._id.toString() });
     return res.json({ booking });
   } catch (error) {
     paymentTrace("confirmation-page-failed", {

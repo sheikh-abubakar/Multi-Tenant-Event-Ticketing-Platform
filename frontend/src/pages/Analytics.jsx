@@ -6,7 +6,8 @@ import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import apiClient from "../api/client";
 import { cachedGet } from "../api/requestCache";
-import { Ticket, DollarSign, Calendar, MapPin, RefreshCw, Layers } from "lucide-react";
+import { Ticket, DollarSign, Calendar, MapPin, RefreshCw, Layers, Eye, X, Mail, UserRound, CreditCard, Armchair } from "lucide-react";
+import { io } from "socket.io-client";
 import {
   XAxis,
   YAxis,
@@ -30,6 +31,10 @@ const formatDate = (dateStr) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
+const formatDateTime = (dateStr) => dateStr
+  ? new Date(dateStr).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
+  : "Not available";
+
 const Analytics = () => {
   const { orgSlug } = useParams();
   const [data, setData] = useState(null);
@@ -51,10 +56,14 @@ const Analytics = () => {
   const [loadingEventAnalytics, setLoadingEventAnalytics] = useState(false);
   const [eventAnalyticsError, setEventAnalyticsError] = useState("");
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
+  const [selectedBookingId, setSelectedBookingId] = useState(null);
+  const [bookingDetail, setBookingDetail] = useState(null);
+  const [bookingDetailLoading, setBookingDetailLoading] = useState(false);
+  const [bookingDetailError, setBookingDetailError] = useState("");
 
   const html5QrcodeRef = useRef(null);
 
-  const fetchAnalytics = () => {
+  const fetchAnalytics = useCallback(() => {
     apiClient
       .get(`/o/${orgSlug}/analytics`)
       .then(({ data }) => {
@@ -63,7 +72,29 @@ const Analytics = () => {
       .catch((err) => {
         setError(err.response?.data?.message || "Could not load analytics.");
       });
+  }, [orgSlug]);
+
+  const fetchBookingDetail = useCallback((bookingId) => {
+    if (!bookingId) return;
+    setBookingDetailLoading(true);
+    setBookingDetailError("");
+    apiClient.get(`/o/${orgSlug}/analytics/bookings/${bookingId}/details`)
+      .then(({ data: response }) => setBookingDetail(response.detail))
+      .catch((err) => setBookingDetailError(err.response?.data?.message || "Could not load booking details."))
+      .finally(() => setBookingDetailLoading(false));
+  }, [orgSlug]);
+
+  const openBookingDetail = (bookingId) => {
+    setSelectedBookingId(bookingId);
+    setBookingDetail(null);
+    fetchBookingDetail(bookingId);
   };
+
+  const closeBookingDetail = useCallback(() => {
+    setSelectedBookingId(null);
+    setBookingDetail(null);
+    setBookingDetailError("");
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +125,26 @@ const Analytics = () => {
       cancelled = true;
     };
   }, [orgSlug]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return undefined;
+    const socketUrl = (import.meta.env.VITE_SOCKET_URL || apiClient.defaults.baseURL.replace(/\/api$/, "")).replace(/\/$/, "");
+    const socket = io(socketUrl, { auth: { token }, withCredentials: true, transports: ["websocket", "polling"] });
+    socket.on("connect", () => socket.emit("analytics:join", { orgSlug }));
+    socket.on("analytics:booking-updated", () => {
+      fetchAnalytics();
+      if (selectedBookingId) fetchBookingDetail(selectedBookingId);
+    });
+    return () => socket.disconnect();
+  }, [orgSlug, fetchAnalytics, fetchBookingDetail, selectedBookingId]);
+
+  useEffect(() => {
+    if (!selectedBookingId) return undefined;
+    const onKeyDown = (event) => event.key === "Escape" && closeBookingDetail();
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedBookingId, closeBookingDetail]);
 
   // Fetch event specific analytics
   const fetchEventAnalytics = (eventId) => {
@@ -559,6 +610,9 @@ const Analytics = () => {
                   <th style={{ textAlign: "left", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                     Date
                   </th>
+                  <th style={{ textAlign: "right", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -646,6 +700,15 @@ const Analytics = () => {
                     <td style={{ padding: "10px 6px", color: "var(--muted)", fontSize: 13 }}>
                       {formatDate(b.createdAt)}
                     </td>
+                    <td style={{ padding: "10px 6px", textAlign: "right" }}>
+                      <button
+                        type="button"
+                        onClick={() => openBookingDetail(b.detailBookingId || b.id)}
+                        style={{ border: "1px solid rgba(201,154,60,.55)", background: "rgba(201,154,60,.12)", color: "var(--gold-soft)", borderRadius: 6, padding: "6px 9px", cursor: "pointer", fontWeight: 700, fontSize: 12, display: "inline-flex", gap: 5, alignItems: "center" }}
+                      >
+                        <Eye size={14} /> Details
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -655,6 +718,25 @@ const Analytics = () => {
       </div>
 
       {/* ── Event Details Modal / Report view ── */}
+      {selectedBookingId && (
+        <div role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeBookingDetail()} style={{ position: "fixed", inset: 0, zIndex: 9100, background: "rgba(6,8,20,.72)", display: "flex", justifyContent: "center", alignItems: "center", padding: 18 }}>
+          <section role="dialog" aria-modal="true" aria-label="Booking details" style={{ width: "min(940px, 100%)", maxHeight: "90vh", overflowY: "auto", borderRadius: 14, background: "#fffdf8", color: "#1e2030", boxShadow: "0 25px 70px rgba(0,0,0,.45)", borderTop: "4px solid #c99a3c" }}>
+            <header style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", padding: "20px 24px", borderBottom: "1px solid #e8e0d0", position: "sticky", top: 0, background: "#fffdf8", zIndex: 1 }}><div><p style={{ margin: 0, fontSize: 11, letterSpacing: ".12em", color: "#96701e", fontWeight: 800 }}>LIVE BOOKING RECORD</p><h2 style={{ margin: "4px 0 0", fontSize: 22 }}>Buyer booking details</h2></div><button type="button" aria-label="Close booking details" onClick={closeBookingDetail} style={{ border: "1px solid #d9cfbc", background: "transparent", borderRadius: 6, padding: 8, cursor: "pointer", color: "#1e2030" }}><X size={20} /></button></header>
+            <div style={{ padding: 24 }}>
+              {bookingDetailLoading && <p style={{ color: "#6b6054" }}>Loading current booking information…</p>}
+              {bookingDetailError && <div style={{ background: "#fce8e6", color: "#b42318", padding: 12, borderRadius: 7 }}>{bookingDetailError}</div>}
+              {bookingDetail && <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 20 }}><article style={{ background: "#f7f2e7", padding: 14, borderRadius: 9 }}><UserRound size={17} color="#a47620" /><small style={{ display: "block", color: "#6b6054", marginTop: 6 }}>BUYER</small><strong>{bookingDetail.buyer?.name || "Buyer"}</strong><div style={{ color: "#5d5668", fontSize: 13, overflowWrap: "anywhere" }}><Mail size={12} /> {bookingDetail.buyer?.email}</div></article><article style={{ background: "#f7f2e7", padding: 14, borderRadius: 9 }}><CreditCard size={17} color="#a47620" /><small style={{ display: "block", color: "#6b6054", marginTop: 6 }}>ORDER TYPE</small><strong>{bookingDetail.isBundle ? "Event bundle" : "Event booking"}</strong><div style={{ color: "#5d5668", fontSize: 13 }}>{bookingDetail.bookings.length} event record{bookingDetail.bookings.length === 1 ? "" : "s"}</div></article></div>
+                {bookingDetail.bookings.map((booking) => {
+                  const event = booking.eventId || {}; const venue = event.venueId || {}; const requests = bookingDetail.seatChanges.filter((request) => String(request.bookingId) === String(booking._id));
+                  return <article key={booking._id} style={{ border: "1px solid #e8e0d0", borderRadius: 10, padding: 18, marginBottom: 16 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><h3 style={{ margin: 0 }}>{event.name || booking.eventName}</h3><p style={{ margin: "5px 0", color: "#6b6054" }}><Calendar size={14} /> {formatDateTime(booking.eventDateTime || event.dateTime)}</p><p style={{ margin: 0, color: "#6b6054" }}><MapPin size={14} /> {venue.name || "Venue unavailable"}{[venue.address, venue.city].filter(Boolean).length ? ` — ${[venue.address, venue.city].filter(Boolean).join(", ")}` : ""}</p></div><div style={{ textAlign: "right" }}><span className="badge" style={{ background: booking.status === "confirmed" ? "#e6f4ea" : "#fff8e1", color: booking.status === "confirmed" ? "#1e7e34" : "#b45309" }}>{booking.status}</span><strong style={{ display: "block", marginTop: 8 }}>{formatUSD(booking.totalAmount)}</strong><small style={{ color: "#6b6054" }}>{booking.paymentStatus}{booking.refundInfo ? ` · refunded via ${booking.refundInfo.method}` : ""}</small></div></div><div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #eee6d8" }}><strong style={{ fontSize: 13 }}>Confirmation: {booking.confirmationCode}</strong><div style={{ display: "grid", gap: 6, marginTop: 9 }}>{booking.items?.map((item, index) => <div key={`${item.ticketTypeName}-${index}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#4b4652" }}><span>{item.ticketTypeName} × {item.quantity}</span><strong>{formatUSD(item.lineTotal)}</strong></div>)}</div></div><div style={{ marginTop: 14 }}><strong style={{ fontSize: 13 }}><Armchair size={15} /> Current seats</strong><div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 8 }}>{booking.selectedSeats?.length ? booking.selectedSeats.map((seat) => <span key={`${seat.blockId}-${seat.seatId}`} style={{ background: "#e6f4ea", color: "#176b31", borderRadius: 20, padding: "5px 9px", fontSize: 12, fontWeight: 700 }}>{seat.sectionName || "Section"} · {seat.seatName}</span>) : <span style={{ color: "#6b6054", fontSize: 13 }}>No reserved seats</span>}</div></div>{requests.length > 0 && <div style={{ marginTop: 16, background: "#f7f2e7", borderRadius: 8, padding: 13 }}><strong style={{ fontSize: 13 }}>Seat-change history</strong>{requests.map((request) => <div key={request._id} style={{ marginTop: 10, fontSize: 13, color: "#4b4652" }}><span style={{ fontWeight: 800, textTransform: "uppercase", color: request.status === "approved" ? "#176b31" : request.status === "rejected" ? "#b42318" : "#a47620" }}>{request.status}</span>{" · "}{request.oldSeat?.sectionName || "Section"} {request.oldSeat?.seatName} → {request.newSeat?.sectionName || "Section"} {request.newSeat?.seatName}<small style={{ display: "block", color: "#6b6054" }}>Payment: {request.paymentStatus}{Number(request.priceDifference) ? ` · adjustment ${formatUSD(request.priceDifference)}` : ""} · {formatDateTime(request.updatedAt)}</small></div>)}</div>}</article>;
+                })}
+              </>}
+            </div>
+          </section>
+        </div>
+      )}
+
       {selectedEventId && (
         <div
           style={{

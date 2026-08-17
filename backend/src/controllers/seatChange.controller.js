@@ -1,4 +1,5 @@
 const seatChangeService = require("../services/seatChange.service");
+const { notifyOrganizationBookingUpdate } = require("../services/organizationUpdate.service");
 
 const createRequest = async (req, res) => {
   try {
@@ -12,6 +13,7 @@ const createRequest = async (req, res) => {
         host: req.get("host"),
       }
     );
+    notifyOrganizationBookingUpdate(req.organizationId, { type: "seat-change-created", bookingId: result.request?.bookingId?.toString(), requestId: result.request?._id?.toString() });
     return res.status(201).json(result);
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -39,6 +41,7 @@ const getPendingRequests = async (req, res) => {
 const approveRequest = async (req, res) => {
   try {
     const request = await seatChangeService.approveRequest(req.params.requestId, req.organizationId);
+    notifyOrganizationBookingUpdate(req.organizationId, { type: "seat-change-approved", bookingId: request.bookingId.toString(), requestId: request._id.toString() });
     return res.json({ message: "Seat change approved successfully", request });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -48,6 +51,7 @@ const approveRequest = async (req, res) => {
 const rejectRequest = async (req, res) => {
   try {
     const request = await seatChangeService.rejectRequest(req.params.requestId, req.organizationId);
+    notifyOrganizationBookingUpdate(req.organizationId, { type: "seat-change-rejected", bookingId: request.bookingId.toString(), requestId: request._id.toString() });
     return res.json({ message: "Seat change rejected successfully", request });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -57,6 +61,7 @@ const rejectRequest = async (req, res) => {
 const devSimulatePay = async (req, res) => {
   try {
     const request = await seatChangeService.devSimulatePay(req.params.requestId, req.organizationId);
+    notifyOrganizationBookingUpdate(req.organizationId, { type: "seat-change-payment-updated", bookingId: request.bookingId.toString(), requestId: request._id.toString() });
     return res.json({ message: "Offline/dev payment simulated successfully", request });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

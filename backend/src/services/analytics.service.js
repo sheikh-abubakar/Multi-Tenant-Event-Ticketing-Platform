@@ -266,6 +266,7 @@ const getOwnerAnalytics = async (organizationId) => {
       if (!groupedBookingsMap.has(key)) {
         groupedBookingsMap.set(key, {
           id: b.bundleBookingId.toString(),
+          detailBookingId: b._id.toString(),
           buyerName: b.buyerName,
           buyerEmail: b.buyerEmail,
           eventName: `Bundle: ${b.bundleName || "Event Bundle"}`,
@@ -295,6 +296,7 @@ const getOwnerAnalytics = async (organizationId) => {
     } else {
       individualBookings.push({
         id: b._id.toString(),
+        detailBookingId: b._id.toString(),
         buyerName: b.buyerName,
         buyerEmail: b.buyerEmail,
         eventName: b.eventName || "Unknown",
@@ -502,4 +504,39 @@ const getEventAnalytics = async (organizationId, eventId) => {
   };
 };
 
-module.exports = { getOwnerAnalytics, getEventAnalytics, invalidateOrgCache };
+/** Tenant-scoped detail for an analytics booking row. */
+const getBookingDetail = async (organizationId, bookingId) => {
+  if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+    const error = new Error("Invalid booking ID");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const seed = await Booking.findOne({ _id: bookingId, organizationId }).select("bundleBookingId").lean();
+  if (!seed) {
+    const error = new Error("Booking not found for this organization");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const query = seed.bundleBookingId
+    ? { organizationId, bundleBookingId: seed.bundleBookingId }
+    : { organizationId, _id: bookingId };
+  const bookings = await Booking.find(query)
+    .populate({ path: "eventId", select: "name dateTime timezone venueId", populate: { path: "venueId", select: "name address city timezone" } })
+    .sort({ eventDateTime: 1, createdAt: 1 })
+    .lean();
+  const seatChanges = await SeatChangeRequest.find({
+    organizationId,
+    bookingId: { $in: bookings.map((booking) => booking._id) },
+  }).sort({ createdAt: 1 }).lean();
+
+  return {
+    isBundle: Boolean(seed.bundleBookingId),
+    buyer: bookings[0] ? { name: bookings[0].buyerName, email: bookings[0].buyerEmail } : null,
+    bookings,
+    seatChanges,
+  };
+};
+
+module.exports = { getOwnerAnalytics, getEventAnalytics, getBookingDetail, invalidateOrgCache };

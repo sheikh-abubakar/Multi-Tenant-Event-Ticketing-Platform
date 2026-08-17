@@ -16,6 +16,8 @@ STAGEPASS LOGGING GUIDE
 
 Winston log folder
 ------------------
+ssh -i D:\stagepass-key.pem ubuntu@13.235.80.159
+cd /var/www/stagepass/backend
 backend/logs/
   combined-YYYY-MM-DD.log  all application, request, warning, and error logs
   error-YYYY-MM-DD.log     error-level logs only

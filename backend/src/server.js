@@ -7,9 +7,11 @@ console.log = (...args) => legacyLog("info", args);
 console.warn = (...args) => legacyLog("warn", args);
 console.error = (...args) => legacyLog("error", args);
 const app = require("./app");
+const http = require("http");
 const connectDB = require("./config/db");
 const mongoose = require("mongoose");
 const { startBookingScheduler, stopBookingScheduler } = require("./services/bookingScheduler");
+const { initializeRealtime } = require("./services/realtime.service");
 
 const PORT = process.env.PORT || 5000;
 
@@ -41,7 +43,9 @@ const startServer = async () => {
   // Bind the HTTP port first. A second accidentally started dev server must
   // never start a scheduler if port 5000 is already owned by the real one.
   const server = await new Promise((resolve, reject) => {
-    const httpServer = app.listen(PORT, () => {
+    const httpServer = http.createServer(app);
+    initializeRealtime(httpServer);
+    httpServer.listen(PORT, () => {
       logger.info("Server listening", { port: PORT, environment: process.env.NODE_ENV || "development" });
       resolve(httpServer);
     });

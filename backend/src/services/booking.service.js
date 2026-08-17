@@ -12,6 +12,7 @@ const walletService = require("./wallet.service");
 const referralService = require("./referral.service");
 const couponService = require("./coupon.service");
 const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
+const { notifyOrganizationBookingUpdate } = require("./organizationUpdate.service");
 
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -967,6 +968,14 @@ const confirmBooking = async (stripeSessionId) => {
     }
   }
 
+  for (const organizationId of [...new Set(bookings.map((booking) => booking.organizationId.toString()))]) {
+    notifyOrganizationBookingUpdate(organizationId, {
+      type: "booking-confirmed",
+      stripeSessionId,
+      bookingIds: bookings.filter((booking) => booking.organizationId.toString() === organizationId).map((booking) => booking._id.toString()),
+    });
+  }
+
   // Return the first booking to satisfy controller redirect / page title info
   return confirmedBookings[0];
 };
@@ -1117,6 +1126,7 @@ const handleStripeWebhook = async (event) => {
     if (seatRequest) {
       seatRequest.paymentStatus = "paid";
       await seatRequest.save();
+      notifyOrganizationBookingUpdate(seatRequest.organizationId, { type: "seat-change-payment-updated", bookingId: seatRequest.bookingId.toString(), requestId: seatRequest._id.toString() });
 
       // Hold new seat on the event seatmap
       const Event = require("../models/Event");
@@ -1162,6 +1172,7 @@ const handleStripeWebhook = async (event) => {
     if (seatRequest) {
       seatRequest.paymentStatus = "failed";
       await seatRequest.save();
+      notifyOrganizationBookingUpdate(seatRequest.organizationId, { type: "seat-change-payment-updated", bookingId: seatRequest.bookingId.toString(), requestId: seatRequest._id.toString() });
       return;
     }
 

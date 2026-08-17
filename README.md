@@ -171,6 +171,18 @@ Route → Middleware → Controller → Service → Mongoose Model → MongoDB
 - Seat/cart expiry, payment reminders, idempotent checkout confirmation, and MongoDB startup retry for transient DNS/Atlas outages.
 - Server-side S3 upload handling through Multer in-memory buffers.
 
+### Observability
+
+StagePass uses **Morgan** for HTTP request lifecycle logs and **Winston** for structured application, scheduler, integration, and error logs. Logs include a request ID for tracing and redact sensitive fields. In production, output is available through PM2 and daily files in `backend/logs/`:
+
+```bash
+pm2 logs <backend-process-name>
+tail -f backend/logs/combined-YYYY-MM-DD.log
+tail -f backend/logs/error-YYYY-MM-DD.log
+```
+
+Files rotate daily and are retained for 14 days.
+
 > Never commit `.env`, SMTP credentials, AWS keys, Stripe secrets, or JWT/session secrets.
 
 ## Getting started

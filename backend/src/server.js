@@ -1,5 +1,11 @@
 // Force reload to pick up email.js template changes
 require("dotenv").config();
+const { logger, legacyLog } = require("./config/logger");
+// Preserve existing operational diagnostics while progressively migrating
+// services from console.* to logger.*.
+console.log = (...args) => legacyLog("info", args);
+console.warn = (...args) => legacyLog("warn", args);
+console.error = (...args) => legacyLog("error", args);
 const app = require("./app");
 const connectDB = require("./config/db");
 const mongoose = require("mongoose");
@@ -36,7 +42,7 @@ const startServer = async () => {
   // never start a scheduler if port 5000 is already owned by the real one.
   const server = await new Promise((resolve, reject) => {
     const httpServer = app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+      logger.info("Server listening", { port: PORT, environment: process.env.NODE_ENV || "development" });
       resolve(httpServer);
     });
     httpServer.once("error", reject);
@@ -46,7 +52,7 @@ const startServer = async () => {
   }
 
   const shutdown = (signal) => {
-    console.log(`${signal} received. Shutting down gracefully.`);
+    logger.info("Graceful shutdown requested", { signal });
     stopBookingScheduler();
     server.close(async () => {
       await mongoose.connection.close();
@@ -65,9 +71,15 @@ const startWithRetry = async () => {
     // Atlas can briefly be unreachable because of DNS/VPN/network changes.
     // Keep one process alive and retry instead of leaving nodemon in a
     // crashed state waiting for an unrelated file save.
-    console.error("Server startup failed:", error.message);
+    logger.error("Server startup failed; retrying", { error: error.message, stack: error.stack, retryAfterMs: 15_000 });
     setTimeout(startWithRetry, 15_000);
   }
 };
 
 startWithRetry();
+
+process.on("unhandledRejection", (reason) => logger.error("Unhandled promise rejection", { reason: reason instanceof Error ? reason.message : String(reason), stack: reason instanceof Error ? reason.stack : undefined }));
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught exception; exiting for PM2 restart", { error: error.message, stack: error.stack });
+  setTimeout(() => process.exit(1), 250);
+});

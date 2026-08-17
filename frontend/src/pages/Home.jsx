@@ -1,14 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { Link, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
-import OrgCard from "../components/OrgCard";
 import "./BrowseHub.css";
 import { cachedGet, prefetch } from "../api/requestCache";
 
 const Home = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   // Capture referral code from URL — shared links land here (/browse?ref=REF-XXXXXX)
@@ -18,9 +14,6 @@ const Home = () => {
   }, [searchParams]);
 
   // ─── "Your organizations" state (only relevant when logged in) ──────
-  const [myOrgs, setMyOrgs] = useState([]);
-  const [myOrgsLoading, setMyOrgsLoading] = useState(true);
-  const [slugInput, setSlugInput] = useState("");
 
   // ─── "Browse events" state (relevant for everyone, no login needed) ─
   const [events, setEvents] = useState([]);
@@ -30,25 +23,6 @@ const Home = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterOrg, setFilterOrg] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
-
-  useEffect(() => {
-    if (!user) {
-      setMyOrgsLoading(false);
-      return;
-    }
-    let cancelled = false;
-    apiClient
-      .get("/organizations/mine")
-      .then(({ data }) => {
-        if (!cancelled) setMyOrgs(data.organizations);
-      })
-      .finally(() => {
-        if (!cancelled) setMyOrgsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,11 +52,6 @@ const Home = () => {
       cancelled = true;
     };
   }, []);
-
-  const goToOrgBySlug = (e) => {
-    e.preventDefault();
-    if (slugInput.trim()) navigate(`/o/${slugInput.trim()}/dashboard`);
-  };
 
   const filteredEvents = events.filter((event) => {
     if (searchQuery) {
@@ -139,6 +108,7 @@ const Home = () => {
   return (
     <div className="browse-hub" style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 20px" }}>
       {/* ── Hero ─────────────────────────────────────────────────── */}
+      {false && <>
       <div className="browse-hub__masthead" style={{ textAlign: "center", marginBottom: 48 }}>
         <p className="browse-hub__eyebrow">STAGEPASS MEMBER HUB</p>
         <h1
@@ -243,6 +213,7 @@ const Home = () => {
       )}
 
       {/* ── Browse events — everyone sees this, no login required ──── */}
+      </>}
       <h2 className="browse-hub__events-title" style={{ color: "var(--paper)", fontFamily: "var(--font-display)", fontSize: 28, marginBottom: 16 }}>
         Browse events
       </h2>

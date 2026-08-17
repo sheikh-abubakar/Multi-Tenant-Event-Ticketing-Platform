@@ -29,6 +29,8 @@ const bundleRoutes = require("./routes/bundle.routes");
 const seatChangeRoutes = require("./routes/seatChange.routes");
 const mediaRoutes = require("./routes/media.routes");
 const cartSyncRoutes = require("./routes/cartSync.routes");
+const { logger } = require("./config/logger");
+const { requestId, requestLogger } = require("./middlewares/requestLogger");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -40,6 +42,8 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND
 if (isProduction) app.set("trust proxy", 1);
 app.disable("x-powered-by");
 app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(requestId);
+app.use(requestLogger);
 
 // Stripe webhook must be BEFORE express.json() — Stripe needs the raw body
 // for signature verification
@@ -132,15 +136,19 @@ app.use("/api", refundRoutes);
 app.use("/api/referrals", referralRoutes);
 app.use("/api/ai", aiRoutes);
 
-app.use((req, res) => res.status(404).json({ message: "Route not found" }));
+app.use((req, res) => {
+  logger.warn("Route not found", { requestId: req.requestId, method: req.method, url: req.originalUrl });
+  res.status(404).json({ message: "Route not found", requestId: req.requestId });
+});
 
 app.use((error, req, res, next) => {
-  if (error.name === "MulterError") return res.status(400).json({ message: error.message });
-  if (error.type === "entity.parse.failed") return res.status(400).json({ message: "Invalid JSON request body" });
-
-  console.error("Unhandled API error:", error);
+  const status = error.statusCode || (error.name === "MulterError" || error.type === "entity.parse.failed" ? 400 : 500);
+  logger.log(status >= 500 ? "error" : "warn", "Unhandled API error", { requestId: req.requestId, method: req.method, url: req.originalUrl, status, userId: req.user?._id || req.user?.id, organizationId: req.organizationId, error: error.message, stack: error.stack });
+  if (error.name === "MulterError") return res.status(400).json({ message: error.message, requestId: req.requestId });
+  if (error.type === "entity.parse.failed") return res.status(400).json({ message: "Invalid JSON request body", requestId: req.requestId });
   return res.status(error.statusCode || 500).json({
     message: error.statusCode ? error.message : "Internal server error",
+    requestId: req.requestId,
   });
 });
 

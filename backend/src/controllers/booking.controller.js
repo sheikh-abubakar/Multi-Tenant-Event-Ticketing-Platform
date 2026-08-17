@@ -3,6 +3,7 @@ const bookingService = require("../services/booking.service");
 const cartService = require("../services/cart.service");
 const { recordPlatformAudit } = require("../utils/platformAudit");
 const { invalidateOrgCache } = require("../services/analytics.service");
+const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
 
 const create = async (req, res) => {
   try {
@@ -29,8 +30,23 @@ const createCheckout = async (req, res) => {
     // hold. Remove the browser's local cart snapshot so it cannot keep
     // overriding the live map after payment confirmation or hold expiry.
     await cartService.clearCart(req, req.organizationId, req.params.eventId, req.body.EventSeatMapSessionID || req.body.sessionId);
+    paymentTrace("checkout-created", {
+      requestId: req.requestId,
+      organizationId: req.organizationId?.toString(),
+      eventId: req.params.eventId,
+      bookingId: result.bookingId?.toString(),
+      stripeSessionId: result.stripeSessionId,
+      checkoutType: "single-event",
+    });
     return res.status(201).json(result);
   } catch (error) {
+    paymentTrace("checkout-create-failed", {
+      requestId: req.requestId,
+      organizationId: req.organizationId?.toString(),
+      eventId: req.params.eventId,
+      checkoutType: "single-event",
+      error: error.message,
+    }, "warn");
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
@@ -44,6 +60,10 @@ const confirm = async (req, res) => {
     }
 
     const booking = await bookingService.confirmBooking(session_id);
+    paymentTrace("confirmation-page-processed", {
+      requestId: req.requestId,
+      ...bookingContext(booking),
+    });
     await recordPlatformAudit({
       organizationId: booking.organizationId,
       action: "booking.confirmed",
@@ -56,6 +76,11 @@ const confirm = async (req, res) => {
     });
     return res.json({ booking });
   } catch (error) {
+    paymentTrace("confirmation-page-failed", {
+      requestId: req.requestId,
+      stripeSessionId: req.query.session_id,
+      error: error.message,
+    }, "warn");
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
@@ -114,9 +139,18 @@ const handleWebhook = async (req, res) => {
       process.env.STRIPE_WEBHOOK_SECRET,
     );
 
+    paymentTrace("stripe-webhook-received", {
+      stripeEventId: event.id,
+      stripeEventType: event.type,
+      stripeSessionId: event.data?.object?.id,
+    });
     await bookingService.handleStripeWebhook(event);
     return res.json({ received: true });
   } catch (error) {
+    paymentTrace("stripe-webhook-failed", {
+      error: error.message,
+      requestId: req.requestId,
+    }, "error");
     console.error("Stripe webhook error:", error.message);
     return res.status(400).json({ message: `Webhook Error: ${error.message}` });
   }
@@ -162,8 +196,21 @@ const createUnifiedCheckout = async (req, res) => {
       req.params.orgSlug,
       { ...req.body, userId: req.user?.id || null }
     );
+    paymentTrace(result.success ? "free-checkout-confirmed" : "checkout-created", {
+      requestId: req.requestId,
+      organizationId: req.organizationId?.toString(),
+      bundleBookingId: result.bundleBookingId?.toString(),
+      stripeSessionId: result.stripeSessionId,
+      checkoutType: "cart",
+    });
     return res.status(201).json(result);
   } catch (error) {
+    paymentTrace("checkout-create-failed", {
+      requestId: req.requestId,
+      organizationId: req.organizationId?.toString(),
+      checkoutType: "cart",
+      error: error.message,
+    }, "warn");
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
 };

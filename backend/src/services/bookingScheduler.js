@@ -4,6 +4,7 @@ const Booking = require("../models/Booking");
 const Cart = require("../models/Cart");
 const stripe = require("../config/stripe");
 const { sendUnifiedPaymentReminder } = require("../config/email");
+const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
 
 // How often the background sweep runs. Needs to be smaller than both
 // the reminder window (30s) and the hold window (90s) so neither event
@@ -70,12 +71,19 @@ const sendPendingReminders = async () => {
         { $set: { reminderSentAt: new Date() }, $unset: { reminderSendingAt: "" } },
       );
 
+      paymentTrace("payment-reminder-sent", {
+        stripeSessionId,
+        bookingIds: bookings.map((booking) => booking._id.toString()),
+        bookingCount: bookings.length,
+        buyer: bookings[0] ? bookingContext(bookings[0]).buyer : undefined,
+      });
       console.log(`[Scheduler] Sent one payment reminder for checkout ${stripeSessionId}`);
     } catch (err) {
       await Booking.updateMany(
         { stripeSessionId, reminderSentAt: null },
         { $unset: { reminderSendingAt: "" } },
       ).catch(() => {});
+      paymentTrace("payment-reminder-failed", { stripeSessionId, error: err.message }, "error");
       // One booking failing (bad email, Stripe hiccup) should never stop
       // the rest of the sweep from running.
       console.error(`[Scheduler] Reminder failed for checkout ${stripeSessionId}:`, err.message);
@@ -113,6 +121,7 @@ const expireStripeSession = async (booking) => {
 
   try {
     await stripe.checkout.sessions.expire(booking.stripeSessionId);
+    paymentTrace("stripe-session-expired-by-scheduler", bookingContext(booking), "warn");
     console.log(`[Scheduler] Expired Stripe session for booking ${booking._id}`);
   } catch (err) {
     // Expected/harmless cases this can hit:
@@ -206,6 +215,7 @@ const releaseExpiredBookings = async () => {
 
       await session.commitTransaction();
       released = true;
+      paymentTrace("booking-hold-released", bookingContext(booking), "warn");
       console.log(`[Scheduler] Released expired booking ${booking._id} — tickets returned to inventory`);
     } catch (err) {
       await session.abortTransaction();

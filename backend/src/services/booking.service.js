@@ -11,6 +11,7 @@ const { sendUnifiedBookingConfirmation } = require("../config/email");
 const walletService = require("./wallet.service");
 const referralService = require("./referral.service");
 const couponService = require("./coupon.service");
+const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
 
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -722,10 +723,18 @@ const confirmBooking = async (stripeSessionId) => {
   const bookings = await Booking.find({ stripeSessionId });
 
   if (!bookings || bookings.length === 0) {
+    paymentTrace("confirmation-bookings-not-found", { stripeSessionId }, "warn");
     const error = new Error("Booking not found for this session");
     error.statusCode = 404;
     throw error;
   }
+
+  paymentTrace("confirmation-started", {
+    stripeSessionId,
+    bookingIds: bookings.map((booking) => booking._id.toString()),
+    bookingCount: bookings.length,
+    bundleBookingIds: [...new Set(bookings.map((booking) => booking.bundleBookingId?.toString()).filter(Boolean))],
+  });
 
   const confirmedBookings = [];
   const newlyConfirmedBookings = [];
@@ -779,12 +788,17 @@ const confirmBooking = async (stripeSessionId) => {
 
 
     if (booking.status === "expired") {
+      paymentTrace("confirmation-rejected-expired", bookingContext(booking), "warn");
       continue;
     }
 
     const session = await stripe.checkout.sessions.retrieve(stripeSessionId);
 
     if (session.payment_status !== "paid") {
+      paymentTrace("confirmation-payment-not-paid", {
+        ...bookingContext(booking),
+        stripePaymentStatus: session.payment_status,
+      }, "warn");
       const error = new Error("Payment has not been completed yet");
       error.statusCode = 400;
       throw error;
@@ -900,6 +914,7 @@ const confirmBooking = async (stripeSessionId) => {
 
     confirmedBookings.push(booking);
     newlyConfirmedBookings.push(booking);
+    paymentTrace("booking-confirmed", bookingContext(booking));
   }
 
   // One Stripe checkout produces one buyer-facing receipt, even when its
@@ -907,7 +922,18 @@ const confirmBooking = async (stripeSessionId) => {
   if (newlyConfirmedBookings.length) {
     try {
       await sendUnifiedBookingConfirmation(newlyConfirmedBookings);
+      paymentTrace("confirmation-email-sent", {
+        stripeSessionId,
+        bookingIds: newlyConfirmedBookings.map((booking) => booking._id.toString()),
+        bookingCount: newlyConfirmedBookings.length,
+        buyer: newlyConfirmedBookings[0] ? bookingContext(newlyConfirmedBookings[0]).buyer : undefined,
+      });
     } catch (emailError) {
+      paymentTrace("confirmation-email-failed", {
+        stripeSessionId,
+        bookingIds: newlyConfirmedBookings.map((booking) => booking._id.toString()),
+        error: emailError.message,
+      }, "error");
       console.error("Unified confirmation email failed:", emailError.message);
     }
   }
@@ -925,8 +951,18 @@ const confirmBooking = async (stripeSessionId) => {
         await Cart.updateOne(cartQuery, {
           $set: { items: [], expiresAt: new Date(Date.now() + HOLD_DURATION_MS) },
         });
+        paymentTrace("cart-cleared-after-payment", {
+          stripeSessionId,
+          cartId: sourceBooking.cartId?.toString(),
+          userId: sourceBooking.userId?.toString(),
+          bookingIds: bookings.map((booking) => booking._id.toString()),
+        });
       }
     } catch (cartError) {
+      paymentTrace("cart-clear-after-payment-failed", {
+        stripeSessionId,
+        error: cartError.message,
+      }, "error");
       console.error("Completed cart cleanup failed:", cartError.message);
     }
   }
@@ -1068,6 +1104,13 @@ const handleStripeWebhook = async (event) => {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
 
+    paymentTrace("stripe-payment-completed", {
+      stripeEventId: event.id,
+      stripeSessionId: session.id,
+      stripePaymentStatus: session.payment_status,
+      stripeStatus: session.status,
+    });
+
     // Check if session belongs to a seat change request
     const SeatChangeRequest = require("../models/SeatChangeRequest");
     const seatRequest = await SeatChangeRequest.findOne({ stripeSessionId: session.id });
@@ -1108,6 +1151,11 @@ const handleStripeWebhook = async (event) => {
   }
   if (event.type === "checkout.session.expired") {
     const session = event.data.object;
+
+    paymentTrace("stripe-session-expired", {
+      stripeEventId: event.id,
+      stripeSessionId: session.id,
+    }, "warn");
 
     const SeatChangeRequest = require("../models/SeatChangeRequest");
     const seatRequest = await SeatChangeRequest.findOne({ stripeSessionId: session.id });

@@ -56,6 +56,30 @@ MongoDB/DNS:    grep -i "mongo\\|ENOTFOUND\\|ReplicaSet" logs/error-*.log
 Email/SMTP:     grep -i "email\\|smtp" logs/error-*.log
 Scheduler:      grep "[Scheduler]" logs/combined-*.log
 
+PAYMENT INCIDENT TRACE
+----------------------
+Every payment stage now writes "domain":"payment" and the same Stripe
+Checkout Session ID. Start with the session ID from Stripe Dashboard, a buyer
+screenshot, or the booking document:
+
+  grep '"stripeSessionId":"cs_test_OR_cs_live_HERE"' logs/combined-*.log
+  grep '"bookingId":"BOOKING_ID_HERE"' logs/combined-*.log
+  grep '"confirmationCode":"BK-..."' logs/combined-*.log
+
+For a live readable view while reproducing an issue:
+  tail -f logs/combined-$(date +%F).log | grep --line-buffered 'Payment trace'
+
+Typical successful order timeline:
+  checkout-created -> stripe-webhook-received -> stripe-payment-completed
+  -> confirmation-started -> booking-confirmed -> confirmation-email-sent
+  -> cart-cleared-after-payment
+
+Failure signals to look for:
+  checkout-create-failed, confirmation-payment-not-paid,
+  confirmation-rejected-expired, stripe-webhook-failed,
+  confirmation-email-failed, payment-reminder-failed,
+  booking-hold-released
+
 HOW TO READ A REQUEST
 ---------------------
 200/201 = success

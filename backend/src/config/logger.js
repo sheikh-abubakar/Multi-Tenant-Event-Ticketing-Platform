@@ -16,9 +16,7 @@ const redact = winston.format((info) => {
 });
 
 const fileFormat = winston.format.combine(winston.format.timestamp(), redact(), winston.format.json());
-const consoleFormat = isProduction
-  ? fileFormat
-  : winston.format.combine(
+const consoleFormat = winston.format.combine(
     winston.format.colorize(),
     winston.format.timestamp({ format: "HH:mm:ss" }),
     redact(),
@@ -35,7 +33,8 @@ const consoleFormat = isProduction
       }
       const context = error ? ` — ${error}` : "";
       const extra = Object.entries(meta).filter(([key]) => !["legacy", "stack", "details"].includes(key));
-      return `${timestamp} ${level}: ${message}${context}${extra.length ? ` ${JSON.stringify(Object.fromEntries(extra))}` : ""}`;
+      const trace = [requestId && `requestId: ${requestId}`, method && `method: ${method}`, url && `url: ${url}`, ip && `client: ${ip}`].filter(Boolean);
+      return `${timestamp} ${level}: ${message}${context}${trace.length ? `\n  ${trace.join("\n  ")}` : ""}${extra.length ? ` ${JSON.stringify(Object.fromEntries(extra))}` : ""}`;
     }),
   );
 

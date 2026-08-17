@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "create:super-admin": "node scripts/createSuperAdmin.js"
+    "create:super-admin": "node scripts/createSuperAdmin.js",
+    "logs:help": "node scripts/loggingHelp.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1096.0",

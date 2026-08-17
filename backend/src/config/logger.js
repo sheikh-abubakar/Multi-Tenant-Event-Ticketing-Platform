@@ -20,20 +20,22 @@ const consoleFormat = winston.format.combine(
     winston.format.colorize(),
     winston.format.timestamp({ format: "HH:mm:ss" }),
     redact(),
-    winston.format.printf(({ timestamp, level, message, method, url, status, durationMs, requestId, error, ip, userAgent, contentLength, ...meta }) => {
+    winston.format.printf(({ timestamp, level, message, method, url, status, durationMs, requestId, error, ip, userAgent, contentLength, userId, organizationId, ...meta }) => {
       if (message === "HTTP request") {
         const request = `${String(method).padEnd(7)} ${String(status).padEnd(3)} ${String(Math.round(durationMs)).padStart(4)}ms  ${url}`;
         return [
           `${timestamp} ${level} ${request}`,
           `  requestId: ${requestId}`,
           `  client:    ${ip || "unknown"}`,
+          userId && `  userId:    ${userId}`,
+          organizationId && `  orgId:     ${organizationId}`,
           `  response:  ${contentLength || "0"} bytes`,
           `  userAgent: ${userAgent || "unknown"}`,
         ].join("\n");
       }
       const context = error ? ` — ${error}` : "";
       const extra = Object.entries(meta).filter(([key]) => !["legacy", "stack", "details"].includes(key));
-      const trace = [requestId && `requestId: ${requestId}`, method && `method: ${method}`, url && `url: ${url}`, ip && `client: ${ip}`].filter(Boolean);
+      const trace = [requestId && `requestId: ${requestId}`, method && `method: ${method}`, url && `url: ${url}`, ip && `client: ${ip}`, userId && `userId: ${userId}`, organizationId && `orgId: ${organizationId}`].filter(Boolean);
       return `${timestamp} ${level}: ${message}${context}${trace.length ? `\n  ${trace.join("\n  ")}` : ""}${extra.length ? ` ${JSON.stringify(Object.fromEntries(extra))}` : ""}`;
     }),
   );

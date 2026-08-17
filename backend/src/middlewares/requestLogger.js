@@ -17,6 +17,8 @@ const requestLogger = morgan((tokens, req, res) => JSON.stringify({
   contentLength: tokens.res(req, res, "content-length") || undefined,
   ip: req.ip,
   userAgent: req.get("user-agent"),
+  userId: req.user?._id?.toString() || req.user?.id?.toString() || undefined,
+  organizationId: req.organizationId?.toString() || undefined,
 }), {
   stream: { write: (line) => {
     const entry = JSON.parse(line);

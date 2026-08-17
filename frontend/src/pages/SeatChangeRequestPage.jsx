@@ -51,15 +51,34 @@ export default function SeatChangeRequestPage() {
         setWallet(walletRes.data.wallet);
 
         const eventId = bk.eventId?._id || bk.eventId;
-        const [eventRes, mapRes] = await Promise.all([
-          apiClient.get(`/o/${orgSlug}/events/${eventId}`),
-          apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?bookingId=${bookingId}`)
-        ]);
+        const eventRes = await apiClient.get(`/o/${orgSlug}/events/${eventId}`);
 
-        const sess = eventRes.data.sessions || [];
-        setSessions(sess);
-        setSelectedSessionId(bk.sessionId || sess[0]?._id || "");
-        setEventMap(mapRes.data.seatmap);
+        // A seat change can only target a session that has not started yet.
+        // Keep this aligned with the normal ticket-purchase flow so expired
+        // sessions are neither displayed nor selected by default.
+        const upcomingSessions = (eventRes.data.sessions || []).filter(
+          (session) => new Date(session.dateTime) >= new Date()
+        );
+        setSessions(upcomingSessions);
+
+        const bookedSessionIsUpcoming = upcomingSessions.some(
+          (session) => String(session._id) === String(bk.sessionId)
+        );
+        const initialSessionId = bookedSessionIsUpcoming
+          ? bk.sessionId
+          : upcomingSessions[0]?._id || "";
+
+        if (!initialSessionId && (eventRes.data.sessions || []).length > 0) {
+          setEventMap(null);
+          setError("Seat changes are no longer available because all event sessions have started or passed.");
+          return;
+        }
+
+        setSelectedSessionId(initialSessionId);
+        const initialMapRes = initialSessionId
+          ? await apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?bookingId=${bookingId}&sessionId=${initialSessionId}`)
+          : await apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?bookingId=${bookingId}`);
+        setEventMap(initialMapRes?.data.seatmap || null);
       } catch (err) {
         setError(err.response?.data?.message || "Could not load booking details.");
       } finally {

@@ -51,12 +51,18 @@ export default function BundleSeatSelection() {
 
   const activeEvent = bundle?.eventIds?.[currentEventIdx];
   const displayEvent = resolvedEvent || activeEvent;
+  // Always use the actual active session ID, including the first upcoming
+  // session selected automatically for a multi-session event.  Keeping this
+  // value in cart locks is essential: it becomes the booking's date snapshot.
+  const activeSessionId = activeEvent
+    ? (selectedSessionIds[activeEvent._id] || activeEventSessions[0]?._id || "")
+    : "";
 
   const loadActiveEventMapAndCart = async () => {
     if (!activeEvent) return;
 
     const resolvedEventId = activeEvent._id;
-    const sessionId = selectedSessionIds[activeEvent._id] || "";
+    const requestedSessionId = selectedSessionIds[activeEvent._id] || "";
 
     // Check if code was already unlocked in this session
     const saved = JSON.parse(sessionStorage.getItem("unlockedCodes") || "{}");
@@ -74,9 +80,8 @@ export default function BundleSeatSelection() {
     setActiveEventMap(null);
     setActiveCart({ items: [] });
     try {
-      const [eventRes, mapRes, cartItems] = await Promise.all([
+      const [eventRes, cartItems] = await Promise.all([
         apiClient.get(`/o/${orgSlug}/events/${resolvedEventId}`),
-        apiClient.get(`/o/${orgSlug}/events/${resolvedEventId}/seatmap?sessionId=${sessionId}`, { params: { bundleId } }),
         fetchCart(),
       ]);
       setResolvedEvent(eventRes.data.event);
@@ -84,9 +89,27 @@ export default function BundleSeatSelection() {
       setActiveEventSessions(upcoming);
       if (upcoming.length === 0) {
         setError("This event is no longer active as all of its session dates have passed.");
+        setActiveEventMap(null);
+        return;
       }
+
+      const hasRequestedSession = upcoming.some((session) => String(session._id) === String(requestedSessionId));
+      const resolvedSessionId = hasRequestedSession ? requestedSessionId : upcoming[0]._id;
+      if (String(requestedSessionId) !== String(resolvedSessionId)) {
+        setSelectedSessionIds((previous) => ({ ...previous, [resolvedEventId]: resolvedSessionId }));
+      }
+
+      const mapRes = await apiClient.get(
+        `/o/${orgSlug}/events/${resolvedEventId}/seatmap?sessionId=${resolvedSessionId}`,
+        { params: { bundleId } },
+      );
       setActiveEventMap(mapRes.data.seatmap);
-      setActiveCart({ items: cartItems.filter((item) => String(item.eventId) === String(resolvedEventId) && String(item.bundleId || "") === String(bundleId) && item.itemType !== "bundle") });
+      setActiveCart({ items: cartItems.filter((item) =>
+        String(item.eventId) === String(resolvedEventId)
+        && String(item.eventSessionId || "") === String(resolvedSessionId || "")
+        && String(item.bundleId || "") === String(bundleId)
+        && item.itemType !== "bundle"
+      ) });
       setLockedEventId(null);
     } catch (err) {
       if (err.response?.status === 403 && err.response?.data?.isProtected) {
@@ -99,8 +122,6 @@ export default function BundleSeatSelection() {
     }
   };
 
-  const activeSessionId = activeEvent ? (selectedSessionIds[activeEvent._id] || "") : "";
-
   useEffect(() => {
     loadActiveEventMapAndCart();
   }, [activeEvent, activeSessionId]);
@@ -110,13 +131,17 @@ export default function BundleSeatSelection() {
     if (!activeEvent?._id) return undefined;
     const refreshLiveState = async () => {
       try {
-        const sessionId = selectedSessionIds[activeEvent._id] || "";
         const [mapRes, cartItems] = await Promise.all([
-          apiClient.get(`/o/${orgSlug}/events/${activeEvent._id}/seatmap?sessionId=${sessionId}`),
+          apiClient.get(`/o/${orgSlug}/events/${activeEvent._id}/seatmap?sessionId=${activeSessionId}`),
           fetchCart(),
         ]);
         setActiveEventMap(mapRes.data.seatmap);
-        setActiveCart({ items: cartItems.filter((item) => String(item.eventId) === String(activeEvent._id) && String(item.bundleId || "") === String(bundleId) && item.itemType !== "bundle") });
+        setActiveCart({ items: cartItems.filter((item) =>
+          String(item.eventId) === String(activeEvent._id)
+          && String(item.eventSessionId || "") === String(activeSessionId || "")
+          && String(item.bundleId || "") === String(bundleId)
+          && item.itemType !== "bundle"
+        ) });
       } catch {
         // A transient refresh failure should not interrupt the buyer's selection.
       }
@@ -193,7 +218,7 @@ export default function BundleSeatSelection() {
     }
 
     setBusy(true);
-    const sessionId = selectedSessionIds[activeEvent._id] || "";
+    const sessionId = activeSessionId;
     try {
       if (exists) {
         await serverUnlockSeat({ eventId: activeEvent._id, eventSessionId: sessionId, blockId: block.id, seatId: seat.id });
@@ -211,7 +236,12 @@ export default function BundleSeatSelection() {
         });
       }
       const cartItems = await fetchCart();
-      setActiveCart({ items: cartItems.filter((item) => String(item.eventId) === String(activeEvent._id) && String(item.bundleId || "") === String(bundleId) && item.itemType !== "bundle") });
+      setActiveCart({ items: cartItems.filter((item) =>
+        String(item.eventId) === String(activeEvent._id)
+        && String(item.eventSessionId || "") === String(sessionId || "")
+        && String(item.bundleId || "") === String(bundleId)
+        && item.itemType !== "bundle"
+      ) });
       const mapRes = await apiClient.get(`/o/${orgSlug}/events/${activeEvent._id}/seatmap?sessionId=${sessionId}`);
       setActiveEventMap(mapRes.data.seatmap);
     } catch (err) {
@@ -237,7 +267,7 @@ export default function BundleSeatSelection() {
 
     setBusy(true);
     setError("");
-    const sessionId = selectedSessionIds[activeEvent._id] || "";
+    const sessionId = activeSessionId;
     try {
       if (increment) {
         await serverLockSeat({
@@ -249,7 +279,12 @@ export default function BundleSeatSelection() {
         await serverUnlockSeat({ eventId: activeEvent._id, eventSessionId: sessionId, blockId: block.id, seatId: candidate.seatId || candidate.id });
       }
       const cartItems = await fetchCart();
-      setActiveCart({ items: cartItems.filter((item) => String(item.eventId) === String(activeEvent._id) && String(item.bundleId || "") === String(bundleId) && item.itemType !== "bundle") });
+      setActiveCart({ items: cartItems.filter((item) =>
+        String(item.eventId) === String(activeEvent._id)
+        && String(item.eventSessionId || "") === String(sessionId || "")
+        && String(item.bundleId || "") === String(bundleId)
+        && item.itemType !== "bundle"
+      ) });
       const mapRes = await apiClient.get(`/o/${orgSlug}/events/${activeEvent._id}/seatmap?sessionId=${sessionId}`);
       setActiveEventMap(mapRes.data.seatmap);
     } catch (err) {

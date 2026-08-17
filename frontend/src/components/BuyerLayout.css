@@ -46,7 +46,8 @@
     width: 38px;
     overflow: hidden !important;
     white-space: nowrap;
-    transition: width 280ms cubic-bezier(.4, 0, .2, 1);
+    /* Keep the wordmark from flashing while the sidebar closes. */
+    transition: none;
   }
   .buyer-sidebar:hover .buyer-sidebar__brand {
     width: 132px;

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { ShoppingCart, WalletCards, User, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw, Image, SearchCheck, Ticket } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import apiClient from "../api/client";
 import Logo from "./Logo";
 import AICopilot from "./ai/AICopilot";
 import BuyerLayout from "./BuyerLayout";
@@ -17,6 +18,7 @@ const Layout = ({ children }) => {
 
   // ── Organizer sidebar state (mobile only) ──────────────────────
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeOrganizationName, setActiveOrganizationName] = useState("");
 
   // ── User profile dropdown state ────────────────────────────────
   const [profileOpen, setProfileOpen] = useState(false);
@@ -56,6 +58,24 @@ const Layout = ({ children }) => {
     setSidebarOpen(false);
     setProfileOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user || !orgSlug) {
+      setActiveOrganizationName("");
+      return undefined;
+    }
+
+    apiClient.get(`/o/${orgSlug}/whoami`)
+      .then(({ data }) => {
+        if (!cancelled) setActiveOrganizationName(data.organization?.name || orgSlug);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveOrganizationName(orgSlug);
+      });
+
+    return () => { cancelled = true; };
+  }, [orgSlug, user]);
 
   const handleLogout = () => {
     sessionStorage.removeItem("unlockedCodes");
@@ -122,17 +142,21 @@ const Layout = ({ children }) => {
             <Logo width="130" height="36" idSuffix="sidebar" style={{ flexShrink: 0 }} />
           </Link>
           <p className="sidebar-caption">ORGANIZER CONSOLE</p>
-          <nav className="sidebar-nav" aria-label="Organization navigation">
+          <div className="sidebar-fixed-header">
             <NavLink
               to="/browse"
               className="sidebar-link sidebar-link--global"
+              title="Switch organization"
               onClick={() => setSidebarOpen(false)}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <Building2 size={16} />
-                <span>My Organizations</span>
+                <span>{activeOrganizationName || "Current Organization"}</span>
               </div>
             </NavLink>
+          </div>
+          <div className="sidebar-scroll">
+            <nav className="sidebar-nav" aria-label="Organization navigation">
             <span className="sidebar-divider" />
             <p className="sidebar-caption">THIS ORGANIZATION</p>
             {organizationLinks.map(([label, to, Icon]) => (
@@ -149,7 +173,8 @@ const Layout = ({ children }) => {
                 </div>
               </NavLink>
             ))}
-          </nav>
+            </nav>
+          </div>
           <div className="sidebar-user">
             <span>{user.name}</span>
             <button type="button" onClick={handleLogout}>Log out <b>→</b></button>

@@ -127,12 +127,16 @@ const lockSeat = async (userId, cartId, seatData) => {
 
     let targetSeatMap = event.selectedSeatMap;
     let sessionDoc = null;
-    if (eventSessionId && event.sessions && event.sessions.length > 0) {
-      sessionDoc = event.sessions.find(s => String(s._id) === String(eventSessionId));
-      if (sessionDoc) {
-        targetSeatMap = sessionDoc.selectedSeatMap;
+    if (event.sessions && event.sessions.length > 0) {
+      sessionDoc = eventSessionId
+        ? event.sessions.find((session) => String(session._id) === String(eventSessionId))
+        : event.sessions.find((session) => new Date(session.dateTime) >= new Date());
+      if (!sessionDoc) {
+        throw new Error("No upcoming event session is available for this seat selection");
       }
+      targetSeatMap = sessionDoc.selectedSeatMap;
     }
+    const resolvedSessionId = sessionDoc ? String(sessionDoc._id) : null;
 
     if (!targetSeatMap) {
       throw new Error("Seat map not configured for this event");
@@ -169,7 +173,7 @@ const lockSeat = async (userId, cartId, seatData) => {
     // Check if item already exists in cart to avoid duplicates
     const exists = cart.items.some(
       item => String(item.eventId) === String(eventId) && 
-              String(item.eventSessionId) === String(eventSessionId) &&
+              String(item.eventSessionId || "") === String(resolvedSessionId || "") &&
               item.blockId === blockId && 
               item.seatId === seatId
     );
@@ -177,7 +181,7 @@ const lockSeat = async (userId, cartId, seatData) => {
     if (!exists) {
       cart.items.push({
         eventId,
-        eventSessionId: eventSessionId || null,
+        eventSessionId: resolvedSessionId,
         blockId,
         seatId,
         seatName,

@@ -220,6 +220,10 @@ const getMyBookings = async (userEmail) => {
       path: "organizationId",
       select: "name slug",
     })
+    .populate({
+      path: "bundleId",
+      select: "name bannerImageUrl",
+    })
     .sort({ createdAt: -1 })
     .lean();
 };

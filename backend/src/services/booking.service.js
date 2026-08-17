@@ -1321,9 +1321,15 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
       let targetSeatMap = event.selectedSeatMap;
       let sessionDoc = null;
       if (event.sessions && event.sessions.length > 0) {
-        sessionDoc = event.sessions.find(s => String(s._id) === String(sessionId)) ||
-                     event.sessions.find(s => new Date(s.dateTime) >= new Date()) ||
-                     event.sessions[0];
+        sessionDoc = sessionId
+          ? event.sessions.find((session) => String(session._id) === String(sessionId))
+          : event.sessions.find((session) => new Date(session.dateTime) >= new Date());
+        if (!sessionDoc) {
+          throw new Error(`No upcoming selected session is available for event ${event.name}.`);
+        }
+        if (new Date(sessionDoc.dateTime) <= new Date()) {
+          throw new Error(`The selected session for event ${event.name} has already started or passed.`);
+        }
         if (sessionDoc) {
           targetSeatMap = sessionDoc.selectedSeatMap;
         }
@@ -1748,14 +1754,27 @@ const createUnifiedCheckout = async (organizationId, orgSlug, data) => {
 
       // Create Booking record
       const confirmationCode = generateConfirmationCode();
+      // A multi-session event has one base event date plus session-specific
+      // dates. The cart item is already scoped to one session, so snapshot
+      // that session's date on the booking rather than the event's first date.
+      const selectedSessionId = eventItems[0].eventSessionId || null;
+      if (event.sessions?.length && !selectedSessionId) {
+        throw new Error(`A session must be selected for multi-session event ${event.name}.`);
+      }
+      const selectedSession = selectedSessionId && event.sessions?.length
+        ? event.sessions.find((session) => String(session._id) === String(selectedSessionId))
+        : null;
+      if (selectedSessionId && !selectedSession) {
+        throw new Error(`The selected session for ${event.name} is no longer available.`);
+      }
       const [booking] = await Booking.create(
         [
           {
             organizationId: event.organizationId,
             eventId,
-            sessionId: eventItems[0].eventSessionId || null,
+            sessionId: selectedSessionId,
             eventName: event.name,
-            eventDateTime: event.dateTime,
+            eventDateTime: selectedSession?.dateTime || event.dateTime,
             buyerName: buyerName.trim(),
             buyerEmail: normalizedEmail,
             items: bookingItems,

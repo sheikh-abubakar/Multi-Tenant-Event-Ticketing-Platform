@@ -61,16 +61,28 @@ const createRequest = async (userId, organizationId, data, options) => {
   let targetSeatMap = event.selectedSeatMap;
   let targetSessionDoc = null;
   if (event.sessions && event.sessions.length > 0) {
-    targetSessionDoc = event.sessions.find(s => String(s._id) === String(newSessionId)) ||
-                       event.sessions.find(s => new Date(s.dateTime) >= new Date()) ||
-                       event.sessions[0];
+    if (newSessionId) {
+      targetSessionDoc = event.sessions.find((session) => String(session._id) === String(newSessionId));
+      if (!targetSessionDoc) {
+        const error = new Error("Selected event session was not found");
+        error.statusCode = 404;
+        throw error;
+      }
+    } else {
+      targetSessionDoc = event.sessions.find((session) => new Date(session.dateTime) >= new Date());
+    }
+    if (!targetSessionDoc) {
+      const error = new Error("No upcoming event session is available for a seat change");
+      error.statusCode = 400;
+      throw error;
+    }
     if (targetSessionDoc) {
       targetSeatMap = targetSessionDoc.selectedSeatMap;
     }
   }
 
   const checkDateTime = targetSessionDoc ? targetSessionDoc.dateTime : event.dateTime;
-  if (checkDateTime && new Date(checkDateTime) < new Date()) {
+  if (checkDateTime && new Date(checkDateTime) <= new Date()) {
     const error = new Error("Cannot change seats for an event session that has already occurred or started");
     error.statusCode = 400;
     throw error;

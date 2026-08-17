@@ -4,6 +4,26 @@ import { Wallet, Ticket, ArrowLeft, Clock, X, Gift } from "lucide-react";
 import apiClient from "../api/client";
 import "./BuyerDashboard.css";
 
+const buildBookingDisplayItems = (bookings) => {
+  const items = [];
+  const bundles = new Map();
+
+  bookings.forEach((booking) => {
+    if (!booking.isBundleBooking || !booking.bundleBookingId) {
+      items.push({ type: "event", key: booking._id, booking, bookings: [booking] });
+      return;
+    }
+
+    const bundleKey = String(booking.bundleBookingId);
+    const existing = bundles.get(bundleKey);
+    if (existing) existing.bookings.push(booking);
+    else bundles.set(bundleKey, { type: "bundle", key: `bundle-${bundleKey}`, booking, bookings: [booking] });
+  });
+
+  bundles.forEach((bundle) => items.push(bundle));
+  return items.sort((left, right) => new Date(right.booking.createdAt) - new Date(left.booking.createdAt));
+};
+
 const BuyerDashboard = ({ bookingsOnly = false }) => {
   const [wallet, setWallet] = useState(null);
   const [bookings, setBookings] = useState([]);
@@ -83,6 +103,14 @@ const BuyerDashboard = ({ bookingsOnly = false }) => {
     const age = Date.now() - new Date(booking.createdAt).getTime();
     return age < THREE_DAYS;
   };
+
+  const displayBookings = buildBookingDisplayItems(bookings);
+  const visibleBookings = displayBookings.filter((item) => {
+    const status = item.type === "bundle"
+      ? (item.bookings.every((booking) => booking.status === "refunded") ? "refunded" : "confirmed")
+      : item.booking.status;
+    return bookingFilter === "all" || status === bookingFilter;
+  });
 
   if (loading) {
     return (
@@ -331,11 +359,11 @@ const BuyerDashboard = ({ bookingsOnly = false }) => {
             fontSize: 12,
             fontWeight: 600,
           }}>
-            {bookings.length}
+             {displayBookings.length}
           </span>
         </div>
 
-        {bookingsOnly && bookings.length > 0 && (
+        {bookingsOnly && displayBookings.length > 0 && (
           <div className="buyer-booking-filters" aria-label="Filter bookings by status">
             {["all", "confirmed", "refunded"].map((status) => (
               <button key={status} type="button" className={bookingFilter === status ? "is-active" : ""} onClick={() => setBookingFilter(status)}>
@@ -345,7 +373,7 @@ const BuyerDashboard = ({ bookingsOnly = false }) => {
           </div>
         )}
 
-        {bookings.length === 0 || (bookingFilter !== "all" && !bookings.some((booking) => booking.status === bookingFilter)) ? (
+        {displayBookings.length === 0 || visibleBookings.length === 0 ? (
           <div className="buyer-dashboard__empty" style={{
             textAlign: "center",
             padding: 40,
@@ -363,13 +391,26 @@ const BuyerDashboard = ({ bookingsOnly = false }) => {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {bookings.filter((booking) => bookingFilter === "all" || booking.status === bookingFilter).map((booking) => {
+            {visibleBookings.map((displayItem) => {
+              const isBundle = displayItem.type === "bundle";
+              const booking = displayItem.booking;
+              const bundleBookings = displayItem.bookings;
+              const bundle = isBundle ? (booking.bundleId || {}) : null;
               const event = booking.eventId || {};
               const venue = event.venueId || {};
-              const canRefund = booking.status === "confirmed" && isWithinRefundWindow(booking);
+              const canRefund = !isBundle && booking.status === "confirmed" && isWithinRefundWindow(booking);
+              const displayStatus = isBundle
+                ? (bundleBookings.every((component) => component.status === "refunded") ? "refunded" : "confirmed")
+                : booking.status;
+              const ticketCount = bundleBookings.reduce(
+                (total, component) => total + (component.items?.reduce((sum, item) => sum + item.quantity, 0) || 0),
+                0,
+              );
+              const totalAmount = bundleBookings.reduce((total, component) => total + Number(component.totalAmount || 0), 0);
+              const relatedBookingIds = new Set(bundleBookings.map((component) => String(component._id)));
 
               return (
-                <div key={booking._id} className="buyer-dashboard__booking" style={{
+                <div key={displayItem.key} className="buyer-dashboard__booking" style={{
                   background: "var(--card)",
                   borderRadius: 12,
                   padding: "18px 20px",
@@ -379,10 +420,18 @@ const BuyerDashboard = ({ bookingsOnly = false }) => {
                   alignItems: "center",
                   gap: 16,
                 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 14 }}>
+                    {isBundle && bundle?.bannerImageUrl && (
+                      <img
+                        src={bundle.bannerImageUrl}
+                        alt={bundle.name || booking.bundleName || "Event bundle"}
+                        style={{ width: 74, height: 74, objectFit: "cover", borderRadius: 10, border: "1px solid var(--border)", flexShrink: 0 }}
+                      />
+                    )}
+                    <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                       <h3 style={{ margin: 0, color: "var(--paper)", fontSize: 16, fontWeight: 600 }}>
-                        {event.name || "Unknown Event"}
+                        {isBundle ? (bundle?.name || booking.bundleName || "Event Bundle") : (event.name || "Unknown Event")}
                       </h3>
                       <span style={{
                         padding: "2px 8px",
@@ -390,28 +439,37 @@ const BuyerDashboard = ({ bookingsOnly = false }) => {
                         fontSize: 11,
                         fontWeight: 600,
                         textTransform: "uppercase",
-                        background: booking.status === "confirmed" ? "#e6f7e6" : booking.status === "refunded" ? "#fff3cd" : "#fce8e6",
-                        color: booking.status === "confirmed" ? "#1a7d1a" : booking.status === "refunded" ? "#856404" : "#c01e1e",
+                        background: displayStatus === "confirmed" ? "#e6f7e6" : displayStatus === "refunded" ? "#fff3cd" : "#fce8e6",
+                        color: displayStatus === "confirmed" ? "#1a7d1a" : displayStatus === "refunded" ? "#856404" : "#c01e1e",
                       }}>
-                        {booking.status}
+                        {displayStatus}
                       </span>
                     </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 13, color: "var(--muted)" }}>
+                    {isBundle && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 13, color: "var(--muted)" }}>
+                        <span>{bundleBookings.length} included events</span>
+                        <span>View event venues and QR tickets</span>
+                        <span>{ticketCount} tickets</span>
+                        <span style={{ color: "var(--gold)", fontWeight: 600 }}>{formatCurrency(totalAmount)}</span>
+                      </div>
+                    )}
+                    {!isBundle && (<div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 13, color: "var(--muted)" }}>
                       <span>📅 {booking.eventDateTime ? formatDate(booking.eventDateTime) : event.dateTime ? formatDate(event.dateTime) : "TBD"}</span>
                       <span>📍 {venue.name || "TBA"}{venue.city ? `, ${venue.city}` : ""}</span>
                       <span>🎫 {booking.items?.reduce((s, i) => s + i.quantity, 0)} tickets</span>
                       <span style={{ color: "var(--gold)", fontWeight: 600 }}>
                         {formatCurrency(booking.totalAmount)}
                       </span>
-                    </div>
+                    </div>)}
                     <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--muted)" }}>
+                      {isBundle && <>Bundle purchase • {bundleBookings.length} events • {formatDate(booking.createdAt)}<br /></>}
                       Code: {booking.confirmationCode} • {formatDate(booking.createdAt)}
                     </p>
 
                     {/* Associated Seat Change Requests */}
                     {(() => {
                       const myRequests = seatChangeRequests.filter(
-                        (r) => String(r.bookingId?._id || r.bookingId) === String(booking._id)
+                        (r) => relatedBookingIds.has(String(r.bookingId?._id || r.bookingId))
                       );
                       if (myRequests.length === 0) return null;
                       return (
@@ -439,6 +497,7 @@ const BuyerDashboard = ({ bookingsOnly = false }) => {
                       );
                     })()}
                   </div>
+                  </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <Link
                       to={`/o/${booking.organizationId?.slug || booking.organizationId}/bookings/${booking._id}/confirmation`}
@@ -454,7 +513,7 @@ const BuyerDashboard = ({ bookingsOnly = false }) => {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      View
+                      {isBundle ? "View Bundle" : "View"}
                     </Link>
                     {canRefund && (
                       <button

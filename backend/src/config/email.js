@@ -335,6 +335,7 @@ const sendUnifiedBookingConfirmation = async (bookings) => {
     .populate("venueId", "name address city")
     .lean();
   const eventById = new Map(events.map((event) => [String(event._id), event]));
+  const organization = await Organization.findById(primary.organizationId).select("slug").lean();
   const groups = new Map();
   for (const booking of bookings) {
     const key = booking.isBundleBooking && booking.bundleId ? `bundle:${booking.bundleId}` : `event:${booking._id}`;
@@ -343,7 +344,16 @@ const sendUnifiedBookingConfirmation = async (bookings) => {
     const seats = (booking.selectedSeats || []).map((seat) => `${seat.sectionName || "Section"} - ${seat.seatName}`).join(", ");
     const tickets = (booking.items || []).map((item) => `${item.ticketTypeName} x${item.quantity}`).join(", ");
     const venue = eventById.get(String(booking.eventId))?.venueId;
+    const timezone = eventById.get(String(booking.eventId))?.timezone || "Asia/Karachi";
     const venueLabel = [venue?.name, venue?.address, venue?.city].filter(Boolean).join(", ");
+    const eventStart = formatDateForGoogle(booking.eventDateTime, timezone);
+    const eventEnd = formatDateForGoogle(new Date(new Date(booking.eventDateTime).getTime() + 3 * 60 * 60 * 1000), timezone);
+    const calendarDetails = [
+      `Confirmation Code: ${booking.confirmationCode}`,
+      `Tickets: ${tickets || "Confirmed tickets"}`,
+      venueLabel ? `Venue: ${venueLabel}` : "",
+      `View tickets: ${organization?.slug ? `${process.env.FRONTEND_URL || "http://localhost:5173"}/o/${organization.slug}/bookings/${booking._id}/confirmation` : `${process.env.FRONTEND_URL || "http://localhost:5173"}/my/bookings`}`,
+    ].filter(Boolean).join("\n");
     group.lines.push({
       event: booking.eventName || "Event",
       detail: seats || tickets || "Tickets confirmed",
@@ -351,25 +361,16 @@ const sendUnifiedBookingConfirmation = async (bookings) => {
       venueName: venue?.name || "Venue to be announced",
       venueAddress: venueLabel || null,
       mapUrl: venueLabel ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venueLabel)}` : null,
+      calendarUrl: `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(booking.eventName || "StagePass Event")}&dates=${eventStart}/${eventEnd}&location=${encodeURIComponent(venueLabel)}&details=${encodeURIComponent(calendarDetails)}`,
     });
     group.total += Number(booking.totalAmount || 0);
   }
   const total = bookings.reduce((sum, booking) => sum + Number(booking.totalAmount || 0), 0);
-  const summary = [...groups.values()].map((group) => `<div style="padding:12px 0;border-bottom:1px solid #e8e0d0"><p style="margin:0 0 5px;font-size:14px;font-weight:800">${group.bundle ? "Bundle: " : "Event: "}${group.title}</p>${group.lines.map((line) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:10px 0;border-collapse:collapse"><tr><td style="font-size:13px;color:#5d5668;line-height:1.5">${group.bundle ? `<strong style="color:#1e2030">${line.event}</strong><br/>` : ""}${line.detail}<br/><strong>Confirmation: ${line.code}</strong><br/><span style="font-size:12px;color:#6b6054"><strong>Venue:</strong> ${line.venueName}${line.venueAddress ? `<br/>${line.venueAddress}` : ""}</span></td><td align="right" valign="middle" style="padding-left:12px;white-space:nowrap">${line.mapUrl ? `<a href="${line.mapUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;color:#fffdf8;background:#15182e;border:1px solid #c99a3c;border-radius:5px;padding:8px 10px;font-size:12px;font-weight:800;text-decoration:none">View venue map</a>` : ""}</td></tr></table>`).join("")}<p style="margin:6px 0 0;text-align:right;font-weight:800">${money(group.total)}</p></div>`).join("");
-  const organization = await Organization.findById(primary.organizationId).select("slug").lean();
+  const summary = [...groups.values()].map((group) => `<div style="padding:12px 0;border-bottom:1px solid #e8e0d0"><p style="margin:0 0 5px;font-size:14px;font-weight:800">${group.bundle ? "Bundle: " : "Event: "}${group.title}</p>${group.lines.map((line) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:10px 0;border-collapse:collapse"><tr><td style="font-size:13px;color:#5d5668;line-height:1.5">${group.bundle ? `<strong style="color:#1e2030">${line.event}</strong><br/>` : ""}${line.detail}<br/><strong>Confirmation: ${line.code}</strong><br/><span style="font-size:12px;color:#6b6054"><strong>Venue:</strong> ${line.venueName}${line.venueAddress ? `<br/>${line.venueAddress}` : ""}</span></td><td align="right" valign="middle" style="padding-left:12px;white-space:nowrap">${line.mapUrl ? `<a href="${line.mapUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;color:#fffdf8;background:#15182e;border:1px solid #c99a3c;border-radius:5px;padding:8px 10px;font-size:12px;font-weight:800;text-decoration:none;margin-bottom:6px">View venue map</a><br/>` : ""}<a href="${line.calendarUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;color:#1e1a0c;background:#c99a3c;border-radius:5px;padding:8px 10px;font-size:12px;font-weight:800;text-decoration:none">Add to Google Calendar</a></td></tr></table>`).join("")}<p style="margin:6px 0 0;text-align:right;font-weight:800">${money(group.total)}</p></div>`).join("");
   const confirmationUrl = organization?.slug
     ? `${process.env.FRONTEND_URL || "http://localhost:5173"}/o/${organization.slug}/bookings/${primary._id}/confirmation`
     : `${process.env.FRONTEND_URL || "http://localhost:5173"}/my/bookings`;
-  // Calendar files must always be served by the backend. Falling back to the
-  // frontend URL makes a Vercel SPA render its own page for /api/... instead
-  // of downloading the .ics file.
-  const publicApiUrl = (process.env.PUBLIC_API_URL || process.env.BACKEND_URL || (process.env.NODE_ENV !== "production" ? "http://localhost:5000" : "")).replace(/\/$/, "");
-  if (!publicApiUrl) {
-    console.warn("[Email] PUBLIC_API_URL is not configured; calendar download link was omitted.");
-  }
-  const calendarUrl = publicApiUrl && organization?.slug ? `${publicApiUrl}/api/o/${organization.slug}/bookings/${primary._id}/calendar-all.ics` : null;
-  const calendarButton = calendarUrl ? `<a href="${calendarUrl}" target="_blank" rel="noopener noreferrer" style="background:#15182e;color:#fffdf8;padding:14px 24px;border-radius:6px;text-decoration:none;font-weight:800;display:inline-block;font-size:14px;margin:10px 6px">Download calendar (.ics)</a>` : "";
-  const contentHtml = `<p style="font-size:16px;margin:0 0 16px">Hi <strong>${primary.buyerName}</strong>,</p><p style="font-size:15px;margin:0 0 24px;color:#3d3848;line-height:1.6">Your StagePass checkout is confirmed. Keep the confirmation codes below for entry.</p><div style="background:#f7f2e7;padding:20px;border-radius:10px;border-left:4px solid #c99a3c;margin:24px 0"><h3 style="margin:0 0 12px;color:#15182e;font-size:16px">Confirmed Order</h3>${summary}<p style="margin:14px 0 0;text-align:right;font-size:15px"><strong>Total paid:</strong> ${money(total)}</p></div><p style="font-size:13px;color:#5d5668;margin:0 0 12px">Each event has its own venue link. The calendar download contains every event from this checkout.</p><div style="text-align:center;margin:32px 0"><a href="${confirmationUrl}" style="background:#c99a3c;color:#1e1a0c;padding:14px 24px;border-radius:6px;text-decoration:none;font-weight:800;display:inline-block;font-size:14px;margin:10px 6px">View Tickets and QR Codes</a>${calendarButton}</div>`;
+  const contentHtml = `<p style="font-size:16px;margin:0 0 16px">Hi <strong>${primary.buyerName}</strong>,</p><p style="font-size:15px;margin:0 0 24px;color:#3d3848;line-height:1.6">Your StagePass checkout is confirmed. Keep the confirmation codes below for entry.</p><div style="background:#f7f2e7;padding:20px;border-radius:10px;border-left:4px solid #c99a3c;margin:24px 0"><h3 style="margin:0 0 12px;color:#15182e;font-size:16px">Confirmed Order</h3>${summary}<p style="margin:14px 0 0;text-align:right;font-size:15px"><strong>Total paid:</strong> ${money(total)}</p></div><p style="font-size:13px;color:#5d5668;margin:0 0 12px">Use the calendar button beside each event to open Google Calendar with its correct time and venue.</p><div style="text-align:center;margin:32px 0"><a href="${confirmationUrl}" style="background:#c99a3c;color:#1e1a0c;padding:14px 24px;border-radius:6px;text-decoration:none;font-weight:800;display:inline-block;font-size:14px;margin:10px 6px">View Tickets and QR Codes</a></div>`;
   return transporter.sendMail({ from: process.env.EMAIL_FROM || '"StagePass" <noreply@stagepass.com>', to: primary.buyerEmail, subject: `Booking Confirmed - ${bookings.length} booking${bookings.length === 1 ? "" : "s"}`, html: renderEmailTemplate("Your StagePass booking is confirmed", "Booking Confirmation", contentHtml) });
 };
 

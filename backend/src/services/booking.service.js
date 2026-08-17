@@ -17,7 +17,8 @@ const { notifyOrganizationBookingUpdate } = require("./organizationUpdate.servic
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
-const HOLD_DURATION_MS = 48 * 60 * 60 * 1000; // 48 hours (2 days)
+// A payment checkout reserves inventory for a short, predictable window.
+const HOLD_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
 const generateConfirmationCode = () => {
   const randomPart = crypto.randomBytes(3).toString("hex").toUpperCase();

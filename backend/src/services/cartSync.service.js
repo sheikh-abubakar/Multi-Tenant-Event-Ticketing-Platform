@@ -2,7 +2,8 @@ const mongoose = require("mongoose");
 const Cart = require("../models/Cart");
 const Event = require("../models/Event");
 
-const HOLD_DURATION_MS = 48 * 60 * 60 * 1000; // 48 hours (2 days)
+// Cart selections reserve seat-map inventory for 30 minutes from the first item.
+const HOLD_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
 const getOrCreateCart = async (userId, cartId) => {
   let cart = null;

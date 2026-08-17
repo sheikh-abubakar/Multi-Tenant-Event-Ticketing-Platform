@@ -23,7 +23,7 @@ const getUnifiedCart = async (req) => {
       userId: userId || null,
       cartId,
       items: [],
-      expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000)
     });
   }
   return cart;

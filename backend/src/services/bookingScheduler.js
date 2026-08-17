@@ -8,13 +8,13 @@ const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
 const { notifyOrganizationBookingUpdate } = require("./organizationUpdate.service");
 
 // How often the background sweep runs. Needs to be smaller than both
-// the reminder window (30s) and the hold window (90s) so neither event
+// the reminder window (5m) and the hold window (30m) so neither event
 // is missed by more than one tick's worth of delay.
 const SWEEP_INTERVAL_MS = 5 * 1000;
-const REMINDER_AFTER_MS = 30 * 1000;
+const REMINDER_AFTER_MS = 5 * 60 * 1000;
 
 /**
- * Finds pending bookings older than 30 seconds that haven't had a
+ * Finds pending bookings older than five minutes that haven't had a
  * reminder sent yet, and emails the buyer a direct Stripe payment link.
  *
  * Why query by `createdAt` (a stored timestamp) instead of an in-memory
@@ -96,9 +96,8 @@ const sendPendingReminders = async () => {
  * Manually expires a booking's Stripe Checkout Session.
  *
  * WHY THIS EXISTS: Stripe's own `expires_at` on a Checkout Session can't
- * be set below 30 minutes — there is no way to give Stripe a 90-second
- * expiry directly at session-creation time. That means our DB-side hold
- * window (90s) and Stripe's own session lifetime were previously out of
+ * be set below 30 minutes. Our DB-side hold window is also 30 minutes, but
+ * we still explicitly expire the Stripe session so both systems remain in
  * sync: our `Booking.expiresAt` would pass and we'd mark the booking
  * "expired" + release the tickets, but the Stripe-hosted payment page
  * stayed live for up to 24h. A buyer who still had that tab open (or
@@ -108,7 +107,7 @@ const sendPendingReminders = async () => {
  * Calling `stripe.checkout.sessions.expire()` here tells Stripe to kill
  * the session the moment we release it on our side, so the hosted page
  * immediately starts showing "This session has expired" and blocks
- * payment. This keeps our DB and Stripe in sync at the same 90s mark.
+ * payment. This keeps our DB and Stripe in sync at the same expiry mark.
  *
  * Deliberately called AFTER the DB transaction commits, not inside it:
  * this is a network call to an external API, and a transaction should
@@ -141,7 +140,7 @@ const expireStripeSession = async (booking) => {
 };
 
 /**
- * Finds pending bookings whose 90-second hold window has passed and
+ * Finds pending bookings whose 30-minute hold window has passed and
  * releases their held tickets back to inventory, marking the booking
  * "expired". Runs each release inside a transaction — the ticket-count
  * rollback and the status change must both succeed together, mirroring

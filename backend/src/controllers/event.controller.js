@@ -4,6 +4,7 @@ const { recordPlatformAudit } = require("../utils/platformAudit");
 const EventBundle = require("../models/EventBundle");
 const Event = require("../models/Event");
 const MediaAsset = require("../models/MediaAsset");
+const { notifyOrganization } = require("../services/notification.service");
 
 // If a file was uploaded (req.file.buffer, set by multer's
 // memoryStorage), streams it to Cloudinary and returns the hosted
@@ -34,6 +35,7 @@ const create = async (req, res) => {
     const bannerImageUrl = (await buildBannerUrl(req)) || req.body.bannerImageUrl;
     const event = await eventService.createEvent(req.body, req.organizationId, bannerImageUrl);
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "event.created", targetType: "event", targetId: event._id, metadata: { eventName: event.name } });
+    await notifyOrganization(req.organizationId, { type: "event.created", title: "Event created", message: `${req.user.name || req.user.email} created ${event.name}.`, link: `/o/${req.params.orgSlug}/manage/events`, metadata: { eventId: String(event._id) } }, req.user._id);
     return res.status(201).json({ event });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -128,6 +130,7 @@ const update = async (req, res) => {
       bannerImageUrl
     );
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "event.updated", targetType: "event", targetId: event._id, metadata: { eventName: event.name } });
+    await notifyOrganization(req.organizationId, { type: "event.updated", title: "Event updated", message: `${req.user.name || req.user.email} updated ${event.name}.`, link: `/o/${req.params.orgSlug}/manage/events`, metadata: { eventId: String(event._id) } }, req.user._id);
     return res.json({ event });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -136,8 +139,10 @@ const update = async (req, res) => {
 
 const remove = async (req, res) => {
   try {
+    const event = await Event.findOne({ _id: req.params.eventId, organizationId: req.organizationId }).select("name").lean();
     await eventService.deleteEvent(req.params.eventId, req.organizationId);
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "event.deleted", targetType: "event", targetId: req.params.eventId });
+    await notifyOrganization(req.organizationId, { type: "event.deleted", title: "Event removed", message: `${req.user.name || req.user.email} removed ${event?.name || "an event"}.`, link: `/o/${req.params.orgSlug}/manage/events`, metadata: { eventId: req.params.eventId } }, req.user._id);
     return res.status(204).send();
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

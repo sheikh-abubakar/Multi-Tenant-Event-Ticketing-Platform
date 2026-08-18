@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  Building2, CalendarDays, ChevronDown, ChevronRight, Gift,
+  Bell, Building2, CalendarDays, ChevronDown, ChevronRight, Gift,
   LogOut, Menu, Plus, ShoppingCart, Ticket, User, WalletCards, X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import apiClient from "../api/client";
 import Logo from "./Logo";
 import AICopilot from "./ai/AICopilot";
+import NotificationBell from "./NotificationBell";
 import "./BuyerLayout.css";
 
 const BuyerLayout = ({ children }) => {
@@ -78,6 +79,7 @@ const BuyerLayout = ({ children }) => {
   const links = [
     ["Browse Events", "/browse", CalendarDays, true],
     ["Cart", "/cart", ShoppingCart],
+    ["Notifications", "/my/notifications", Bell],
     ["My Bookings", "/my/bookings", Ticket],
     ["Wallet", "/my/wallet", WalletCards],
     ["Referrals & Rewards", "/my/referrals", Gift],
@@ -141,6 +143,8 @@ const BuyerLayout = ({ children }) => {
         <header className="buyer-topbar">
           <button className="buyer-topbar__menu" onClick={() => setSidebarOpen(true)} aria-label="Open buyer menu"><Menu size={22} /></button>
           <div className="buyer-topbar__title"><span>STAGEPASS</span><small>BUYER HUB</small></div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <NotificationBell />
           <div className="buyer-profile" ref={profileRef}>
             <button className="buyer-profile__trigger" onClick={() => setProfileOpen((value) => !value)} aria-expanded={profileOpen}>
               <User size={16} /><span>Profile</span><ChevronDown size={14} />
@@ -152,6 +156,7 @@ const BuyerLayout = ({ children }) => {
                 <button onClick={handleLogout}><LogOut size={15} /> Log out</button>
               </div>
             )}
+          </div>
           </div>
         </header>
         <main className="buyer-main">{children}</main>

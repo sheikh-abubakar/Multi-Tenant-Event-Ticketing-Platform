@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const QRCode = require("qrcode");
 const Event = require("../models/Event");
+const Organization = require("../models/Organization");
 const EventBundle = require("../models/EventBundle");
 const Booking = require("../models/Booking");
 const Cart = require("../models/Cart");
@@ -13,6 +14,7 @@ const referralService = require("./referral.service");
 const couponService = require("./coupon.service");
 const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
 const { notifyOrganizationBookingUpdate } = require("./organizationUpdate.service");
+const { notifyUser, notifyOrganization } = require("./notification.service");
 
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -919,6 +921,17 @@ const confirmBooking = async (stripeSessionId) => {
     paymentTrace("booking-confirmed", bookingContext(booking));
   }
 
+  // Cart checkout may have persisted a referral reward before this endpoint
+  // sees the booking as already confirmed. Reconcile the real-time reward
+  // notification here so the referrer receives it immediately, not on reload.
+  for (const booking of confirmedBookings) {
+    try {
+      await referralService.ensureBookingReferralNotification(booking);
+    } catch (refErr) {
+      console.error("Referral notification reconciliation failed:", refErr.message);
+    }
+  }
+
   // One Stripe checkout produces one buyer-facing receipt, even when its
   // internal fulfillment consists of several events or bundle components.
   if (newlyConfirmedBookings.length) {
@@ -975,6 +988,36 @@ const confirmBooking = async (stripeSessionId) => {
       stripeSessionId,
       bookingIds: bookings.filter((booking) => booking.organizationId.toString() === organizationId).map((booking) => booking._id.toString()),
     });
+  }
+
+  // A checkout can contain multiple events and organizations. The buyer gets
+  // one concise receipt notification; each tenant gets only its own booking.
+  // Do this for every confirmed checkout, not only for a transition performed
+  // in this invocation. Stripe can confirm first and the browser success page
+  // can arrive later; dedupe keys make this retry-safe while guaranteeing the
+  // notification is eventually persisted.
+  if (confirmedBookings.length) {
+    const first = confirmedBookings[0];
+    const buyerId = first.userId || (await User.findOne({ email: first.buyerEmail }).select("_id").lean())?._id;
+    await notifyUser(buyerId, {
+      type: "booking.confirmed",
+      title: "Booking confirmed",
+      message: confirmedBookings.length === 1 ? `Your ticket for ${first.eventName} is confirmed.` : `Your checkout with ${confirmedBookings.length} event tickets is confirmed.`,
+      link: "/my/bookings",
+      metadata: { bookingIds: confirmedBookings.map((item) => String(item._id)) },
+      dedupeKey: `booking-confirmed:buyer:${stripeSessionId}`,
+    });
+    await Promise.all(confirmedBookings.map(async (booking) => {
+      const organization = await Organization.findById(booking.organizationId).select("slug").lean();
+      return notifyOrganization(booking.organizationId, {
+        type: "booking.confirmed",
+        title: "New booking confirmed",
+        message: `${booking.buyerName} booked ${booking.eventName || "an event"} for $${Number(booking.totalAmount || 0).toFixed(2)}.`,
+        link: organization?.slug ? `/o/${organization.slug}/manage/booking-lookup?bookingId=${booking._id}` : "/my/notifications",
+        metadata: { bookingId: String(booking._id), eventId: String(booking.eventId) },
+        dedupeKey: `booking-confirmed:organization:${booking._id}`,
+      });
+    }));
   }
 
   // Return the first booking to satisfy controller redirect / page title info

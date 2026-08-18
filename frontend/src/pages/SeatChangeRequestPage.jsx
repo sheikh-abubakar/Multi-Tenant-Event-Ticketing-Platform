@@ -114,7 +114,7 @@ export default function SeatChangeRequestPage() {
 
   const priceDifference = useMemo(() => {
     if (!originalSeat || !selectedSeat) return 0;
-    if (booking?.isBundleBooking || booking?.bundleBookingId) return 0;
+    if (booking?.isBundleBooking && booking?.bundleId) return 0;
     return selectedSeat.block.price - originalSeat.unitPrice;
   }, [originalSeat, selectedSeat, booking]);
 
@@ -170,7 +170,9 @@ export default function SeatChangeRequestPage() {
           seatId: selectedSeat.seat.id,
           seatName: selectedSeat.seat.seatName,
           sectionName: selectedSeat.block.name,
-          unitPrice: (booking.isBundleBooking || booking.bundleBookingId) ? originalSeat.unitPrice : selectedSeat.block.price,
+          // Backend independently re-reads this from the event seat map.
+          // Send it only for a transparent client-side request payload.
+          unitPrice: selectedSeat.block.price,
         },
         reason,
         paymentMethod,
@@ -308,7 +310,7 @@ export default function SeatChangeRequestPage() {
               Request Summary
             </h3>
 
-            {booking && (booking.isBundleBooking || booking.bundleBookingId) && (
+            {booking && booking.isBundleBooking && booking.bundleId && (
               <div style={{ background: "rgba(201, 154, 60, 0.08)", border: "1px solid rgba(201, 154, 60, 0.2)", borderRadius: 12, padding: 12, marginBottom: 16, color: "var(--gold-soft)", fontSize: 13 }}>
                 <strong>Bundle Booking Override:</strong> Seat change request for events in a bundle is free of charge.
               </div>
@@ -341,11 +343,11 @@ export default function SeatChangeRequestPage() {
               <div style={{ padding: 12, borderRadius: 8, background: "rgba(20, 22, 43, 0.05)", marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                   <span>Price difference:</span>
-                  <strong style={{ color: (booking.isBundleBooking || booking.bundleBookingId) ? "#10b981" : (priceDifference > 0 ? "var(--gold)" : "#10b981") }}>
-                    {(booking.isBundleBooking || booking.bundleBookingId) ? "$0.00 (Bundle Override)" : (priceDifference > 0 ? `+$${priceDifference.toFixed(2)}` : priceDifference < 0 ? `Refund -$${Math.abs(priceDifference).toFixed(2)}` : "$0.00 (Same Price)")}
+                  <strong style={{ color: (booking.isBundleBooking && booking.bundleId) ? "#10b981" : (priceDifference > 0 ? "var(--gold)" : "#10b981") }}>
+                    {(booking.isBundleBooking && booking.bundleId) ? "$0.00 (Bundle Override)" : (priceDifference > 0 ? `+$${priceDifference.toFixed(2)}` : priceDifference < 0 ? `Refund -$${Math.abs(priceDifference).toFixed(2)}` : "$0.00 (Same Price)")}
                   </strong>
                 </div>
-                {priceDifference < 0 && !(booking.isBundleBooking || booking.bundleBookingId) && (
+                {priceDifference < 0 && !(booking.isBundleBooking && booking.bundleId) && (
                   <p style={{ fontSize: 11, color: "var(--muted)", margin: "4px 0 0" }}>
                     * The refund difference will be credited to your wallet balance automatically upon admin approval.
                   </p>

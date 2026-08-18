@@ -2,6 +2,7 @@ const EventBundle = require("../models/EventBundle");
 const Event = require("../models/Event");
 const { uploadBufferToS3 } = require("../utils/s3Upload");
 const MediaAsset = require("../models/MediaAsset");
+const { notifyOrganization } = require("../services/notification.service");
 
 const buildBannerUrl = async (req) => {
   if (!req.file) return undefined;
@@ -104,6 +105,7 @@ const create = async (req, res) => {
     });
 
     await bundle.save();
+    await notifyOrganization(req.organizationId, { type: "bundle.created", title: "Bundle created", message: `${req.user.name || req.user.email} created ${bundle.name}.`, link: `/o/${req.params.orgSlug}/manage/bundles`, metadata: { bundleId: String(bundle._id) } }, req.user._id);
     return res.status(201).json({ bundle });
   } catch (error) {
     console.error("Create bundle failed:", error);
@@ -290,6 +292,7 @@ const update = async (req, res) => {
     }
 
     await bundle.save();
+    await notifyOrganization(req.organizationId, { type: "bundle.updated", title: "Bundle updated", message: `${req.user.name || req.user.email} updated ${bundle.name}.`, link: `/o/${req.params.orgSlug}/manage/bundles`, metadata: { bundleId: String(bundle._id) } }, req.user._id);
     return res.json({ bundle });
   } catch (error) {
     console.error("Update bundle failed:", error);
@@ -299,6 +302,7 @@ const update = async (req, res) => {
 
 const remove = async (req, res) => {
   try {
+    const existing = await EventBundle.findOne({ _id: req.params.bundleId, organizationId: req.organizationId }).select("name").lean();
     const result = await EventBundle.deleteOne({
       _id: req.params.bundleId,
       organizationId: req.organizationId,
@@ -307,6 +311,7 @@ const remove = async (req, res) => {
     if (result.deletedCount === 0) {
       return res.status(404).json({ message: "Event bundle not found." });
     }
+    await notifyOrganization(req.organizationId, { type: "bundle.deleted", title: "Bundle removed", message: `${req.user.name || req.user.email} removed ${existing?.name || "a bundle"}.`, link: `/o/${req.params.orgSlug}/manage/bundles`, metadata: { bundleId: req.params.bundleId } }, req.user._id);
 
     return res.status(204).send();
   } catch (error) {

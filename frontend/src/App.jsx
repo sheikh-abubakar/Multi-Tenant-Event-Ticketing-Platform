@@ -35,6 +35,7 @@ const BuyerDashboard = lazy(() => import("./pages/BuyerDashboard"));
 const BuyerOverview = lazy(() => import("./pages/BuyerOverview"));
 const MyWallet = lazy(() => import("./pages/MyWallet"));
 const MyReferrals = lazy(() => import("./pages/MyReferrals"));
+const MyNotifications = lazy(() => import("./pages/MyNotifications"));
 const VenueSeatMapBuilder = lazy(() => import("./pages/VenueSeatMapBuilder"));
 const EventSeatMapBuilder = lazy(() => import("./pages/EventSeatMapBuilder"));
 const SeatSelection = lazy(() => import("./pages/SeatSelection"));
@@ -282,6 +283,7 @@ function App() {
         />
         <Route path="/my/wallet" element={<ProtectedRoute><MyWallet /></ProtectedRoute>} />
         <Route path="/my/referrals" element={<ProtectedRoute><MyReferrals /></ProtectedRoute>} />
+        <Route path="/my/notifications" element={<ProtectedRoute><MyNotifications /></ProtectedRoute>} />
         <Route path="/my/bookings" element={<ProtectedRoute><BuyerDashboard bookingsOnly /></ProtectedRoute>} />
       </Routes>
       </Suspense>

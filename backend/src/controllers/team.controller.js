@@ -1,6 +1,7 @@
 const teamService = require("../services/team.service");
 const Organization = require("../models/Organization");
 const { recordPlatformAudit } = require("../utils/platformAudit");
+const { notifyUser, notifyOrganization } = require("../services/notification.service");
 
 /**
  * GET /api/o/:orgSlug/team
@@ -39,6 +40,8 @@ const inviteMember = async (req, res) => {
     });
 
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.member_invited", targetType: "organizationMember", targetId: result.member.id || result.member._id, metadata: { email, role } });
+    await notifyUser(result.member.user?.id, { type: "team.invited", title: "Organization invitation", message: `${req.user.name || req.user.email} invited you to join ${org.name} as ${role}.`, link: `/o/${req.params.orgSlug}/dashboard` });
+    await notifyOrganization(req.organizationId, { type: "team.invited", title: "Team member invited", message: `${req.user.name || req.user.email} invited ${email} as ${role}.`, link: `/o/${req.params.orgSlug}/manage/team` }, req.user._id);
 
     return res.status(201).json({ member: result.member, message: result.message });
   } catch (error) {
@@ -77,6 +80,8 @@ const updateMemberRole = async (req, res) => {
       newRole: role,
     });
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.role_updated", targetType: "organizationMember", targetId: member.id || member._id, metadata: { role } });
+    await notifyUser(member.user?.id, { type: "team.role.updated", title: "Your organization role changed", message: `Your role is now ${role}.`, link: `/o/${req.params.orgSlug}/dashboard` });
+    await notifyOrganization(req.organizationId, { type: "team.role.updated", title: "Member role updated", message: `${req.user.name || req.user.email} changed a team member's role to ${role}.`, link: `/o/${req.params.orgSlug}/manage/team` }, req.user._id);
     return res.json({ member });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -96,6 +101,8 @@ const updateMemberPermissions = async (req, res) => {
       permissions,
     });
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.permissions_updated", targetType: "organizationMember", targetId: member.id || member._id, metadata: { permissionCount: permissions?.length || 0 } });
+    await notifyUser(member.user?.id, { type: "team.permissions.updated", title: "Your permissions changed", message: "Your organization permissions were updated.", link: `/o/${req.params.orgSlug}/dashboard` });
+    await notifyOrganization(req.organizationId, { type: "team.permissions.updated", title: "Member permissions updated", message: `${req.user.name || req.user.email} updated a team member's permissions.`, link: `/o/${req.params.orgSlug}/manage/team` }, req.user._id);
     return res.json({ member });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -113,6 +120,7 @@ const removeMember = async (req, res) => {
       memberId: req.params.memberId,
     });
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.member_removed", targetType: "organizationMember", targetId: req.params.memberId });
+    await notifyOrganization(req.organizationId, { type: "team.member.removed", title: "Team member removed", message: `${req.user.name || req.user.email} removed a team member.`, link: `/o/${req.params.orgSlug}/manage/team` }, req.user._id);
     return res.status(204).send();
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -132,6 +140,7 @@ const assignVenues = async (req, res) => {
       venueIds: venueIds || [],
     });
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.venues_assigned", targetType: "organizationMember", targetId: member.id || member._id, metadata: { venueCount: venueIds?.length || 0 } });
+    await notifyUser(member.user?.id, { type: "team.venues.updated", title: "Your venue access changed", message: "Your assigned venues were updated.", link: `/o/${req.params.orgSlug}/dashboard` });
     return res.json({ member });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

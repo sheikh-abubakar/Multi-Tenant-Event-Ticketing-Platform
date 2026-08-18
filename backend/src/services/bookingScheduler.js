@@ -6,6 +6,8 @@ const stripe = require("../config/stripe");
 const { sendUnifiedPaymentReminder } = require("../config/email");
 const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
 const { notifyOrganizationBookingUpdate } = require("./organizationUpdate.service");
+const { notifyUser } = require("./notification.service");
+const User = require("../models/User");
 
 // How often the background sweep runs. Needs to be smaller than both
 // the reminder window (5m) and the hold window (30m) so neither event
@@ -292,11 +294,26 @@ const releaseExpiredCarts = async () => {
   }
 };
 
+// Stored marker makes this restart-safe and prevents a second reminder on a
+// later scheduler tick. A booking made within the final 24h gets one promptly.
+const sendUpcomingEventReminders = async () => {
+  const now = new Date();
+  const until = new Date(now.getTime() + (24 * 60 * 60 * 1000));
+  const bookings = await Booking.find({ status: "confirmed", eventDateTime: { $gte: now, $lte: until }, eventReminderSentAt: null }).select("_id userId buyerEmail eventName eventDateTime");
+  for (const booking of bookings) {
+    const claim = await Booking.findOneAndUpdate({ _id: booking._id, eventReminderSentAt: null }, { $set: { eventReminderSentAt: new Date() } }, { new: true });
+    if (!claim) continue;
+    const userId = claim.userId || (await User.findOne({ email: claim.buyerEmail }).select("_id").lean())?._id;
+    await notifyUser(userId, { type: "event.reminder", title: "Your event is tomorrow", message: `${claim.eventName || "Your event"} starts ${new Date(claim.eventDateTime).toLocaleString()}.`, link: "/my/bookings", metadata: { bookingId: String(claim._id) } });
+  }
+};
+
 const runSweep = async () => {
   try {
     await sendPendingReminders();
     await releaseExpiredBookings();
     await releaseExpiredCarts();
+    await sendUpcomingEventReminders();
   } catch (err) {
     // Should be unreachable (each function already catches its own
     // per-booking errors), but guards against the sweep itself dying.
@@ -323,4 +340,4 @@ const stopBookingScheduler = () => {
   schedulerInterval = undefined;
 };
 
-module.exports = { startBookingScheduler, stopBookingScheduler, sendPendingReminders, releaseExpiredBookings, releaseExpiredCarts };
+module.exports = { startBookingScheduler, stopBookingScheduler, sendPendingReminders, releaseExpiredBookings, releaseExpiredCarts, sendUpcomingEventReminders };

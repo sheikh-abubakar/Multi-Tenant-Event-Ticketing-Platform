@@ -6,6 +6,7 @@ import apiClient from "../api/client";
 import Logo from "./Logo";
 import AICopilot from "./ai/AICopilot";
 import BuyerLayout from "./BuyerLayout";
+import NotificationBell from "./NotificationBell";
 import "./Layout.css";
 import "./PageVisuals.css";
 
@@ -192,6 +193,7 @@ const Layout = ({ children }) => {
 
         {/* ── Main content ── */}
         <div className="organizer-stage">
+          <div style={{ position: "fixed", top: "18px", right: "28px", zIndex: 30 }}><NotificationBell /></div>
           <header className="organizer-mobile-header">
             {/* Hamburger — only on mobile */}
             <button

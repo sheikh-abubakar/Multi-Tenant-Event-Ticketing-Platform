@@ -190,6 +190,8 @@ const bookingSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Set once when the buyer receives the in-app "event tomorrow" reminder.
+    eventReminderSentAt: { type: Date, default: null, index: true },
     // ─── Refund / Wallet fields ───────────────────────────────────────
     refundInfo: {
       method: {

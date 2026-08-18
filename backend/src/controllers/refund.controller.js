@@ -3,6 +3,7 @@ const walletService = require("../services/wallet.service");
 const Booking = require("../models/Booking");
 const { recordPlatformAudit } = require("../utils/platformAudit");
 const { notifyOrganizationBookingUpdate } = require("../services/organizationUpdate.service");
+const { notifyUser, notifyOrganization } = require("../services/notification.service");
 
 /**
  * GET /api/bookings/mine
@@ -34,9 +35,28 @@ const requestRefund = async (req, res) => {
     }
 
     const result = await refundService.requestRefund(bookingId, userEmail, userId, method);
-    const booking = await Booking.findById(bookingId).select("organizationId totalAmount").lean();
+    const booking = await Booking.findById(bookingId).select("organizationId totalAmount eventName userId").lean();
     if (booking) await recordPlatformAudit({ actorUserId: userId, organizationId: booking.organizationId, action: "booking.refunded", targetType: "booking", targetId: bookingId, metadata: { method, totalAmount: booking.totalAmount } });
     if (booking) notifyOrganizationBookingUpdate(booking.organizationId, { type: "booking-refunded", bookingId });
+    if (booking) {
+      const refundAmount = Number(result.amountRefunded ?? result.amount ?? booking.totalAmount);
+      await notifyUser(userId, {
+        type: "refund.processed",
+        title: "Refund processed",
+        message: `$${refundAmount.toFixed(2)} has been sent to your ${result.method === "wallet" ? "wallet" : "original payment method"}.`,
+        link: "/my/wallet",
+        metadata: { bookingId },
+        dedupeKey: `refund-processed:buyer:${bookingId}`,
+      });
+      await notifyOrganization(booking.organizationId, {
+        type: "refund.processed",
+        title: "Booking refunded",
+        message: `${req.user.name || req.user.email} received a ${result.method} refund for ${booking.eventName || "an event"}.`,
+        link: "/my/notifications",
+        metadata: { bookingId },
+        dedupeKey: `refund-processed:organization:${bookingId}`,
+      }, userId);
+    }
     return res.json({ 
       message: result.method === "wallet" 
         ? "Refund processed! Amount credited to your wallet."

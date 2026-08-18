@@ -5,6 +5,7 @@ const { recordPlatformAudit } = require("../utils/platformAudit");
 const { invalidateOrgCache } = require("../services/analytics.service");
 const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
 const { notifyOrganizationBookingUpdate } = require("../services/organizationUpdate.service");
+const { notifyUser, notifyOrganization } = require("../services/notification.service");
 
 const create = async (req, res) => {
   try {
@@ -173,6 +174,9 @@ const verify = async (req, res) => {
     });
     // Bust the analytics cache so the organizer sees fresh verified counts immediately
     invalidateOrgCache(booking.organizationId.toString());
+    notifyOrganizationBookingUpdate(booking.organizationId, { type: "ticket-verified", bookingId: booking._id.toString() });
+    await notifyUser(booking.userId, { type: "ticket.verified", title: "Ticket checked in", message: `Your ticket for ${booking.eventName || "the event"} has been verified at entry.`, link: "/my/bookings", metadata: { bookingId: String(booking._id) } });
+    await notifyOrganization(booking.organizationId, { type: "ticket.verified", title: "Ticket verified", message: `${booking.buyerName || booking.buyerEmail}'s ticket was checked in.`, link: `/o/${req.params.orgSlug}/manage/analytics`, metadata: { bookingId: String(booking._id) } }, req.user._id);
     return res.json({ message: "Ticket verified successfully", booking });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

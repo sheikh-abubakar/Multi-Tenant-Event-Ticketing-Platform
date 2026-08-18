@@ -1,4 +1,5 @@
 const couponService = require("../services/coupon.service");
+const { notifyOrganization } = require("../services/notification.service");
 
 /**
  * Create a new coupon (requires settings:update or events:create permission)
@@ -6,6 +7,7 @@ const couponService = require("../services/coupon.service");
 const create = async (req, res) => {
   try {
     const coupon = await couponService.createCoupon(req.organizationId, req.body);
+    await notifyOrganization(req.organizationId, { type: "coupon.created", title: "Coupon created", message: `${req.user.name || req.user.email} created coupon ${coupon.code}.`, link: `/o/${req.params.orgSlug}/manage/coupons`, metadata: { couponId: String(coupon._id) } }, req.user._id);
     return res.status(201).json({
       status: "success",
       data: coupon,
@@ -42,6 +44,7 @@ const list = async (req, res) => {
 const remove = async (req, res) => {
   try {
     const result = await couponService.deleteCoupon(req.organizationId, req.params.couponId);
+    await notifyOrganization(req.organizationId, { type: "coupon.deleted", title: "Coupon removed", message: `${req.user.name || req.user.email} removed a coupon.`, link: `/o/${req.params.orgSlug}/manage/coupons`, metadata: { couponId: req.params.couponId } }, req.user._id);
     return res.json({
       status: "success",
       ...result,
@@ -91,6 +94,7 @@ const validate = async (req, res) => {
 const update = async (req, res) => {
   try {
     const coupon = await couponService.updateCoupon(req.organizationId, req.params.couponId, req.body);
+    await notifyOrganization(req.organizationId, { type: "coupon.updated", title: "Coupon updated", message: `${req.user.name || req.user.email} updated coupon ${coupon.code}.`, link: `/o/${req.params.orgSlug}/manage/coupons`, metadata: { couponId: String(coupon._id) } }, req.user._id);
     return res.json({
       status: "success",
       data: coupon,

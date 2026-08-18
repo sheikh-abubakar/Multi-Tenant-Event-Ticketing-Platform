@@ -29,6 +29,8 @@ const initializeRealtime = (httpServer) => {
   });
 
   io.on("connection", (socket) => {
+    // Personal room is deliberately not client-selectable: JWT identity decides it.
+    socket.join(`notification-user:${socket.userId}`);
     socket.on("analytics:join", async ({ orgSlug } = {}, acknowledge = () => {}) => {
       try {
         const organization = await Organization.findOne({ slug: String(orgSlug || "").toLowerCase(), isDeleted: { $ne: true } }).select("_id").lean();
@@ -61,4 +63,9 @@ const emitOrganizationBookingUpdate = (organizationId, payload = {}) => {
   });
 };
 
-module.exports = { initializeRealtime, emitOrganizationBookingUpdate };
+const emitNotificationToUser = (userId, notification) => {
+  if (!io || !userId) return;
+  io.to(`notification-user:${userId}`).emit("notifications:new", notification);
+};
+
+module.exports = { initializeRealtime, emitOrganizationBookingUpdate, emitNotificationToUser };

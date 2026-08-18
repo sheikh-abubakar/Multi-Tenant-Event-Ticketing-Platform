@@ -108,12 +108,16 @@ const createRequest = async (userId, organizationId, data, options) => {
   }
 
   // 4. Compute price difference
-  const oldSeatPrice = oldSeat.unitPrice;
-  const newSeatPrice = newSeat.unitPrice;
+  const oldSeatPrice = Number(oldSeat.unitPrice || 0);
+  // Never trust a browser supplied seat price. The current event session map
+  // is the source of truth, and this also fixes individual bookings whose
+  // cart group happened to have a bundleBookingId.
+  const newSeatPrice = Number(block.price || 0);
   let priceDifference = newSeatPrice - oldSeatPrice;
 
   // Override priceDifference to 0 if the booking is part of an event bundle
-  if (booking.isBundleBooking || booking.bundleBookingId) {
+  const isActualBundleBooking = booking.isBundleBooking === true && Boolean(booking.bundleId);
+  if (isActualBundleBooking) {
     priceDifference = 0;
   }
 

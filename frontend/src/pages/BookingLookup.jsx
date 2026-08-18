@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { CalendarClock, CheckCircle2, CreditCard, Mail, MapPin, Search, Ticket, UserRound } from "lucide-react";
 import apiClient from "../api/client";
 import "./BookingLookup.css";
@@ -9,14 +9,14 @@ const dateTime = (value) => value ? new Date(value).toLocaleString("en-US", { da
 
 const BookingLookup = () => {
   const { orgSlug } = useParams();
+  const [searchParams] = useSearchParams();
   const [identifier, setIdentifier] = useState("");
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const submit = async (event) => {
-    event.preventDefault();
-    const clean = identifier.trim();
+  const lookup = async (value) => {
+    const clean = String(value || "").trim();
     if (!clean) return;
     setLoading(true); setError(""); setBooking(null);
     try {
@@ -26,6 +26,13 @@ const BookingLookup = () => {
       setError(err.response?.data?.message || "Could not find this booking");
     } finally { setLoading(false); }
   };
+  const submit = async (event) => { event.preventDefault(); lookup(identifier); };
+  useEffect(() => {
+    const bookingId = searchParams.get("bookingId");
+    if (bookingId) { setIdentifier(bookingId); lookup(bookingId); }
+  // Query link is the explicit trigger; lookup itself is stable for this route.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgSlug, searchParams]);
 
   const event = booking?.eventId || {};
   const venue = event.venueId || {};

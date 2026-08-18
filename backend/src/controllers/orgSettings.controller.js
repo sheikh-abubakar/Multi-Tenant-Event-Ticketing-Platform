@@ -1,6 +1,7 @@
 const organizationService = require("../services/organization.service");
 const { uploadBufferToS3 } = require("../utils/s3Upload");
 const MediaAsset = require("../models/MediaAsset");
+const { notifyOrganization } = require("../services/notification.service");
 
 const getSettings = async (req, res) => {
   try {
@@ -37,6 +38,7 @@ const updateSettings = async (req, res) => {
       req.body,
       logoUrl
     );
+    await notifyOrganization(req.organizationId, { type: "organization.settings.updated", title: "Organization settings updated", message: `${req.user.name || req.user.email} updated ${organization.name}'s settings.`, link: `/o/${req.params.orgSlug}/manage/settings` }, req.user._id);
     return res.json({ organization });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

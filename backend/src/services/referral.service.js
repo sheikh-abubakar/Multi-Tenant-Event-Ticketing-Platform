@@ -1,6 +1,27 @@
 const crypto = require("crypto");
 const User = require("../models/User");
 const ReferralReward = require("../models/ReferralReward");
+const { notifyUser } = require("./notification.service");
+
+const notifyRewardEarned = (referrerUserId, reward, buyer = {}) => {
+  const referredBuyer = buyer.name?.trim() || buyer.email || reward.referredEmail;
+  return notifyUser(referrerUserId, {
+    type: "referral.reward-earned",
+    title: "New referral reward earned",
+    message: `${referredBuyer} used your referral link. You earned a ${reward.discountPercent}% discount reward.`,
+    link: "/my/referrals",
+    metadata: {
+      rewardId: String(reward._id),
+      bookingId: String(reward.referredBookingId),
+      referredBuyerName: buyer.name || null,
+      referredBuyerEmail: buyer.email || reward.referredEmail,
+      discountPercent: reward.discountPercent,
+    },
+    // The reward ID is immutable and unique, so this makes both real-time
+    // delivery and recovery after a server restart exactly-once.
+    dedupeKey: `referral-reward-earned:${reward._id}`,
+  });
+};
 
 /**
  * Generate a unique 8-character referral code (e.g. REF-A1B2C3)
@@ -85,6 +106,10 @@ async function processBookingReferral(booking) {
       status: "available",
     });
     console.log(`[Referral] ✅ Reward created! Referrer ${referrer.email} earns 10% off. Reward ID: ${reward._id}`);
+    await notifyRewardEarned(referrer._id, reward, {
+      name: booking.buyerName,
+      email: booking.buyerEmail,
+    });
     return reward;
   } catch (err) {
     // Handle duplicate key race condition gracefully
@@ -94,6 +119,21 @@ async function processBookingReferral(booking) {
     }
     throw err;
   }
+}
+
+// Some cart/wallet flows persist the referral reward during their database
+// transaction and reach the browser confirmation endpoint with a booking that
+// is already marked confirmed. This ensures the corresponding inbox event is
+// emitted after that confirmation, without issuing a second reward.
+async function ensureBookingReferralNotification(booking) {
+  if (!booking?._id) return null;
+  const reward = await ReferralReward.findOne({ referredBookingId: booking._id });
+  if (!reward) return null;
+  await notifyRewardEarned(reward.referrerUserId, reward, {
+    name: booking.buyerName,
+    email: booking.buyerEmail,
+  });
+  return reward;
 }
 
 /**
@@ -111,6 +151,17 @@ async function getReferralStats(userId) {
     referrerUserId: userId,
     status: "used",
   }).sort({ updatedAt: -1 });
+
+  // Recovery guard: if a reward was created while the API was restarting,
+  // restore the missed real-time inbox item once the referrer opens their
+  // referral page. The per-reward dedupe key keeps ordinary page refreshes
+  // completely silent.
+  const recoveryCutoff = Date.now() - (24 * 60 * 60 * 1000);
+  await Promise.all(
+    availableRewards
+      .filter((reward) => new Date(reward.createdAt).getTime() >= recoveryCutoff)
+      .map((reward) => notifyRewardEarned(userId, reward, { email: reward.referredEmail }))
+  );
 
   return {
     referralCode,
@@ -189,6 +240,7 @@ async function consumeReferralRewards(userId, rewardsCount, bookingId) {
 module.exports = {
   getUserReferralCode,
   processBookingReferral,
+  ensureBookingReferralNotification,
   getReferralStats,
   calculateReferralDiscount,
   consumeReferralRewards,

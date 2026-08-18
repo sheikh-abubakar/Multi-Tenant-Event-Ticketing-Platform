@@ -1,5 +1,6 @@
 const Notification = require("../models/Notification");
 const OrganizationMember = require("../models/OrganizationMember");
+const User = require("../models/User");
 const { emitNotificationToUser } = require("./realtime.service");
 const { logger } = require("../config/logger");
 
@@ -39,16 +40,45 @@ const notifyOrganization = async (organizationId, data, actorUserId = null) => {
     const members = await OrganizationMember.find({ organizationId }).select("userId").lean();
     const recipientIds = [...new Set(members.map((member) => String(member.userId)))]
       .filter((id) => id !== String(actorUserId || ""));
-    return Promise.all(recipientIds.map((recipientUserId) => safeCreate({
+    const results = await Promise.all(recipientIds.map((recipientUserId) => safeCreate({
       recipientUserId,
       organizationId,
       scope: "organization",
       ...data,
     })));
+    if (data.platformNotify !== false) {
+      await notifyPlatformAdmin({
+        type: `platform.${data.type || "organization.activity"}`,
+        title: data.title || "Organization activity",
+        message: data.message || "An organization activity was completed.",
+        organizationId,
+        link: `/platform-admin/organizations/${organizationId}`,
+        metadata: { ...(data.metadata || {}), sourceType: data.type || "organization.activity" },
+        dedupeKey: data.dedupeKey ? `platform:${data.dedupeKey}` : undefined,
+      });
+    }
+    return results;
   } catch (error) {
     logger.error("Organization notification creation failed", { error: error.message, organizationId: String(organizationId) });
     return [];
   }
 };
 
-module.exports = { notifyUser, notifyOrganization };
+// Platform alerts are always personal notifications for the platform control
+// account. Keeping them outside tenant membership scope prevents an
+// organization user from ever reading cross-platform activity.
+const notifyPlatformAdmin = async (data) => {
+  try {
+    const admin = await User.findOne({ platformRole: "super_admin" }).select("_id").lean();
+    if (!admin) {
+      logger.warn("Platform notification skipped: no super admin account found", { type: data?.type });
+      return null;
+    }
+    return safeCreate({ recipientUserId: admin._id, scope: "personal", ...data });
+  } catch (error) {
+    logger.error("Platform notification creation failed", { error: error.message, type: data?.type });
+    return null;
+  }
+};
+
+module.exports = { notifyUser, notifyOrganization, notifyPlatformAdmin };

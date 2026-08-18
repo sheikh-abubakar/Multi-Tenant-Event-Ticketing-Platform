@@ -96,6 +96,7 @@ const signInWithGoogle = async (credential) => {
 
   const email = payload.email.toLowerCase();
   let user = await User.findOne({ googleId: payload.sub });
+  let isNewUser = false;
 
   if (!user) {
     user = await User.findOne({ email });
@@ -114,10 +115,11 @@ const signInWithGoogle = async (credential) => {
         googleId: payload.sub,
         requiresPasswordSetup: true,
       });
+      isNewUser = true;
     }
   }
 
-  return { token: generateToken(user._id), user: toAuthUser(user) };
+  return { token: generateToken(user._id), user: toAuthUser(user), isNewUser };
 };
 
 const updateProfile = async (userId, { name }) => {

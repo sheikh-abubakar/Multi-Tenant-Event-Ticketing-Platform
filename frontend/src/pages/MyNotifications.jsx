@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Bell, Check, ExternalLink, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
-export default function MyNotifications() {
+export default function MyNotifications({ platform = false }) {
  const [items,setItems]=useState([]);const [loading,setLoading]=useState(true);const [selected,setSelected]=useState(null);const navigate=useNavigate();
  const load=async()=>{setLoading(true);try{const {data}=await apiClient.get("/notifications?limit=50");setItems(data.notifications)}finally{setLoading(false)}};
  useEffect(()=>{load();window.addEventListener("notifications-updated",load);return()=>window.removeEventListener("notifications-updated",load)},[]);

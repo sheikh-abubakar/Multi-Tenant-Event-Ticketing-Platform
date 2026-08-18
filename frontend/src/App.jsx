@@ -130,6 +130,7 @@ function App() {
           <Route path="organizations" element={<PlatformOrganizations />} />
           <Route path="organizations/:organizationId" element={<PlatformOrganizationDetail />} />
           <Route path="activity" element={<PlatformActivity />} />
+          <Route path="notifications" element={<MyNotifications platform />} />
           <Route path="assistant" element={<PlatformAIAssistant />} />
         </Route>
 

@@ -14,7 +14,7 @@ const referralService = require("./referral.service");
 const couponService = require("./coupon.service");
 const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
 const { notifyOrganizationBookingUpdate } = require("./organizationUpdate.service");
-const { notifyUser, notifyOrganization } = require("./notification.service");
+const { notifyUser, notifyOrganization, notifyPlatformAdmin } = require("./notification.service");
 
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -1007,6 +1007,21 @@ const confirmBooking = async (stripeSessionId) => {
       metadata: { bookingIds: confirmedBookings.map((item) => String(item._id)) },
       dedupeKey: `booking-confirmed:buyer:${stripeSessionId}`,
     });
+    const totalCheckoutAmount = Number(confirmedBookings.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0)).toFixed(2);
+    const buyerTypeLabel = first.userId ? "Registered" : "Guest";
+    const orgsInvolved = await Organization.find({ _id: { $in: confirmedBookings.map(b => b.organizationId) } }).select("name").lean();
+    const orgNamesStr = orgsInvolved.map(o => o.name).join(", ");
+    const eventNamesStr = confirmedBookings.map(item => item.eventName).filter(Boolean).join(", ");
+    const bookingIdsList = confirmedBookings.map(item => String(item._id)).join(", ");
+
+    await notifyPlatformAdmin({
+      type: "platform.checkout.confirmed",
+      title: "Checkout confirmed",
+      message: `[${buyerTypeLabel}] ${first.buyerName} (${first.buyerEmail}) completed checkout of $${totalCheckoutAmount} via Stripe for ${eventNamesStr}. Org(s): ${orgNamesStr}. Booking ID(s): ${bookingIdsList}`,
+      link: "/platform-admin/activity",
+      metadata: { stripeSessionId, bookingIds: confirmedBookings.map((item) => String(item._id)), eventNames: confirmedBookings.map((item) => item.eventName), buyerEmail: first.buyerEmail, paymentMethod: "Stripe", buyerType: buyerTypeLabel, organizationNames: orgNamesStr },
+      dedupeKey: `platform-checkout-confirmed:${stripeSessionId}`,
+    });
     await Promise.all(confirmedBookings.map(async (booking) => {
       const organization = await Organization.findById(booking.organizationId).select("slug").lean();
       return notifyOrganization(booking.organizationId, {
@@ -1016,6 +1031,7 @@ const confirmBooking = async (stripeSessionId) => {
         link: organization?.slug ? `/o/${organization.slug}/manage/booking-lookup?bookingId=${booking._id}` : "/my/notifications",
         metadata: { bookingId: String(booking._id), eventId: String(booking.eventId) },
         dedupeKey: `booking-confirmed:organization:${booking._id}`,
+        platformNotify: false,
       });
     }));
   }

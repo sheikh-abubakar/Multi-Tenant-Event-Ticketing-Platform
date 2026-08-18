@@ -1,6 +1,6 @@
 const seatChangeService = require("../services/seatChange.service");
 const { notifyOrganizationBookingUpdate } = require("../services/organizationUpdate.service");
-const { notifyUser, notifyOrganization } = require("../services/notification.service");
+const { notifyUser, notifyOrganization, notifyPlatformAdmin } = require("../services/notification.service");
 
 const createRequest = async (req, res) => {
   try {
@@ -47,6 +47,7 @@ const approveRequest = async (req, res) => {
     const request = await seatChangeService.approveRequest(req.params.requestId, req.organizationId);
     notifyOrganizationBookingUpdate(req.organizationId, { type: "seat-change-approved", bookingId: request.bookingId.toString(), requestId: request._id.toString() });
     await notifyUser(request.userId, { type: "seat-change.approved", title: "Seat change approved", message: "Your requested seat change has been approved.", link: "/my/bookings", metadata: { requestId: String(request._id) }, dedupeKey: `seat-change-approved:buyer:${request._id}` });
+    await notifyPlatformAdmin({ type: "platform.seat-change.approved", title: "Seat change approved", message: `A seat-change request was approved in ${req.params.orgSlug}.`, organizationId: req.organizationId, link: `/platform-admin/organizations/${req.organizationId}`, metadata: { requestId: String(request._id), bookingId: String(request.bookingId) }, dedupeKey: `platform-seat-change-approved:${request._id}` });
     return res.json({ message: "Seat change approved successfully", request });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -58,6 +59,7 @@ const rejectRequest = async (req, res) => {
     const request = await seatChangeService.rejectRequest(req.params.requestId, req.organizationId);
     notifyOrganizationBookingUpdate(req.organizationId, { type: "seat-change-rejected", bookingId: request.bookingId.toString(), requestId: request._id.toString() });
     await notifyUser(request.userId, { type: "seat-change.rejected", title: "Seat change not approved", message: "Your seat-change request was not approved.", link: "/my/bookings", metadata: { requestId: String(request._id) }, dedupeKey: `seat-change-rejected:buyer:${request._id}` });
+    await notifyPlatformAdmin({ type: "platform.seat-change.rejected", title: "Seat change rejected", message: `A seat-change request was rejected in ${req.params.orgSlug}.`, organizationId: req.organizationId, link: `/platform-admin/organizations/${req.organizationId}`, metadata: { requestId: String(request._id), bookingId: String(request.bookingId) }, dedupeKey: `platform-seat-change-rejected:${request._id}` });
     return res.json({ message: "Seat change rejected successfully", request });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -69,6 +71,7 @@ const devSimulatePay = async (req, res) => {
     const request = await seatChangeService.devSimulatePay(req.params.requestId, req.organizationId);
     notifyOrganizationBookingUpdate(req.organizationId, { type: "seat-change-payment-updated", bookingId: request.bookingId.toString(), requestId: request._id.toString() });
     await notifyUser(request.userId, { type: "seat-change.payment", title: "Seat-change payment received", message: "Your seat-change payment was received and is being processed.", link: "/my/bookings", metadata: { requestId: String(request._id) }, dedupeKey: `seat-change-payment:buyer:${request._id}` });
+    await notifyPlatformAdmin({ type: "platform.seat-change.paid", title: "Seat-change payment received", message: `A seat-change payment was recorded in ${req.params.orgSlug}.`, organizationId: req.organizationId, link: `/platform-admin/organizations/${req.organizationId}`, metadata: { requestId: String(request._id), bookingId: String(request.bookingId) }, dedupeKey: `platform-seat-change-paid:${request._id}` });
     return res.json({ message: "Offline/dev payment simulated successfully", request });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

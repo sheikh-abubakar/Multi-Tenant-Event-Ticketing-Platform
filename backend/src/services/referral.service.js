@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const User = require("../models/User");
 const ReferralReward = require("../models/ReferralReward");
-const { notifyUser } = require("./notification.service");
+const { notifyUser, notifyPlatformAdmin } = require("./notification.service");
 
 const notifyRewardEarned = (referrerUserId, reward, buyer = {}) => {
   const referredBuyer = buyer.name?.trim() || buyer.email || reward.referredEmail;
@@ -110,6 +110,7 @@ async function processBookingReferral(booking) {
       name: booking.buyerName,
       email: booking.buyerEmail,
     });
+    await notifyPlatformAdmin({ type: "platform.referral.reward-earned", title: "Referral reward earned", message: `${booking.buyerName || booking.buyerEmail} earned a referral reward for ${referrer.name || referrer.email}.`, organizationId: booking.organizationId, link: "/platform-admin/activity", metadata: { rewardId: String(reward._id), bookingId: String(booking._id), referrerEmail: referrer.email, buyerEmail: booking.buyerEmail, discountPercent: reward.discountPercent }, dedupeKey: `platform-referral-reward:${reward._id}` });
     return reward;
   } catch (err) {
     // Handle duplicate key race condition gracefully

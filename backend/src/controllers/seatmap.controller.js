@@ -1,4 +1,6 @@
 const seatmapService = require("../services/seatmap.service");
+const Event = require("../models/Event");
+const { notifyOrganization } = require("../services/notification.service");
 
 const respond = (fn) => async (req, res) => {
   try { return res.json(await fn(req)); } catch (error) { return res.status(error.statusCode || 500).json({ message: error.message }); }
@@ -179,7 +181,21 @@ const getEventMap = async (req, res) => {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
-const saveEventMap = respond(async (req) => ({ seatmap: await seatmapService.saveEventSeatmap(req.params.eventId, req.organizationId, req.body.seatmap || req.body, req.query.EventSeatMapSessionID || req.query.sessionId || req.body.EventSeatMapSessionID || req.body.sessionId) }));
-const seedEventMap = respond(async (req) => ({ seatmap: await seatmapService.seedEventSeatmapFromTemplate(req.params.eventId, req.organizationId, req.body.seatmapId, req.body.EventSeatMapSessionID || req.body.sessionId) }));
+const saveEventMap = async (req, res) => {
+  try {
+    const seatmap = await seatmapService.saveEventSeatmap(req.params.eventId, req.organizationId, req.body.seatmap || req.body, req.query.EventSeatMapSessionID || req.query.sessionId || req.body.EventSeatMapSessionID || req.body.sessionId);
+    const event = await Event.findOne({ _id: req.params.eventId, organizationId: req.organizationId }).select("name").lean();
+    await notifyOrganization(req.organizationId, { type: "event.seatmap.updated", title: "Event seat map updated", message: `${req.user.name || req.user.email} updated the seat map for ${event?.name || "an event"}.`, link: `/o/${req.params.orgSlug}/manage/events`, metadata: { eventId: String(req.params.eventId) } }, req.user._id);
+    return res.json({ seatmap });
+  } catch (error) { return res.status(error.statusCode || 500).json({ message: error.message }); }
+};
+const seedEventMap = async (req, res) => {
+  try {
+    const seatmap = await seatmapService.seedEventSeatmapFromTemplate(req.params.eventId, req.organizationId, req.body.seatmapId, req.body.EventSeatMapSessionID || req.body.sessionId);
+    const event = await Event.findOne({ _id: req.params.eventId, organizationId: req.organizationId }).select("name").lean();
+    await notifyOrganization(req.organizationId, { type: "event.seatmap.updated", title: "Event seat map configured", message: `${req.user.name || req.user.email} configured the seat map for ${event?.name || "an event"}.`, link: `/o/${req.params.orgSlug}/manage/events`, metadata: { eventId: String(req.params.eventId) } }, req.user._id);
+    return res.json({ seatmap });
+  } catch (error) { return res.status(error.statusCode || 500).json({ message: error.message }); }
+};
 
 module.exports = { listTemplates, createTemplate, updateTemplate, removeTemplate, getEventMap, saveEventMap, seedEventMap };

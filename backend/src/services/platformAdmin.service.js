@@ -6,6 +6,7 @@ const Event = require("../models/Event");
 const Booking = require("../models/Booking");
 const PlatformAuditLog = require("../models/PlatformAuditLog");
 const { recordPlatformAudit } = require("../utils/platformAudit");
+const { notifyPlatformAdmin } = require("./notification.service");
 
 const getRangeStart = (range = "30d") => {
   if (range === "all") return null;
@@ -27,7 +28,7 @@ const getOverview = async (range) => {
   const today = new Date();
 
   const [organizations, users, events, bookingTotals, refunds, trendRows, topOrganizations, bookingStatus, activity, upcomingEvents] = await Promise.all([
-    Organization.aggregate([{ $group: { _id: null, total: { $sum: 1 }, active: { $sum: { $cond: [{ $and: [{ $ne: ["$isDeleted", true] }, { $ne: ["$isSuspended", true] }] }, 1, 0] } }, suspended: { $sum: { $cond: [{ $eq: ["$isSuspended", true] }, 1, 0] } } } }]),
+    Organization.aggregate([{ $group: { _id: null, total: { $sum: { $cond: [{ $ne: ["$isDeleted", true] }, 1, 0] } }, active: { $sum: { $cond: [{ $and: [{ $ne: ["$isDeleted", true] }, { $ne: ["$isSuspended", true] }] }, 1, 0] } }, suspended: { $sum: { $cond: [{ $and: [{ $ne: ["$isDeleted", true] }, { $eq: ["$isSuspended", true] }] }, 1, 0] } } } }]),
     User.countDocuments({}),
     Event.aggregate([{ $group: { _id: null, total: { $sum: 1 }, upcoming: { $sum: { $cond: [{ $gte: ["$dateTime", today] }, 1, 0] } } } }]),
     Booking.aggregate([{ $match: match }, { $project: { totalAmount: 1, ticketCount: ticketExpression } }, { $group: { _id: null, bookings: { $sum: 1 }, revenue: { $sum: "$totalAmount" }, tickets: { $sum: "$ticketCount" } } }]),
@@ -122,6 +123,7 @@ const setOrganizationStatus = async ({ organizationId, suspended, reason, actorU
   const organization = await Organization.findByIdAndUpdate(organizationId, { isSuspended: suspended, suspendedAt: suspended ? new Date() : null, suspensionReason: suspended ? reason.trim() : null }, { new: true });
   if (!organization) { const error = new Error("Organization not found"); error.statusCode = 404; throw error; }
   await recordPlatformAudit({ actorUserId, organizationId: organization._id, action: suspended ? "organization.suspended" : "organization.reactivated", targetType: "organization", targetId: organization._id, metadata: { organizationName: organization.name, reason: suspended ? organization.suspensionReason : null } });
+  await notifyPlatformAdmin({ type: suspended ? "platform.organization.suspended" : "platform.organization.reactivated", title: suspended ? "Organization suspended" : "Organization reactivated", message: `${organization.name} was ${suspended ? "suspended" : "reactivated"}.`, organizationId: organization._id, link: `/platform-admin/organizations/${organization._id}`, metadata: { organizationId: String(organization._id), reason: suspended ? organization.suspensionReason : null }, dedupeKey: `platform-organization-status:${organization._id}:${suspended}` });
   return organization;
 };
 

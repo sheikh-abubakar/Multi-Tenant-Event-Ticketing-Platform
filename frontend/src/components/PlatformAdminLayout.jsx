@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, Building2, Activity, LogOut, ShieldCheck, X, Sparkles } from "lucide-react";
+import { LayoutDashboard, Building2, Activity, LogOut, ShieldCheck, X, Sparkles, Bell } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import NotificationBell from "./NotificationBell";
 import "./PlatformAdmin.css";
 
 const PlatformAdminLayout = () => {
@@ -25,6 +26,7 @@ const PlatformAdminLayout = () => {
     ["Overview", "/platform-admin", LayoutDashboard],
     ["Organizations", "/platform-admin/organizations", Building2],
     ["Activity log", "/platform-admin/activity", Activity],
+    ["Notifications", "/platform-admin/notifications", Bell],
     ["AI Assistant", "/platform-admin/assistant", Sparkles]
   ];
 
@@ -95,6 +97,9 @@ const PlatformAdminLayout = () => {
 
       {/* ── Main viewport ── */}
       <main className="platform-main">
+        <div style={{ position: "fixed", top: 20, right: 26, zIndex: 90 }}>
+          <NotificationBell inboxPath="/platform-admin/notifications" />
+        </div>
         <Outlet />
       </main>
     </div>

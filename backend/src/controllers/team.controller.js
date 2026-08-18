@@ -1,7 +1,7 @@
 const teamService = require("../services/team.service");
 const Organization = require("../models/Organization");
 const { recordPlatformAudit } = require("../utils/platformAudit");
-const { notifyUser, notifyOrganization } = require("../services/notification.service");
+const { notifyUser, notifyOrganization, notifyPlatformAdmin } = require("../services/notification.service");
 
 /**
  * GET /api/o/:orgSlug/team
@@ -61,6 +61,29 @@ const acceptInvitation = async (req, res) => {
       name,
       password,
     });
+    
+    // Notify platform admin and the organization
+    const orgId = result.orgId;
+    const User = require("../models/User");
+    const userDoc = await User.findOne({ email: result.email }).select("name").lean();
+    const organization = await Organization.findById(orgId).select("name slug").lean();
+    
+    await notifyPlatformAdmin({
+      type: "platform.team.invitation-accepted",
+      title: "Team invitation accepted",
+      message: `${userDoc?.name || result.email || "A user"} joined ${organization?.name || "an organization"}.`,
+      organizationId: orgId,
+      link: `/platform-admin/organizations/${orgId}`,
+      metadata: { organizationId: String(orgId || ""), email: result.email }
+    });
+    
+    await notifyOrganization(orgId, {
+      type: "team.invitation-accepted",
+      title: "Team invitation accepted",
+      message: `${userDoc?.name || result.email || "A user"} accepted the invitation and joined the team.`,
+      link: `/o/${organization?.slug || orgId}/manage/team`
+    }, userDoc?._id);
+
     return res.json(result);
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
@@ -141,6 +164,7 @@ const assignVenues = async (req, res) => {
     });
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "team.venues_assigned", targetType: "organizationMember", targetId: member.id || member._id, metadata: { venueCount: venueIds?.length || 0 } });
     await notifyUser(member.user?.id, { type: "team.venues.updated", title: "Your venue access changed", message: "Your assigned venues were updated.", link: `/o/${req.params.orgSlug}/dashboard` });
+    await notifyPlatformAdmin({ type: "platform.team.venue-access-updated", title: "Staff venue access updated", message: `${req.user.name || req.user.email} updated venue access for a team member.`, organizationId: req.organizationId, link: `/platform-admin/organizations/${req.organizationId}`, metadata: { memberId: String(member.id || member._id), venueCount: venueIds?.length || 0 } });
     return res.json({ member });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

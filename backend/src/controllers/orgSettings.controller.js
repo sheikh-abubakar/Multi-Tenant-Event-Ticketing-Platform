@@ -1,7 +1,8 @@
 const organizationService = require("../services/organization.service");
 const { uploadBufferToS3 } = require("../utils/s3Upload");
 const MediaAsset = require("../models/MediaAsset");
-const { notifyOrganization } = require("../services/notification.service");
+const { notifyOrganization, notifyPlatformAdmin } = require("../services/notification.service");
+const { recordPlatformAudit } = require("../utils/platformAudit");
 
 const getSettings = async (req, res) => {
   try {
@@ -47,7 +48,10 @@ const updateSettings = async (req, res) => {
 
 const deleteOrganization = async (req, res) => {
   try {
+    const organization = await organizationService.getOrganizationSettings(req.organizationId);
     await organizationService.softDeleteOrganization(req.organizationId);
+    await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "organization.deleted", targetType: "organization", targetId: req.organizationId, metadata: { organizationName: organization.name } });
+    await notifyPlatformAdmin({ type: "platform.organization.deleted", title: "Organization deleted", message: `${req.user.name || req.user.email} deleted ${organization.name}.`, organizationId: req.organizationId, link: "/platform-admin/organizations", metadata: { organizationId: String(req.organizationId), organizationName: organization.name }, dedupeKey: `platform-organization-deleted:${req.organizationId}` });
     return res.status(204).send();
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

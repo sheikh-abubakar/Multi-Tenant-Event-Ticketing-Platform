@@ -23,6 +23,12 @@ const notificationSchema = new mongoose.Schema({
 
 notificationSchema.index({ recipientUserId: 1, dismissedAt: 1, createdAt: -1 });
 notificationSchema.index({ recipientUserId: 1, readAt: 1, createdAt: -1 });
-notificationSchema.index({ recipientUserId: 1, dedupeKey: 1 }, { unique: true, sparse: true });
+notificationSchema.index(
+  { recipientUserId: 1, dedupeKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { dedupeKey: { $exists: true, $type: "string" } }
+  }
+);
 
 module.exports = mongoose.model("Notification", notificationSchema);

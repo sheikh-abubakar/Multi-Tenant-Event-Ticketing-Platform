@@ -51,9 +51,9 @@ const requestRefund = async (req, res) => {
       await notifyOrganization(booking.organizationId, {
         type: "refund.processed",
         title: "Booking refunded",
-        message: `${req.user.name || req.user.email} received a ${result.method} refund for ${booking.eventName || "an event"}.`,
+        message: `${booking.buyerName || booking.buyerEmail || "A buyer"} was refunded $${refundAmount.toFixed(2)} via ${result.method === "wallet" ? "Wallet" : "Stripe"} for ${booking.eventName || "an event"}.`,
         link: "/my/notifications",
-        metadata: { bookingId },
+        metadata: { bookingId, amount: refundAmount, method: result.method },
         dedupeKey: `refund-processed:organization:${bookingId}`,
       }, userId);
     }

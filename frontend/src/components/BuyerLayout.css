@@ -37,20 +37,29 @@
     overflow-x: hidden;
     white-space: nowrap;
   }
-  .buyer-sidebar:hover {
+  .buyer-sidebar:hover,
+  .buyer-sidebar:focus-within {
     width: 270px;
     padding: 27px 18px 18px;
   }
   
   .buyer-sidebar__brand {
-    width: 38px;
+    width: 32px;
+    min-width: 32px;
+    max-width: 32px;
+    flex: 0 0 auto;
+    padding: 0 !important;
     overflow: hidden !important;
     white-space: nowrap;
     /* Keep the wordmark from flashing while the sidebar closes. */
     transition: none;
   }
-  .buyer-sidebar:hover .buyer-sidebar__brand {
-    width: 132px;
+  .buyer-sidebar:hover .buyer-sidebar__brand,
+  .buyer-sidebar:focus-within .buyer-sidebar__brand {
+    width: 132px !important;
+    min-width: 132px;
+    max-width: 132px;
+    overflow: visible !important;
   }
   
   .buyer-sidebar__eyebrow {

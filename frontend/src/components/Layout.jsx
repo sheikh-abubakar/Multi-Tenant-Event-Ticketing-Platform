@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { ShoppingCart, WalletCards, User, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw, Image, SearchCheck, Ticket } from "lucide-react";
+import { ShoppingCart, WalletCards, User, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw, Image, SearchCheck, Ticket, Menu } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import apiClient from "../api/client";
 import Logo from "./Logo";
@@ -197,15 +197,12 @@ const Layout = ({ children }) => {
           <header className="organizer-mobile-header">
             {/* Hamburger — only on mobile */}
             <button
-              className={`hamburger-btn platform-hamburger ${sidebarOpen ? "is-active" : ""}`}
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open menu"
+              className="hamburger-btn organizer-menu-trigger"
+              onClick={() => setSidebarOpen((open) => !open)}
+              aria-label={sidebarOpen ? "Close menu" : "Open organization menu"}
+              aria-expanded={sidebarOpen}
             >
-              <div className="hamburger-box">
-                <span className="hamburger-line line-1"></span>
-                <span className="hamburger-line line-2"></span>
-                <span className="hamburger-line line-3"></span>
-              </div>
+              {sidebarOpen ? <X size={23} aria-hidden="true" /> : <Menu size={25} aria-hidden="true" />}
             </button>
             <Link to="/" className="display organizer-mobile-logo">
               <Logo width="110" height="30" idSuffix="mobile" />

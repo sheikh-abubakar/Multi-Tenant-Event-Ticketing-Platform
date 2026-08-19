@@ -39,7 +39,8 @@
 .sidebar-scroll::-webkit-scrollbar { display: none; }
 
 /* ── Modern Hover-Expand Sidebar overrides for desktop ── */
-@media (min-width: 841px) {
+/* Tablet widths use the same accessible drawer navigation as mobile. */
+@media (min-width: 1025px) {
   .organizer-shell {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -243,6 +244,13 @@
   flex-shrink: 0;
 }
 .hamburger-btn:hover { background: rgba(247,242,231,0.08); }
+.organizer-menu-trigger {
+  width: 42px;
+  height: 42px;
+  color: var(--gold-soft);
+  border: 1px solid rgba(201,154,60,.28);
+  border-radius: 10px;
+}
 
 /* ── Sidebar backdrop ──────────────────────────────────────────── */
 .sidebar-backdrop {
@@ -349,7 +357,7 @@
 .nav-dropdown-logout:hover { background: rgba(220,80,80,0.1); color: #ffa0a0; }
 
 /* ── MOBILE BREAKPOINTS ─────────────────────────────────────────── */
-@media (max-width: 840px) {
+@media (max-width: 1024px) {
   /* Organizer shell becomes single-column block */
   .organizer-shell { display: block; }
 
@@ -367,6 +375,12 @@
   .organizer-sidebar.is-open {
     transform: translateX(0);
     box-shadow: 4px 0 32px rgba(0,0,0,0.55);
+  }
+
+  /* Layout.jsx keeps the desktop icon-only width inline. In the open drawer
+     the full brand must have room to render its wordmark. */
+  .organizer-sidebar .sidebar-brand {
+    width: 130px !important;
   }
 
   /* Show close button inside sidebar on mobile */
@@ -397,7 +411,13 @@
   }
 
   /* Show hamburger */
-  .hamburger-btn { display: flex; }
+  .organizer-mobile-header .organizer-menu-trigger {
+    display: flex !important;
+    visibility: visible;
+    opacity: 1;
+    position: relative;
+    z-index: 2;
+  }
 
   .organizer-main { padding: 28px 16px 60px; }
 }

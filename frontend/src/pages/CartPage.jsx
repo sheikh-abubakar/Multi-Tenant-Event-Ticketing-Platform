@@ -4,6 +4,7 @@ import apiClient from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { getLocalCart, setLocalCart, serverUnlockSeat, serverClearCart, getCartId, fetchCart } from "../utils/cart";
 import { Ticket, ShoppingBag, Trash2, Pencil, ShieldCheck, Mail, User as UserIcon, Timer, Tag } from "lucide-react";
+import "./CartPage.css";
 
 export default function CartPage() {
   const navigate = useNavigate();
@@ -226,13 +227,16 @@ export default function CartPage() {
     setCheckoutLoading(true);
     setError("");
 
+    const afterDiscount = Math.max(0, cartTotal - couponDiscount);
+    const calculatedWalletDeduction = useWallet ? Math.min(walletBalance, afterDiscount) : 0;
+
     try {
       const checkoutData = {
         buyerName: user ? user.name : buyerName.trim(),
         buyerEmail: user ? user.email : buyerEmail.trim().toLowerCase(),
         items: cartItems,
         useWallet,
-        walletDeduction: useWallet ? walletDeduction : 0,
+        walletDeduction: calculatedWalletDeduction,
         couponCode: couponApplied || null,
         rewardsToApply,
         refCode: sessionStorage.getItem("referralCode") || null,
@@ -262,7 +266,9 @@ export default function CartPage() {
     0
   );
 
-  const finalTotal = Math.max(0, cartTotal - couponDiscount - walletDeduction);
+  const afterDiscount = Math.max(0, cartTotal - couponDiscount);
+  const calculatedWalletDeduction = useWallet ? Math.min(walletBalance, afterDiscount) : 0;
+  const finalTotal = Math.max(0, afterDiscount - calculatedWalletDeduction);
 
   if (loading) {
     return (
@@ -275,9 +281,18 @@ export default function CartPage() {
 
   return (
     <div className="cart-page" style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 16px" }}>
+      {cartItems.length > 0 && (
+        <header className="cart-page__heading">
+          <div>
+            <p>SECURE CHECKOUT</p>
+            <h1>Your cart</h1>
+          </div>
+          <span>{cartItems.length} item{cartItems.length === 1 ? "" : "s"} held</span>
+        </header>
+      )}
       {/* Expiry Header */}
       {cartItems.length > 0 && (
-        <div style={{
+        <div className="cart-hold-banner" style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -313,25 +328,24 @@ export default function CartPage() {
       )}
 
       {cartItems.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "80px 20px" }}>
-          <ShoppingBag size={64} style={{ color: "var(--muted)", marginBottom: 20 }} />
-          <h2 style={{ color: "#fff", margin: "0 0 8px" }}>Your shopping cart is empty</h2>
-          <p style={{ color: "var(--muted)", margin: "0 0 24px" }}>
-            Select events and add tickets or seats to see them here.
-          </p>
-          <Link to="/browse" className="btn btn-primary" style={{ display: "inline-block" }}>
-            Browse Events &rarr;
+        <div className="cart-empty-state">
+          <div className="cart-empty-state__icon"><ShoppingBag size={38} /></div>
+          <p className="cart-empty-state__eyebrow">YOUR TICKET DESK</p>
+          <h2>Your shopping cart is empty</h2>
+          <p>Select an event, choose your tickets or seats, and they will be safely held here while you check out.</p>
+          <Link to="/browse" className="btn btn-primary cart-empty-state__cta">
+            Discover events <span aria-hidden="true">→</span>
           </Link>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: "32px", alignItems: "start" }}>
+        <div className="cart-layout" style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: "32px", alignItems: "start" }}>
 
           {/* Left Column: Cart items grouped by Event */}
-          <div style={{ display: "grid", gap: "24px" }}>
+          <div className="cart-items-list" style={{ display: "grid", gap: "24px" }}>
             {cartItems.filter((item) => item.itemType === "bundle").map((item) => (
-              <div key={`bundle:${item.bundleId}`} className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(201,154,60,0.35)", borderRadius: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center" }}>
-                  <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
+              <div key={`bundle:${item.bundleId}`} className="card cart-item-card cart-bundle-card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(201,154,60,0.35)", borderRadius: "16px" }}>
+                <div className="cart-item-card__top" style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center" }}>
+                  <div className="cart-item-card__identity" style={{ display: "flex", gap: "14px", alignItems: "center" }}>
                     {(item.bundleBannerImageUrl || bundleDetails[item.bundleId]?.bannerImageUrl) && <img src={item.bundleBannerImageUrl || bundleDetails[item.bundleId]?.bannerImageUrl} alt="" style={{ width: 108, height: 70, objectFit: "cover", borderRadius: 10, border: "1px solid rgba(201,154,60,0.25)" }} />}
                     <div>
                     <p style={{ margin: "0 0 4px", fontSize: "11px", color: "var(--gold)", fontWeight: 700, letterSpacing: "0.08em" }}>EVENT BUNDLE</p>
@@ -339,7 +353,7 @@ export default function CartPage() {
                     <p style={{ margin: 0, fontSize: "13px", color: "var(--muted)" }}>{item.bundleQuantity} seat{item.bundleQuantity !== 1 ? "s" : ""} in each included event · {item.bundleSelections?.length || 0} seats selected</p>
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                  <div className="cart-item-card__actions" style={{ display: "flex", alignItems: "center", gap: "16px" }}>
                     <div style={{ textAlign: "right" }}>
                       <strong style={{ color: "var(--gold)" }}>{formatUSD(item.unitPrice)}</strong>
                       {couponDiscountsByItem[getCartItemKey(item)] > 0 && <small style={{ display: "block", color: "#4ade80", marginTop: 4 }}>−{formatUSD(couponDiscountsByItem[getCartItemKey(item)])} coupon</small>}
@@ -376,9 +390,9 @@ export default function CartPage() {
               })();
 
               return (
-                <div key={groupKey} className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px" }}>
+                <div key={groupKey} className="card cart-item-card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px" }}>
                   {/* Event details summary */}
-                  <div style={{ display: "flex", gap: "16px", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "16px" }}>
+                  <div className="cart-event-heading" style={{ display: "flex", gap: "16px", marginBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "16px" }}>
                     {event?.bannerImageUrl && (
                       <img src={event.bannerImageUrl} alt={event.name} style={{ width: "90px", height: "60px", objectFit: "cover", borderRadius: "8px" }} />
                     )}
@@ -393,7 +407,7 @@ export default function CartPage() {
                   {/* List of seats/tickets for this event group */}
                   <div style={{ display: "grid", gap: "12px" }}>
                     {items.map((item, idx) => (
-                      <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,0.03)", padding: "12px 16px", borderRadius: "10px" }}>
+                      <div key={idx} className="cart-line-item" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,0.03)", padding: "12px 16px", borderRadius: "10px" }}>
                         <div>
                           <p style={{ margin: "0 0 2px", color: "#fff", fontWeight: 600, fontSize: "14px" }}>
                             {item.seatName ? `Seat ${item.seatName} (${item.sectionName})` : item.ticketTypeName || "Ticket Selection"}
@@ -402,7 +416,7 @@ export default function CartPage() {
                             Quantity: {item.quantity} &middot; Price: {formatUSD(item.unitPrice)}
                           </p>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                        <div className="cart-line-item__actions" style={{ display: "flex", alignItems: "center", gap: "16px" }}>
                           <span style={{ fontWeight: 600, color: "#fff" }}>
                             {formatUSD(item.unitPrice * item.quantity)}
                           </span>
@@ -432,8 +446,8 @@ export default function CartPage() {
             })}
           </div>
 
-          {/* Right Column: Checkout Form & Summary */}
-          <div style={{ display: "grid", gap: "24px" }}>
+          {/* Utilities live beneath the tickets, keeping the payment decision focused. */}
+          <div className="cart-checkout-tools" style={{ display: "grid", gap: "24px" }}>
 
             {/* Checkout Form */}
             {!user && (
@@ -475,6 +489,31 @@ export default function CartPage() {
               </div>
             )}
 
+            {/* Wallet Payment Option */}
+            {user && walletBalance > 0 && (
+              <div className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px" }}>
+                <h3 style={{ margin: "0 0 12px", fontSize: "16px", color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+                  <ShieldCheck size={18} style={{ color: "var(--gold)" }} />
+                  Wallet Balance
+                </h3>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#14162b", padding: "12px 16px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                  <div>
+                    <span style={{ display: "block", fontSize: "12px", color: "var(--muted)" }}>Available Balance</span>
+                    <strong style={{ fontSize: "18px", color: "#fff" }}>{formatUSD(walletBalance)}</strong>
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", userSelect: "none" }}>
+                    <input
+                      type="checkbox"
+                      checked={useWallet}
+                      onChange={(e) => setUseWallet(e.target.checked)}
+                      style={{ width: "20px", height: "20px", accentColor: "var(--gold)", cursor: "pointer" }}
+                    />
+                    <span style={{ fontSize: "14px", fontWeight: 600, color: "#fff" }}>Apply Balance</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
             {/* Coupons & Discounts */}
             <div className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px" }}>
               <h3 style={{ margin: "0 0 16px", fontSize: "16px", color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
@@ -505,6 +544,10 @@ export default function CartPage() {
               )}
             </div>
 
+          </div>
+
+          {/* Focused payment column */}
+          <div className="cart-billing-panel" style={{ display: "grid", gap: "24px" }}>
             {/* Billing Summary */}
             <div className="card" style={{ padding: "20px", background: "#0a0c16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px" }}>
               <h3 style={{ margin: "0 0 16px", fontSize: "16px", color: "#fff" }}>Billing Summary</h3>
@@ -520,6 +563,12 @@ export default function CartPage() {
                     <span>-{formatUSD(couponDiscount)}</span>
                   </div>
                 )}
+                {calculatedWalletDeduction > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", color: "var(--gold)" }}>
+                    <span>Wallet Applied:</span>
+                    <span>-{formatUSD(calculatedWalletDeduction)}</span>
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "16px", fontWeight: "bold", color: "#fff" }}>
                   <span>Total Amount:</span>
                   <span>{formatUSD(finalTotal)}</span>
@@ -533,7 +582,7 @@ export default function CartPage() {
                 className="btn btn-primary"
                 style={{ width: "100%", padding: "14px", fontSize: "15px", fontWeight: "bold", cursor: "pointer" }}
               >
-                {checkoutLoading ? "Processing Payment..." : "Proceed to Payment →"}
+                {checkoutLoading ? "Processing Payment..." : finalTotal === 0 ? "Confirm Booking (Free) ✓" : "Proceed to Payment →"}
               </button>
             </div>
           </div>

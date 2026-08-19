@@ -21,7 +21,40 @@ const safeCreate = async (payload) => {
   } catch (error) {
     // Duplicate-key is an expected result of retry-safe workflows (Stripe
     // webhook + success-page confirmation). It is not an application error.
-    if (error?.code === 11000 && payload.dedupeKey) return null;
+    if (error?.code === 11000 && payload.dedupeKey) {
+      // A Stripe test event can legitimately be delivered to both the local
+      // CLI listener and the deployed webhook endpoint. The first process
+      // persists the document; a second process must not create another one,
+      // but it still needs to push that same persisted alert to its own
+      // connected Socket.IO clients. This keeps the inbox exactly-once while
+      // preserving live delivery across those processes.
+      // Refresh the business-facing content without changing read/dismiss
+      // state. This also upgrades a legacy 10%-discount referral message to
+      // the current cash-reward wording when both deployments saw the event.
+      const existing = await Notification.findOneAndUpdate(
+        {
+          recipientUserId: payload.recipientUserId,
+          dedupeKey: payload.dedupeKey,
+        },
+        {
+          $set: {
+            title: payload.title,
+            message: payload.message,
+            link: payload.link || null,
+            metadata: payload.metadata || {},
+            organizationId: payload.organizationId || null,
+            scope: payload.scope,
+            type: payload.type,
+          },
+        },
+        { new: true }
+      ).lean();
+      if (existing) {
+        emitNotificationToUser(payload.recipientUserId, existing);
+        return existing;
+      }
+      return null;
+    }
     // Notifications must never break a payment, booking or management action.
     logger.error("Notification creation failed", { error: error.message, type: payload.type });
     return null;

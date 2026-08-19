@@ -154,7 +154,7 @@ export default function BundleSeatSelection() {
     e.preventDefault();
     setVerifyingCode(true);
     setUnlockError("");
-    const targetId = selectedSessionIds[activeEvent.parentEventId || activeEvent._id] || activeEvent._id;
+    const targetId = activeEvent.parentEventId || activeEvent._id;
     try {
       await apiClient.post(`/o/${orgSlug}/events/${targetId}/verify-access`, {
         accessCode: unlockCodeInput,

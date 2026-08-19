@@ -16,7 +16,7 @@ const formatLocalDateForInput = (dateStr) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
-const emptyForm = { name: "", description: "", dateTime: "", venueId: "", accessCode: "", privateCodeExpiry: "", youtubeUrl: "", bookingOpeningDateTime: "" };
+const emptyForm = { name: "", description: "", dateTime: "", venueId: "", accessCode: "", privateCodeExpiry: "", youtubeUrl: "", bookingOpeningDateTime: "", referralRewardAmount: "0" };
 
 export default function Events() {
   const { orgSlug } = useParams();
@@ -119,6 +119,7 @@ export default function Events() {
       bannerImageUrl: item.bannerImageUrl || "",
       youtubeUrl: item.youtubeUrl || "",
       bookingOpeningDateTime: formatLocalDateForInput(item.bookingOpeningDateTime),
+      referralRewardAmount: item.referralRewardAmount !== undefined ? String(item.referralRewardAmount) : "0",
     });
     if (item.sessions && item.sessions.length > 1) {
       const additional = item.sessions.slice(1).map(s => formatLocalDateForInput(s.dateTime));
@@ -385,6 +386,21 @@ export default function Events() {
                   <div className="absolute top-1 right-1 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">Current banner</div>
                 </div>
               ) : null}
+            </label>
+            {/* Referral Cash Reward */}
+            <label className="block text-sm font-semibold text-muted">
+              Referral Cash Reward ($)
+              <input
+                name="referralRewardAmount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.referralRewardAmount}
+                onChange={(e) => setForm({ ...form, referralRewardAmount: e.target.value })}
+                placeholder="0.00"
+                className="w-full rounded-md border border-black/15 px-3 py-2 text-ink mt-1"
+                style={{ color: "#111326" }}
+              />
             </label>
             {/* YouTube Video Link */}
             <label className="block text-sm font-semibold">

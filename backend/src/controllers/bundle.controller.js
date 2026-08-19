@@ -102,6 +102,7 @@ const create = async (req, res) => {
       privateCodeExpiry: privateCodeExpiry ? new Date(privateCodeExpiry) || null : null,
       allowedSections: Array.isArray(parsedAllowedSections) ? parsedAllowedSections : [],
       bookingOpeningDateTime: bookingOpeningDateTime ? new Date(bookingOpeningDateTime) : null,
+      referralRewardAmount: req.body.referralRewardAmount !== undefined ? Number(req.body.referralRewardAmount) || 0 : 0,
     });
 
     await bundle.save();
@@ -249,6 +250,9 @@ const update = async (req, res) => {
     }
     if (privateCodeExpiry !== undefined) {
       bundle.privateCodeExpiry = privateCodeExpiry ? new Date(privateCodeExpiry) || null : null;
+    }
+    if (req.body.referralRewardAmount !== undefined) {
+      bundle.referralRewardAmount = Number(req.body.referralRewardAmount) || 0;
     }
 
     if (allowedSections !== undefined) {

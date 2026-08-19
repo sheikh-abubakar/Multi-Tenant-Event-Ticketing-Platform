@@ -24,7 +24,11 @@ const referralRewardSchema = new mongoose.Schema(
     },
     discountPercent: {
       type: Number,
-      default: 10,
+      default: 0,
+    },
+    rewardAmount: {
+      type: Number,
+      default: 0,
     },
     status: {
       type: String,
@@ -35,6 +39,13 @@ const referralRewardSchema = new mongoose.Schema(
     usedInBookingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Booking",
+      default: null,
+    },
+    // A cross-process claim for the wallet payout. This is separate from the
+    // display status because Stripe can deliver one event to more than one
+    // webhook endpoint (for example production plus Stripe CLI locally).
+    walletCreditedAt: {
+      type: Date,
       default: null,
     },
   },

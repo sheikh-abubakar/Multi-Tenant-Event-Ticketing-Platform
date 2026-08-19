@@ -1,21 +1,33 @@
 const crypto = require("crypto");
 const User = require("../models/User");
 const ReferralReward = require("../models/ReferralReward");
+const Event = require("../models/Event");
+const EventBundle = require("../models/EventBundle");
+const WalletTransaction = require("../models/WalletTransaction");
+const walletService = require("./wallet.service");
 const { notifyUser, notifyPlatformAdmin } = require("./notification.service");
 
 const notifyRewardEarned = (referrerUserId, reward, buyer = {}) => {
   const referredBuyer = buyer.name?.trim() || buyer.email || reward.referredEmail;
+  const isBundle = buyer.isBundleBooking || reward.referredBookingId?.isBundleBooking;
+  const bName = buyer.bundleName || reward.referredBookingId?.bundleName;
+  const eName = buyer.eventName || reward.referredBookingId?.eventName;
+
+  const targetName = isBundle
+    ? `bundle "${bName || "Bundle"}"`
+    : `event "${eName || "Event"}"`;
+
   return notifyUser(referrerUserId, {
     type: "referral.reward-earned",
     title: "New referral reward earned",
-    message: `${referredBuyer} used your referral link. You earned a ${reward.discountPercent}% discount reward.`,
+    message: `${referredBuyer} used your referral link. You earned a $${Number(reward.rewardAmount || 0).toFixed(2)} cash reward in your wallet for their booking of ${targetName}.`,
     link: "/my/referrals",
     metadata: {
       rewardId: String(reward._id),
       bookingId: String(reward.referredBookingId),
       referredBuyerName: buyer.name || null,
       referredBuyerEmail: buyer.email || reward.referredEmail,
-      discountPercent: reward.discountPercent,
+      rewardAmount: reward.rewardAmount,
     },
     // The reward ID is immutable and unique, so this makes both real-time
     // delivery and recovery after a server restart exactly-once.
@@ -91,26 +103,150 @@ async function processBookingReferral(booking) {
     referredEmail: booking.buyerEmail.toLowerCase(),
   });
 
-  if (existingReward) {
-    console.log(`[Referral] Reward already exists for referrer ${referrer.email} → friend ${booking.buyerEmail}. Skipping.`);
-    return null; // Reward already earned for this friend email previously
+  // Retrieve referral reward amount from event/bundle
+  let referralRewardAmount = 0;
+  try {
+    if (booking.bundleId) {
+      const bundle = await EventBundle.findById(booking.bundleId).select("referralRewardAmount").lean();
+      referralRewardAmount = bundle?.referralRewardAmount || 0;
+    } else {
+      const event = await Event.findById(booking.eventId).select("referralRewardAmount").lean();
+      referralRewardAmount = event?.referralRewardAmount || 0;
+    }
+  } catch (err) {
+    console.error("[Referral] Error fetching event/bundle reward amount:", err.message);
   }
 
-  // Award 10% discount reward to referrer
+  if (referralRewardAmount <= 0) {
+    console.log(`[Referral] referralRewardAmount is 0 for booking ${booking._id}. Skipping reward.`);
+    return null;
+  }
+
   try {
-    const reward = await ReferralReward.create({
-      referrerUserId: referrer._id,
+    const rewardData = {
       referredBookingId: booking._id,
-      referredEmail: booking.buyerEmail.toLowerCase(),
-      discountPercent: 10,
-      status: "available",
+      rewardAmount: referralRewardAmount,
+      discountPercent: 0,
+      status: "used", // Cash is credited straight into the wallet.
+    };
+
+    // Store/repair the reward record before crediting the wallet. This makes
+    // concurrent webhook deliveries safe: a legacy process may create a
+    // zero-value percentage row first, but it can never leave the UI showing
+    // $0 after the cash credit succeeds.
+    let reward = existingReward;
+    if (reward && Number(reward.rewardAmount || 0) <= 0) {
+      reward.set(rewardData);
+      await reward.save();
+    } else if (!reward) {
+      try {
+        reward = await ReferralReward.create({
+          referrerUserId: referrer._id,
+          referredEmail: booking.buyerEmail.toLowerCase(),
+          ...rewardData,
+        });
+      } catch (err) {
+        if (err.code !== 11000) throw err;
+        // A parallel delivery won the unique key race. Upgrade its legacy
+        // record instead of crediting a second time.
+        reward = await ReferralReward.findOne({
+          referrerUserId: referrer._id,
+          referredEmail: booking.buyerEmail.toLowerCase(),
+        });
+        if (!reward) throw err;
+        if (Number(reward.rewardAmount || 0) <= 0) {
+          reward.set(rewardData);
+          await reward.save();
+        }
+      }
+    }
+
+    // A booking can reach confirmation via both the Stripe webhook and the
+    // success page. The wallet ledger is the final idempotency check, so a
+    // confirmed cash reward is never credited twice.
+    const creditedAlready = await WalletTransaction.exists({
+      userId: referrer._id,
+      type: "referral",
+      bookingId: booking._id,
     });
-    console.log(`[Referral] ✅ Reward created! Referrer ${referrer.email} earns 10% off. Reward ID: ${reward._id}`);
+    if (creditedAlready) {
+      if (!reward.walletCreditedAt) {
+        reward.walletCreditedAt = new Date();
+        await reward.save();
+      }
+      console.log(`[Referral] Reward already credited for booking ${booking._id}. Skipping wallet credit.`);
+      await notifyRewardEarned(referrer._id, reward, {
+        name: booking.buyerName,
+        email: booking.buyerEmail,
+        isBundleBooking: booking.isBundleBooking,
+        bundleName: booking.bundleName,
+        eventName: booking.eventName,
+      });
+      return reward;
+    }
+
+    // Claim the cash payout atomically. Without this, two webhook endpoints
+    // can both see the same uncredited reward and credit the wallet twice.
+    const claimedAt = new Date();
+    const payoutClaim = await ReferralReward.findOneAndUpdate(
+      { _id: reward._id, walletCreditedAt: null },
+      { $set: { walletCreditedAt: claimedAt } },
+      { new: true }
+    );
+    if (!payoutClaim) {
+      console.log(`[Referral] Wallet payout is already being handled for booking ${booking._id}.`);
+      // Another endpoint owns the wallet credit, but this local process may
+      // own the buyer's live Socket.IO connection. Re-requesting the
+      // idempotent inbox alert lets notification.service emit the same record
+      // here without creating a duplicate document.
+      await notifyRewardEarned(referrer._id, reward, {
+        name: booking.buyerName,
+        email: booking.buyerEmail,
+        isBundleBooking: booking.isBundleBooking,
+        bundleName: booking.bundleName,
+        eventName: booking.eventName,
+      });
+      return reward;
+    }
+
+    try {
+      await walletService.credit(
+        referrer._id,
+        referralRewardAmount,
+        booking.isBundleBooking
+          ? `Referral reward: friend (${booking.buyerEmail}) booked bundle "${booking.bundleName || "Bundle"}"`
+          : `Referral reward: friend (${booking.buyerEmail}) booked event "${booking.eventName || "Event"}"`,
+        { type: "referral", bookingId: booking._id }
+      );
+    } catch (creditError) {
+      // Do not permanently lock a reward if the wallet ledger write fails.
+      await ReferralReward.updateOne(
+        { _id: reward._id, walletCreditedAt: claimedAt },
+        { $set: { walletCreditedAt: null } }
+      );
+      throw creditError;
+    }
+
+    console.log(`[Referral] ✅ Reward created & credited! Referrer ${referrer.email} earns $${referralRewardAmount}. Reward ID: ${reward._id}`);
+
     await notifyRewardEarned(referrer._id, reward, {
       name: booking.buyerName,
       email: booking.buyerEmail,
+      isBundleBooking: booking.isBundleBooking,
+      bundleName: booking.bundleName,
+      eventName: booking.eventName,
     });
-    await notifyPlatformAdmin({ type: "platform.referral.reward-earned", title: "Referral reward earned", message: `${booking.buyerName || booking.buyerEmail} earned a referral reward for ${referrer.name || referrer.email}.`, organizationId: booking.organizationId, link: "/platform-admin/activity", metadata: { rewardId: String(reward._id), bookingId: String(booking._id), referrerEmail: referrer.email, buyerEmail: booking.buyerEmail, discountPercent: reward.discountPercent }, dedupeKey: `platform-referral-reward:${reward._id}` });
+
+    await notifyPlatformAdmin({
+      type: "platform.referral.reward-earned",
+      title: "Referral reward earned",
+      message: `${booking.buyerName || booking.buyerEmail} earned a $${referralRewardAmount} referral reward for ${referrer.name || referrer.email}.`,
+      organizationId: booking.organizationId,
+      link: "/platform-admin/activity",
+      metadata: { rewardId: String(reward._id), bookingId: String(booking._id), referrerEmail: referrer.email, buyerEmail: booking.buyerEmail, rewardAmount: referralRewardAmount },
+      dedupeKey: `platform-referral-reward:${reward._id}`
+    });
+
     return reward;
   } catch (err) {
     // Handle duplicate key race condition gracefully
@@ -143,99 +279,55 @@ async function ensureBookingReferralNotification(booking) {
 async function getReferralStats(userId) {
   const referralCode = await getUserReferralCode(userId);
 
-  const availableRewards = await ReferralReward.find({
+  const rewards = await ReferralReward.find({
     referrerUserId: userId,
-    status: "available",
-  }).sort({ createdAt: -1 });
+  }).populate("referredBookingId", "eventName isBundleBooking bundleName").sort({ createdAt: -1 });
 
-  const usedRewards = await ReferralReward.find({
-    referrerUserId: userId,
-    status: "used",
-  }).sort({ updatedAt: -1 });
+  const totalEarnedAmount = rewards.reduce((sum, r) => sum + (r.rewardAmount || 0), 0);
 
   // Recovery guard: if a reward was created while the API was restarting,
-  // restore the missed real-time inbox item once the referrer opens their
-  // referral page. The per-reward dedupe key keeps ordinary page refreshes
-  // completely silent.
+  // restore the missed inbox notification.
   const recoveryCutoff = Date.now() - (24 * 60 * 60 * 1000);
   await Promise.all(
-    availableRewards
+    rewards
       .filter((reward) => new Date(reward.createdAt).getTime() >= recoveryCutoff)
-      .map((reward) => notifyRewardEarned(userId, reward, { email: reward.referredEmail }))
+      .map((reward) => notifyRewardEarned(userId, reward, {
+        email: reward.referredEmail,
+        isBundleBooking: reward.referredBookingId?.isBundleBooking,
+        bundleName: reward.referredBookingId?.bundleName,
+        eventName: reward.referredBookingId?.eventName,
+      }))
   );
 
   return {
     referralCode,
-    availableRewardsCount: availableRewards.length,
-    totalEarnedCount: availableRewards.length + usedRewards.length,
-    availableRewards,
-    usedRewardsHistory: usedRewards,
+    totalEarnedAmount,
+    totalEarnedCount: rewards.length,
+    availableRewardsCount: 0, // No longer using percentage discounts
+    availableRewards: [],
+    usedRewardsHistory: rewards,
   };
 }
 
 /**
- * Reserve/calculate referral reward discount for checkout (Max 50% / 5 rewards)
+ * Reserve/calculate referral reward discount for checkout (Stubbed, no discounts)
  */
 async function calculateReferralDiscount(userId, rewardsToApply, originalTotal) {
-  const count = Math.min(Math.max(0, parseInt(rewardsToApply, 10) || 0), 5);
-  if (count <= 0) {
-    return { rewardsToApplyCount: 0, discountPercent: 0, discountAmount: 0, finalTotal: originalTotal, rewardIds: [] };
-  }
-
-  // Fetch available rewards
-  const availableRewards = await ReferralReward.find({
-    referrerUserId: userId,
-    status: "available",
-  }).limit(count);
-
-  if (availableRewards.length < count) {
-    throw new Error(`Insufficient referral rewards available. Requested ${count}, but only ${availableRewards.length} available.`);
-  }
-
-  const discountPercent = count * 10; // e.g. 3 rewards = 30% discount
-  const discountAmount = Math.round((originalTotal * discountPercent) / 100);
-  const finalTotal = Math.max(0, originalTotal - discountAmount);
-  const rewardIds = availableRewards.map((r) => r._id);
-
   return {
-    rewardsToApplyCount: count,
-    discountPercent,
-    discountAmount,
-    finalTotal,
-    rewardIds,
+    rewardsToApplyCount: 0,
+    discountPercent: 0,
+    discountAmount: 0,
+    finalTotal: originalTotal,
+    rewardIds: [],
   };
 }
 
 /**
- * Mark rewards as used after payment confirmation
+ * Mark rewards as used after payment confirmation (Stubbed, processed on earn)
  */
 async function consumeReferralRewards(userId, rewardsCount, bookingId) {
-  console.log(`[ReferralService] consumeReferralRewards invoked for userId = ${userId}, rewardsCount = ${rewardsCount}, bookingId = ${bookingId}`);
-  if (!rewardsCount || rewardsCount <= 0) {
-    console.log(`[ReferralService] rewardsCount <= 0, returning.`);
-    return;
-  }
-
-  const count = Math.min(rewardsCount, 5);
-  const availableRewards = await ReferralReward.find({
-    referrerUserId: userId,
-    status: "available",
-  }).limit(count);
-
-  console.log(`[ReferralService] Found ${availableRewards.length} available rewards for userId: ${userId} to consume.`);
-
-  const rewardIds = availableRewards.map((r) => r._id);
-  console.log(`[ReferralService] Reward document IDs to set as 'used':`, rewardIds);
-  
-  if (rewardIds.length > 0) {
-    const updateResult = await ReferralReward.updateMany(
-      { _id: { $in: rewardIds } },
-      { $set: { status: "used", usedInBookingId: bookingId } }
-    );
-    console.log(`[ReferralService] Update result:`, updateResult);
-  } else {
-    console.warn(`[ReferralService] ⚠️ No available rewards were found in DB for user ${userId}.`);
-  }
+  console.log(`[ReferralService] consumeReferralRewards stub invoked for userId = ${userId}, bookingId = ${bookingId}`);
+  return;
 }
 
 module.exports = {

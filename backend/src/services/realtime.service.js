@@ -65,7 +65,7 @@ const emitOrganizationBookingUpdate = (organizationId, payload = {}) => {
 
 const emitNotificationToUser = (userId, notification) => {
   if (!io || !userId) return;
-  io.to(`notification-user:${userId}`).emit("notifications:new", notification);
+  io.to(`notification-user:${userId.toString()}`).emit("notifications:new", notification);
 };
 
 module.exports = { initializeRealtime, emitOrganizationBookingUpdate, emitNotificationToUser };

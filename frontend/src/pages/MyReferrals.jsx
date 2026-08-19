@@ -22,16 +22,36 @@ const MyReferrals = () => {
   };
   return <section className="buyer-hub-page">
     <Link to="/browse" className="buyer-hub-back"><ArrowLeft size={15} /> Back to browse</Link>
-    <header className="buyer-hub-heading"><div><p>SHARE THE EXPERIENCE</p><h1>Referrals &amp; Rewards</h1><span>Invite friends and earn 10% rewards, up to 50% per checkout.</span></div><Gift size={34} /></header>
+    <header className="buyer-hub-heading"><div><p>SHARE THE EXPERIENCE</p><h1>Referrals &amp; Rewards</h1><span>Invite friends and earn cash rewards directly in your wallet.</span></div><Gift size={34} /></header>
     {error && <div className="buyer-hub-alert">{error}</div>}
     <div className="referral-feature">
-      <div><span>YOUR REFERRAL CODE</span><strong>{loading ? "Loading…" : data?.referralCode}</strong><p>Share your personal link. A successful friend booking unlocks a reward.</p></div>
+      <div><span>YOUR REFERRAL CODE</span><strong>{loading ? "Loading…" : data?.referralCode}</strong><p>Share your personal link. A successful friend booking unlocks a cash reward.</p></div>
       <button onClick={copyLink} disabled={!data}>{copied ? <Check size={17} /> : <Copy size={17} />}{copied ? "Copied" : "Copy referral link"}</button>
     </div>
-    <div className="referral-stats"><div><Sparkles size={20} /><strong>{data?.availableRewardsCount || 0}</strong><span>Available rewards</span></div><div><Share2 size={20} /><strong>{data?.totalEarnedCount || 0}</strong><span>Total earned</span></div><div><Gift size={20} /><strong>{Math.min((data?.availableRewardsCount || 0) * 10, 50)}%</strong><span>Available discount</span></div></div>
-    <div className="reward-columns">
-      <section><h2>Available rewards</h2>{!loading && !data?.availableRewards?.length ? <div className="buyer-hub-empty compact"><Gift size={24} /><p>No rewards available yet.</p></div> : data?.availableRewards?.map((reward) => <article className="reward-row is-available" key={reward._id}><div><strong>{reward.discountPercent}% OFF</strong><span>Earned from {reward.referredEmail}</span></div><small>Ready to use</small></article>)}</section>
-      <section><h2>Used rewards</h2>{!loading && !data?.usedRewardsHistory?.length ? <div className="buyer-hub-empty compact"><Check size={24} /><p>No used rewards yet.</p></div> : data?.usedRewardsHistory?.map((reward) => <article className="reward-row" key={reward._id}><div><strong>{reward.discountPercent}% OFF</strong><span>{reward.referredEmail}</span></div><small>Used</small></article>)}</section>
+    <div className="referral-stats" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+      <div><Sparkles size={20} /><strong>${Number(data?.totalEarnedAmount || 0).toFixed(2)}</strong><span>Total cash earned</span></div>
+      <div><Share2 size={20} /><strong>{data?.totalEarnedCount || 0}</strong><span>Total referrals</span></div>
+    </div>
+    <div className="reward-columns" style={{ gridTemplateColumns: "1fr" }}>
+      <section style={{ maxWidth: "800px", margin: "0 auto", width: "100%" }}>
+        <h2>Earnings &amp; Referral History</h2>
+        {!loading && !data?.usedRewardsHistory?.length ? (
+          <div className="buyer-hub-empty compact">
+            <Gift size={24} />
+            <p>No referrals completed yet.</p>
+          </div>
+        ) : (
+          data?.usedRewardsHistory?.map((reward) => (
+            <article className="reward-row is-available" key={reward._id}>
+              <div>
+                <strong>${Number(reward.rewardAmount || 0).toFixed(2)} Cash Reward</strong>
+                <span>Earned from referral of {reward.referredEmail} for booking of <strong>{reward.referredBookingId?.isBundleBooking ? `bundle "${reward.referredBookingId?.bundleName || "Bundle"}"` : `event "${reward.referredBookingId?.eventName || "Event"}"`}</strong></span>
+              </div>
+              <small style={{ color: "var(--gold)", fontWeight: 600 }}>Credited to Wallet</small>
+            </article>
+          ))
+        )}
+      </section>
     </div>
   </section>;
 };

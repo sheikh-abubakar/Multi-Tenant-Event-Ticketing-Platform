@@ -72,6 +72,7 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     privateCodeExpiry: privateCodeExpiry ? new Date(privateCodeExpiry) || null : null,
     bookingOpeningDateTime: bookingOpeningDateTime ? new Date(bookingOpeningDateTime) : null,
     sessions: sessionsList,
+    referralRewardAmount: data.referralRewardAmount !== undefined ? Number(data.referralRewardAmount) || 0 : 0,
   });
 };
 
@@ -126,7 +127,7 @@ const getEventById = async (eventId, organizationId) => {
 };
 
 const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => {
-  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode", "privateCodeExpiry", "sessionDates", "youtubeUrl", "bookingOpeningDateTime"];
+  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode", "privateCodeExpiry", "sessionDates", "youtubeUrl", "bookingOpeningDateTime", "referralRewardAmount"];
   const safeUpdates = {};
 
   for (const field of allowedFields) {
@@ -137,6 +138,8 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
         safeUpdates[field] = updates[field] ? new Date(updates[field]) || null : null;
       } else if (field === "bookingOpeningDateTime") {
         safeUpdates[field] = updates[field] ? new Date(updates[field]) || null : null;
+      } else if (field === "referralRewardAmount") {
+        safeUpdates[field] = Number(updates[field]) || 0;
       } else {
         safeUpdates[field] = updates[field];
       }

@@ -27,6 +27,57 @@ const generateConfirmationCode = () => {
   return `BK-${Date.now().toString(36).toUpperCase()}-${randomPart}`;
 };
 
+// A bundle creates one internal Booking document per included event so seats,
+// QR codes and check-in remain independent.  It is still one buyer purchase,
+// though, so the organizer must receive one concise bundle notification rather
+// than a confusing alert for every internal booking row.
+const notifyOrganizationsOfConfirmedBookings = async (bookings) => {
+  const groups = new Map();
+
+  for (const booking of bookings) {
+    const organizationId = String(booking.organizationId);
+    const bundleKey = booking.isBundleBooking && booking.bundleBookingId
+      ? `bundle:${booking.bundleBookingId}`
+      : `booking:${booking._id}`;
+    const key = `${organizationId}:${bundleKey}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(booking);
+  }
+
+  await Promise.all([...groups.values()].map(async (group) => {
+    const first = group[0];
+    const organization = await Organization.findById(first.organizationId).select("slug").lean();
+    const isBundle = first.isBundleBooking && first.bundleBookingId;
+    const totalAmount = group.reduce((sum, booking) => sum + Number(booking.totalAmount || 0), 0);
+    const buyer = first.buyerName || first.buyerEmail || "A buyer";
+    const lookupLink = organization?.slug
+      ? `/o/${organization.slug}/manage/booking-lookup?bookingId=${first._id}`
+      : "/my/notifications";
+
+    return notifyOrganization(first.organizationId, {
+      type: "booking.confirmed",
+      title: "New booking confirmed",
+      message: isBundle
+        ? `${buyer} booked bundle \"${first.bundleName || "Bundle"}\" (${group.length} event${group.length === 1 ? "" : "s"}) for $${totalAmount.toFixed(2)}.`
+        : `${buyer} booked ${first.eventName || "an event"} for $${totalAmount.toFixed(2)}.`,
+      link: lookupLink,
+      metadata: {
+        bookingId: String(first._id),
+        bookingIds: group.map((booking) => String(booking._id)),
+        eventId: String(first.eventId),
+        bundleBookingId: isBundle ? String(first.bundleBookingId) : null,
+        bundleId: isBundle && first.bundleId ? String(first.bundleId) : null,
+        bundleName: isBundle ? first.bundleName : null,
+        totalAmount,
+      },
+      dedupeKey: isBundle
+        ? `booking-confirmed:organization:bundle:${first.bundleBookingId}`
+        : `booking-confirmed:organization:${first._id}`,
+      platformNotify: false,
+    });
+  }));
+};
+
 const parseCheckoutItems = (items) => {
   if (!items) {
     const error = new Error("items are required");
@@ -314,6 +365,9 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
       }
 
       await dbSession.commitTransaction();
+      completeOfflineBookingConfirmation([booking], orgSlug).catch((err) =>
+        console.error("Offline booking confirmation notification error:", err.message)
+      );
       return {
         bookingId: booking._id,
         success: true,
@@ -669,6 +723,9 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
       }
 
       await mongoSession.commitTransaction();
+      completeOfflineBookingConfirmation([booking], orgSlug).catch((err) =>
+        console.error("Offline booking confirmation notification error:", err.message)
+      );
       return {
         bookingId: booking._id,
         success: true,
@@ -1022,22 +1079,84 @@ const confirmBooking = async (stripeSessionId) => {
       metadata: { stripeSessionId, bookingIds: confirmedBookings.map((item) => String(item._id)), eventNames: confirmedBookings.map((item) => item.eventName), buyerEmail: first.buyerEmail, paymentMethod: "Stripe", buyerType: buyerTypeLabel, organizationNames: orgNamesStr },
       dedupeKey: `platform-checkout-confirmed:${stripeSessionId}`,
     });
-    await Promise.all(confirmedBookings.map(async (booking) => {
-      const organization = await Organization.findById(booking.organizationId).select("slug").lean();
-      return notifyOrganization(booking.organizationId, {
-        type: "booking.confirmed",
-        title: "New booking confirmed",
-        message: `${booking.buyerName} booked ${booking.eventName || "an event"} for $${Number(booking.totalAmount || 0).toFixed(2)}.`,
-        link: organization?.slug ? `/o/${organization.slug}/manage/booking-lookup?bookingId=${booking._id}` : "/my/notifications",
-        metadata: { bookingId: String(booking._id), eventId: String(booking.eventId) },
-        dedupeKey: `booking-confirmed:organization:${booking._id}`,
-        platformNotify: false,
-      });
-    }));
+    await notifyOrganizationsOfConfirmedBookings(confirmedBookings);
   }
 
   // Return the first booking to satisfy controller redirect / page title info
   return confirmedBookings[0];
+};
+
+const completeOfflineBookingConfirmation = async (bookings, orgSlug) => {
+  if (!bookings || !bookings.length) return;
+
+  const newlyConfirmedBookings = bookings;
+  
+  // 1. Send Unified Confirmation Email
+  try {
+    await sendUnifiedBookingConfirmation(newlyConfirmedBookings);
+    console.log(`[Offline Checkout] Unified confirmation email sent for bookings:`, newlyConfirmedBookings.map((b) => b._id.toString()));
+  } catch (emailError) {
+    console.error("[Offline Checkout] Unified confirmation email failed:", emailError.message);
+  }
+
+  // 2. Clear Buyer Cart
+  try {
+    const sourceBooking = newlyConfirmedBookings[0];
+    const cartQuery = sourceBooking.userId
+      ? { userId: sourceBooking.userId }
+      : { cartId: sourceBooking.cartId };
+    if (sourceBooking.userId || sourceBooking.cartId) {
+      await Cart.updateOne(cartQuery, {
+        $set: { items: [], expiresAt: new Date(Date.now() + HOLD_DURATION_MS) },
+      });
+      console.log(`[Offline Checkout] Cart cleared for user/cart:`, cartQuery);
+    }
+  } catch (cartError) {
+    console.error("[Offline Checkout] Clearing cart failed:", cartError.message);
+  }
+
+  // 3. Trigger Notifications
+  try {
+    const first = newlyConfirmedBookings[0];
+    const buyerId = first.userId || (await User.findOne({ email: first.buyerEmail }).select("_id").lean())?._id;
+    
+    // Buyer Notification
+    if (buyerId) {
+      await notifyUser(buyerId, {
+        type: "booking.confirmed",
+        title: "Booking confirmed",
+        message: newlyConfirmedBookings.length === 1 
+          ? `Your ticket for ${first.eventName} is confirmed.` 
+          : `Your checkout with ${newlyConfirmedBookings.length} event tickets is confirmed.`,
+        link: "/my/bookings",
+        metadata: { bookingIds: newlyConfirmedBookings.map((item) => String(item._id)) },
+        dedupeKey: `booking-confirmed:buyer:wallet:${first._id}`,
+      });
+    }
+
+    const totalCheckoutAmount = Number(newlyConfirmedBookings.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0)).toFixed(2);
+    const buyerTypeLabel = first.userId ? "Registered" : "Guest";
+    const orgsInvolved = await Organization.find({ _id: { $in: newlyConfirmedBookings.map(b => b.organizationId) } }).select("name").lean();
+    const orgNamesStr = orgsInvolved.map(o => o.name).join(", ");
+    const eventNamesStr = newlyConfirmedBookings.map(item => item.eventName).filter(Boolean).join(", ");
+    const bookingIdsList = newlyConfirmedBookings.map(item => String(item._id)).join(", ");
+
+    // Platform Admin Notification
+    await notifyPlatformAdmin({
+      type: "platform.checkout.confirmed",
+      title: "Checkout confirmed",
+      message: `[${buyerTypeLabel}] ${first.buyerName} (${first.buyerEmail}) completed checkout of $${totalCheckoutAmount} via Wallet for ${eventNamesStr}. Org(s): ${orgNamesStr}. Booking ID(s): ${bookingIdsList}`,
+      link: "/platform-admin/activity",
+      metadata: { bookingIds: newlyConfirmedBookings.map((item) => String(item._id)), eventNames: newlyConfirmedBookings.map((item) => item.eventName), buyerEmail: first.buyerEmail, paymentMethod: "Wallet", buyerType: buyerTypeLabel, organizationNames: orgNamesStr },
+      dedupeKey: `platform-checkout-confirmed:wallet:${first._id}`,
+    });
+
+    // Keep a bundle as one organizer-facing purchase while retaining the
+    // individual internal booking records for tickets and seats.
+    await notifyOrganizationsOfConfirmedBookings(newlyConfirmedBookings);
+  } catch (notifError) {
+    console.error("[Offline Checkout] Sending notifications failed:", notifError.message);
+  }
 };
 
 const expireBookingIfStillPending = async (booking) => {
@@ -1602,6 +1721,9 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
       }
 
       await dbSession.commitTransaction();
+      completeOfflineBookingConfirmation(createdBookings, orgSlug).catch((err) =>
+        console.error("Offline booking confirmation notification error:", err.message)
+      );
       return {
         bundleBookingId,
         success: true,
@@ -1964,6 +2086,9 @@ const createUnifiedCheckout = async (organizationId, orgSlug, data) => {
       }
 
       await dbSession.commitTransaction();
+      completeOfflineBookingConfirmation(createdBookings, orgSlug).catch((err) =>
+        console.error("Offline booking confirmation notification error:", err.message)
+      );
       return {
         bundleBookingId,
         success: true,

@@ -17,6 +17,7 @@ export default function CreateBundle() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [pricePerSeat, setPricePerSeat] = useState("");
+  const [referralRewardAmount, setReferralRewardAmount] = useState("0");
   const [accessCode, setAccessCode] = useState("");
   const [privateCodeExpiry, setPrivateCodeExpiry] = useState("");
   const [bookingOpeningDateTime, setBookingOpeningDateTime] = useState("");
@@ -75,6 +76,7 @@ export default function CreateBundle() {
       body.append("venueId", selectedVenue);
       body.append("eventIds", JSON.stringify(selectedEvents));
       body.append("pricePerSeat", Number(pricePerSeat));
+      body.append("referralRewardAmount", Number(referralRewardAmount) || 0);
       body.append("accessCode", accessCode.trim());
       body.append("privateCodeExpiry", privateCodeExpiry ? new Date(privateCodeExpiry).toISOString() : "");
       body.append("bookingOpeningDateTime", bookingOpeningDateTime ? new Date(bookingOpeningDateTime).toISOString() : "");
@@ -168,6 +170,19 @@ export default function CreateBundle() {
               value={pricePerSeat}
               onChange={(e) => setPricePerSeat(e.target.value)}
               placeholder="e.g. 25.00"
+              className="w-full rounded-md border border-black/15 px-3 py-2 text-ink-text bg-white"
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Referral Cash Reward ($)</label>
+            <p style={{ margin: "0 0 8px", fontSize: 12, color: "var(--muted)" }}>This is credited to the referrer's wallet when a booking is completed via referral link.</p>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={referralRewardAmount}
+              onChange={(e) => setReferralRewardAmount(e.target.value)}
+              placeholder="0.00"
               className="w-full rounded-md border border-black/15 px-3 py-2 text-ink-text bg-white"
             />
           </div>

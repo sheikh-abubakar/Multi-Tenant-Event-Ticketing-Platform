@@ -1,6 +1,11 @@
 const Coupon = require("../models/Coupon");
 const mongoose = require("mongoose");
 
+// Prices in StagePass are stored as USD amounts (for example 5.00), not
+// integer cents. Never round a percentage discount to a whole dollar: 5% of
+// $5.00 is a valid $0.25 discount, not $0.00.
+const roundCurrency = (amount) => Math.round((Number(amount) + Number.EPSILON) * 100) / 100;
+
 /**
  * Create a new coupon for an organization
  */
@@ -136,9 +141,9 @@ async function validateAndApplyCoupon(organizationId, code, originalTotal, conte
   // Calculate discount amount
   let discountAmount = 0;
   if (coupon.discountType === "percentage") {
-    discountAmount = Math.round((originalTotal * coupon.discountValue) / 100);
+    discountAmount = roundCurrency((Number(originalTotal) * Number(coupon.discountValue)) / 100);
   } else if (coupon.discountType === "fixed") {
-    discountAmount = Math.round(coupon.discountValue);
+    discountAmount = roundCurrency(coupon.discountValue);
   }
 
   // Cap discount at total amount (avoid negative amount due)
@@ -192,7 +197,9 @@ async function calculateCartCouponDiscounts(purchases, code) {
 
     const groupDiscount = Math.min(
       group.amount,
-      coupon.discountType === "percentage" ? Math.round((group.amount * coupon.discountValue) / 100) : Math.round(coupon.discountValue),
+      coupon.discountType === "percentage"
+        ? roundCurrency((group.amount * Number(coupon.discountValue)) / 100)
+        : roundCurrency(coupon.discountValue),
     );
     if (!groupDiscount) continue;
     appliedCount += 1;

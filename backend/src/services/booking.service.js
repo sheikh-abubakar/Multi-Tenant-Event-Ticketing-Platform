@@ -2052,6 +2052,44 @@ const createUnifiedCheckout = async (organizationId, orgSlug, data) => {
           console.error("QR Code generation failed:", qrError.message);
         }
 
+        // A wallet/reward-covered cart checkout has no Stripe confirmation
+        // callback to perform the usual checkout-held -> sold transition.
+        // Finalise each seat here, in this same transaction as the booking,
+        // so a confirmed ticket can never remain purchasable by another buyer.
+        if (booking.selectedSeats?.length) {
+          const seatEvent = await Event.findOne({
+            _id: booking.eventId,
+            organizationId: booking.organizationId,
+          }).session(dbSession);
+          if (!seatEvent) throw new Error("Event not found while finalising selected seats");
+
+          let targetSeatMap = seatEvent.selectedSeatMap;
+          let sessionDoc = null;
+          if (booking.sessionId && seatEvent.sessions?.length) {
+            sessionDoc = seatEvent.sessions.find((eventSession) => String(eventSession._id) === String(booking.sessionId));
+            if (sessionDoc) targetSeatMap = sessionDoc.selectedSeatMap;
+          }
+
+          for (const reference of booking.selectedSeats) {
+            const seat = targetSeatMap?.blocks
+              ?.find((block) => block.id === reference.blockId)
+              ?.seats?.find((item) => item.id === reference.seatId);
+            if (!seat || seat.status === "organizer-held") {
+              throw new Error("A selected seat is no longer available");
+            }
+            seat.status = "sold";
+          }
+
+          if (sessionDoc) {
+            sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+            seatEvent.markModified("sessions");
+          } else {
+            seatEvent.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
+            seatEvent.markModified("selectedSeatMap");
+          }
+          await seatEvent.save({ session: dbSession });
+        }
+
         if (booking.walletDeduction > 0) {
           const targetUserId = userId || (await User.findOne({ email: booking.buyerEmail }).session(dbSession))?._id;
           if (targetUserId) {

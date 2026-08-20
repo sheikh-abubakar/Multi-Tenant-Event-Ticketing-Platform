@@ -294,6 +294,148 @@ const releaseExpiredCarts = async () => {
   }
 };
 
+// A seat map is the inventory template/live state for an event session; the
+// Cart and pending Booking records are the ownership proof for a temporary
+// `checkout-held` seat.  In normal operation releaseExpiredCarts and
+// releaseExpiredBookings clear both sides together.  This extra reconciliation
+// pass repairs a seat if that ownership record was removed by a failed request,
+// an interrupted guest-cart merge, or an old deployment before its paired map
+// update completed.  Without it, an orphaned green seat can remain locked
+// forever even though no buyer can complete checkout for it.
+const seatHoldKey = (eventId, sessionId, blockId, seatId) => (
+  `${String(eventId)}:${sessionId ? String(sessionId) : ""}:${String(blockId)}:${String(seatId)}`
+);
+
+const eventSeatHoldFallbackKey = (eventId, blockId, seatId) => (
+  `${String(eventId)}:*:${String(blockId)}:${String(seatId)}`
+);
+
+const addActiveSeatReference = (activeHolds, reference = {}) => {
+  const { eventId, eventSessionId, sessionId, blockId, seatId } = reference;
+  if (!eventId || !blockId || !seatId) return;
+
+  const resolvedSessionId = eventSessionId || sessionId;
+  activeHolds.add(seatHoldKey(eventId, resolvedSessionId, blockId, seatId));
+
+  // Older cart/booking documents can pre-date multi-session support and have
+  // no session id.  Keep their seat protected in any matching session rather
+  // than risk releasing a valid active hold during the migration period.
+  if (!resolvedSessionId) {
+    activeHolds.add(eventSeatHoldFallbackKey(eventId, blockId, seatId));
+  }
+};
+
+const releaseOrphanedSeatHolds = async () => {
+  const now = new Date();
+  const activeHolds = new Set();
+  const confirmedSeatKeys = new Set();
+
+  // A non-expired cart owns seats until checkout starts or the cart expires.
+  const activeCarts = await Cart.find({
+    expiresAt: { $gt: now },
+    "items.0": { $exists: true },
+  }).select("items").lean();
+  for (const cart of activeCarts) {
+    for (const item of cart.items || []) {
+      const references = item.itemType === "bundle" ? item.bundleSelections : [item];
+      for (const reference of references || []) addActiveSeatReference(activeHolds, reference);
+    }
+  }
+
+  // Once a buyer reaches Stripe, the pending Booking becomes the ownership
+  // proof. Keep those seats held until the same 30-minute expiry window ends.
+  const activePendingBookings = await Booking.find({
+    status: "pending",
+    paymentStatus: "pending",
+    expiresAt: { $gt: now },
+  }).select("eventId sessionId selectedSeats").lean();
+  for (const booking of activePendingBookings) {
+    for (const selectedSeat of booking.selectedSeats || []) {
+      addActiveSeatReference(activeHolds, {
+        ...selectedSeat,
+        eventId: booking.eventId,
+        sessionId: booking.sessionId,
+      });
+    }
+  }
+
+  // A previous wallet/reward checkout could have persisted the confirmed
+  // booking before an older code path changed its seat from checkout-held to
+  // sold. Treat confirmed bookings as the final source of truth first: heal
+  // their seat rather than ever releasing it as an orphan.
+  const confirmedSeatBookings = await Booking.find({
+    status: "confirmed",
+    paymentStatus: "paid",
+    "selectedSeats.0": { $exists: true },
+  }).select("eventId sessionId selectedSeats").lean();
+  for (const booking of confirmedSeatBookings) {
+    for (const selectedSeat of booking.selectedSeats || []) {
+      addActiveSeatReference(confirmedSeatKeys, {
+        ...selectedSeat,
+        eventId: booking.eventId,
+        sessionId: booking.sessionId,
+      });
+    }
+  }
+
+  const seatMapEvents = await Event.find({ purchaseMode: "seatmap" }).select("selectedSeatMap sessions");
+  let releasedCount = 0;
+  let healedSoldCount = 0;
+
+  for (const event of seatMapEvents) {
+    let eventChanged = false;
+    const releaseFromMap = (seatMap, sessionId) => {
+      let mapChanged = false;
+      for (const block of seatMap?.blocks || []) {
+        for (const seat of block.seats || []) {
+          const exactKey = seatHoldKey(event._id, sessionId, block.id, seat.id);
+          const fallbackKey = eventSeatHoldFallbackKey(event._id, block.id, seat.id);
+          // Repair both old stuck holds and any seat that an older cleanup
+          // incorrectly returned to available after its booking was paid.
+          // A confirmed booking is authoritative over the visual map state.
+          if (confirmedSeatKeys.has(exactKey) || confirmedSeatKeys.has(fallbackKey)) {
+            if (seat.status !== "sold" && seat.status !== "organizer-held") {
+              seat.status = "sold";
+              mapChanged = true;
+              healedSoldCount += 1;
+            }
+            continue;
+          }
+          if (seat.status !== "checkout-held") continue;
+          if (activeHolds.has(exactKey) || activeHolds.has(fallbackKey)) continue;
+
+          seat.status = "available";
+          mapChanged = true;
+          releasedCount += 1;
+        }
+      }
+      return mapChanged;
+    };
+
+    if (releaseFromMap(event.selectedSeatMap, null)) {
+      event.markModified("selectedSeatMap");
+      eventChanged = true;
+    }
+
+    for (const eventSession of event.sessions || []) {
+      if (releaseFromMap(eventSession.selectedSeatMap, eventSession._id)) {
+        event.markModified("sessions");
+        eventChanged = true;
+      }
+    }
+
+    if (eventChanged) await event.save();
+  }
+
+  if (releasedCount) {
+    console.warn(`[Scheduler] Released ${releasedCount} orphaned checkout-held seat(s)`);
+  }
+  if (healedSoldCount) {
+    console.warn(`[Scheduler] Marked ${healedSoldCount} confirmed checkout-held seat(s) as sold`);
+  }
+  return { releasedCount, healedSoldCount };
+};
+
 // Stored marker makes this restart-safe and prevents a second reminder on a
 // later scheduler tick. A booking made within the final 24h gets one promptly.
 const sendUpcomingEventReminders = async () => {
@@ -313,6 +455,7 @@ const runSweep = async () => {
     await sendPendingReminders();
     await releaseExpiredBookings();
     await releaseExpiredCarts();
+    await releaseOrphanedSeatHolds();
     await sendUpcomingEventReminders();
   } catch (err) {
     // Should be unreachable (each function already catches its own
@@ -332,6 +475,9 @@ const startBookingScheduler = () => {
   console.log(
     `[Scheduler] Booking scheduler started — sweeping every ${SWEEP_INTERVAL_MS / 1000}s`,
   );
+  // Also reconcile immediately after a restart/deploy. Otherwise an existing
+  // orphaned hold can remain visibly green until the first scheduled tick.
+  void runSweep();
   schedulerInterval = setInterval(runSweep, SWEEP_INTERVAL_MS);
 };
 
@@ -340,4 +486,12 @@ const stopBookingScheduler = () => {
   schedulerInterval = undefined;
 };
 
-module.exports = { startBookingScheduler, stopBookingScheduler, sendPendingReminders, releaseExpiredBookings, releaseExpiredCarts, sendUpcomingEventReminders };
+module.exports = {
+  startBookingScheduler,
+  stopBookingScheduler,
+  sendPendingReminders,
+  releaseExpiredBookings,
+  releaseExpiredCarts,
+  releaseOrphanedSeatHolds,
+  sendUpcomingEventReminders,
+};

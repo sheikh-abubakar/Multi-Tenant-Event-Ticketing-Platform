@@ -35,6 +35,7 @@ export default function Events() {
   const [newSessionDate, setNewSessionDate] = useState("");
   const [selectedSessionMap, setSelectedSessionMap] = useState({});
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [originalDateInPast, setOriginalDateInPast] = useState(false);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -99,6 +100,7 @@ export default function Events() {
       setBannerFile(null);
       setEditingId(null);
       setGalleryOpen(false);
+      setOriginalDateInPast(false);
       await load();
       if (!editingId) {
         navigate(`/o/${orgSlug}/manage/events/${response.data.event._id}/seatmap`);
@@ -112,6 +114,7 @@ export default function Events() {
 
   const edit = (item) => {
     setEditingId(item._id);
+    setOriginalDateInPast(item.dateTime ? new Date(item.dateTime) < new Date() : false);
     setForm({
       name: item.name || "",
       description: item.description || "",
@@ -183,9 +186,17 @@ export default function Events() {
                 type="datetime-local"
                 value={form.dateTime}
                 onChange={(e) => setForm({ ...form, dateTime: e.target.value })}
-                className="mt-1 w-full rounded-md border border-black/15 px-3 py-2"
+                disabled={originalDateInPast}
+                className={`mt-1 w-full rounded-md border border-black/15 px-3 py-2 ${
+                  originalDateInPast ? "bg-black/5 cursor-not-allowed opacity-60 text-muted" : ""
+                }`}
               />
             </label>
+            {originalDateInPast && (
+              <p className="text-xs text-red-500 font-semibold mt-1">
+                ⚠️ This event's date has already passed. You cannot change the main date, but you can add new sessions below or create a new event.
+              </p>
+            )}
             <label className="block text-sm font-semibold">
               Booking Opening Date & Time (Optional)
               <span className="text-xs text-muted block font-normal">When tickets/seats become available for purchase. You can pause new sales again later; existing bookings remain valid.</span>
@@ -455,6 +466,7 @@ export default function Events() {
                     setSessionDates([]);
                     setRemovedSessionIds([]);
                     setNewSessionDate("");
+                    setOriginalDateInPast(false);
                   }}
                   className="rounded-lg border px-4 py-2"
                 >

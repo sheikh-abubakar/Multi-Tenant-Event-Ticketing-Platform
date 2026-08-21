@@ -178,23 +178,16 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
     throw error;
   }
 
-  const primaryDateTime = safeUpdates.dateTime || event.dateTime;
-
-  // Booking opening date checks
-  if (updates.bookingOpeningDateTime !== undefined) {
-    const newOpeningDate = updates.bookingOpeningDateTime ? new Date(updates.bookingOpeningDateTime) : null;
-    
-    if (newOpeningDate) {
-      if (newOpeningDate > new Date(primaryDateTime)) {
-        const error = new Error("Booking opening date and time cannot be after the event date and time");
-        error.statusCode = 400;
-        throw error;
-      }
-
-      // Organizers may pause future sales at any time, including after bookings
-      // exist. Confirmed bookings and sold seats are intentionally left intact.
+  // Prevent changing the main date of an event that already occurred
+  if (safeUpdates.dateTime && event.dateTime && new Date(event.dateTime) < new Date()) {
+    if (new Date(safeUpdates.dateTime).getTime() !== new Date(event.dateTime).getTime()) {
+      const error = new Error("This event has already occurred. You cannot change the main date/time. Please add new sessions instead.");
+      error.statusCode = 400;
+      throw error;
     }
   }
+
+  const primaryDateTime = safeUpdates.dateTime || event.dateTime;
 
   let sessionsToCheck = [primaryDateTime];
   if (updates.sessionDates !== undefined) {
@@ -211,11 +204,53 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
     sessionsToCheck = event.sessions.map(s => s.dateTime);
   }
 
-  const hasFutureSession = sessionsToCheck.some(sDate => new Date(sDate) >= new Date());
-  if (!hasFutureSession) {
-    const error = new Error("Event date and time cannot be in the past");
-    error.statusCode = 400;
-    throw error;
+  // Booking opening date checks (validated against the latest session date)
+  if (updates.bookingOpeningDateTime !== undefined) {
+    const newOpeningDate = updates.bookingOpeningDateTime ? new Date(updates.bookingOpeningDateTime) : null;
+    
+    if (newOpeningDate) {
+      const maxSessionTime = Math.max(...sessionsToCheck.map(d => new Date(d).getTime()));
+      if (newOpeningDate.getTime() > maxSessionTime) {
+        const error = new Error("Booking opening date and time cannot be after the event date and time");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Organizers may pause future sales at any time, including after bookings
+      // exist. Confirmed bookings and sold seats are intentionally left intact.
+    }
+  }
+
+  // Only enforce that at least one session is in the future if:
+  // - The event was originally in the future, OR
+  // - They are actually modifying/updating the session dates or the primary dateTime.
+  const originallyInPast = event.dateTime ? new Date(event.dateTime) < new Date() : false;
+  const isDateTimeChanged = updates.dateTime !== undefined && new Date(updates.dateTime).getTime() !== new Date(event.dateTime).getTime();
+  
+  let isSessionDatesChanged = false;
+  if (updates.sessionDates !== undefined) {
+    let parsedSessionDates = [];
+    try {
+      parsedSessionDates = typeof updates.sessionDates === "string" ? JSON.parse(updates.sessionDates) : updates.sessionDates;
+    } catch (e) {
+      parsedSessionDates = [];
+    }
+    const existingSessionDates = event.sessions?.slice(1).map(s => new Date(s.dateTime).getTime()) || [];
+    const newSessionDates = parsedSessionDates.map(d => new Date(d).getTime());
+    if (existingSessionDates.length !== newSessionDates.length || !existingSessionDates.every((v, i) => v === newSessionDates[i])) {
+      isSessionDatesChanged = true;
+    }
+  }
+
+  const dateUpdatesProvided = isDateTimeChanged || isSessionDatesChanged;
+
+  if (!originallyInPast || dateUpdatesProvided) {
+    const hasFutureSession = sessionsToCheck.some(sDate => new Date(sDate) >= new Date());
+    if (!hasFutureSession) {
+      const error = new Error("Event date and time cannot be in the past");
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   // If venueId is being changed, re-validate it belongs to this org.

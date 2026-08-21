@@ -1,6 +1,31 @@
 const Event = require("../models/Event");
 const Venue = require("../models/Venue");
 
+// A session owns its inventory.  New sessions may reuse an event's visual
+// layout, but must never inherit sales or temporary holds from another date.
+const cloneSeatMapForNewSession = (sourceMap) => {
+  if (!sourceMap || !Array.isArray(sourceMap.blocks) || sourceMap.blocks.length === 0) {
+    return null;
+  }
+
+  const clone = JSON.parse(JSON.stringify(sourceMap));
+  clone.blocks.forEach((block) => {
+    (block.seats || []).forEach((seat) => {
+      // Organizer holds are deliberate configuration. Checkout holds and
+      // sold seats are session-specific transaction state and start free.
+      seat.status = seat.status === "organizer-held" ? "organizer-held" : "available";
+    });
+  });
+  clone.updatedAt = new Date().toISOString();
+  return clone;
+};
+
+const findSessionLayoutSource = (event, preferredSession = null) => {
+  if (preferredSession?.selectedSeatMap?.blocks?.length) return preferredSession.selectedSeatMap;
+  if (event.selectedSeatMap?.blocks?.length) return event.selectedSeatMap;
+  return event.sessions?.find((session) => session.selectedSeatMap?.blocks?.length)?.selectedSeatMap || null;
+};
+
 const createEvent = async (data, organizationId, bannerImageUrl) => {
   const { name, description, dateTime, venueId, accessCode, privateCodeExpiry, sessionDates, bookingOpeningDateTime } = data;
 
@@ -213,6 +238,7 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
   }
 
   // Parse and update sessions array if sessionDates is provided
+  const newSessionMapsToPersist = [];
   if (updates.sessionDates !== undefined) {
     let parsedSessionDates = [];
     try {
@@ -222,6 +248,15 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
     }
 
     const newSessionsList = [];
+    let removedSessionIds = [];
+    try {
+      removedSessionIds = typeof updates.removedSessionIds === "string"
+        ? JSON.parse(updates.removedSessionIds)
+        : updates.removedSessionIds || [];
+    } catch (error) {
+      removedSessionIds = [];
+    }
+    const removedSessionIdSet = new Set((Array.isArray(removedSessionIds) ? removedSessionIds : []).map(String));
     const primaryDateTime = safeUpdates.dateTime || event.dateTime;
 
     // Preserve primary session's seatmap if possible
@@ -237,8 +272,10 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
 
     if (Array.isArray(parsedSessionDates)) {
       for (const sDate of parsedSessionDates) {
+        // The primary date is already represented above.
+        if (new Date(sDate).getTime() === new Date(primaryDateTime).getTime()) continue;
         const existingSession = event.sessions && event.sessions.length > 0
-          ? event.sessions.find(s => String(new Date(s.dateTime)) === String(new Date(sDate)))
+          ? event.sessions.find((session) => new Date(session.dateTime).getTime() === new Date(sDate).getTime())
           : null;
 
         if (!existingSession && new Date(sDate) < new Date()) {
@@ -246,11 +283,30 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
           continue;
         }
 
+        const newSessionId = existingSession ? existingSession._id : new mongoose.Types.ObjectId();
+        const newSessionMap = existingSession
+          ? existingSession.selectedSeatMap
+          : cloneSeatMapForNewSession(findSessionLayoutSource(event, existingPrimary));
         newSessionsList.push({
-          _id: existingSession ? existingSession._id : new mongoose.Types.ObjectId(),
+          _id: newSessionId,
           dateTime: sDate,
-          selectedSeatMap: existingSession ? existingSession.selectedSeatMap : null
+          selectedSeatMap: newSessionMap
         });
+        if (!existingSession && newSessionMap) {
+          newSessionMapsToPersist.push({ sessionId: newSessionId, seatMap: newSessionMap });
+        }
+      }
+    }
+
+    // A session may only disappear through the explicit Remove action. This
+    // protects old events from a stale/incomplete edit payload replacing their
+    // complete sessions array and losing independent seat-map inventory.
+    for (const existingSession of event.sessions || []) {
+      const alreadyIncluded = newSessionsList.some(
+        (session) => String(session._id) === String(existingSession._id),
+      );
+      if (!alreadyIncluded && !removedSessionIdSet.has(String(existingSession._id))) {
+        newSessionsList.push(existingSession.toObject ? existingSession.toObject() : existingSession);
       }
     }
 
@@ -262,6 +318,17 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
   }
 
   await event.save();
+
+  // Mixed nested map fields on old documents can be affected by Mongoose's
+  // subdocument casting during a full sessions-array replacement. Persist a
+  // newly-created session map explicitly as a final atomic write so it is
+  // always a clean inventory copy in MongoDB.
+  for (const { sessionId, seatMap } of newSessionMapsToPersist) {
+    await Event.updateOne(
+      { _id: event._id, organizationId, "sessions._id": sessionId },
+      { $set: { "sessions.$.selectedSeatMap": seatMap } },
+    );
+  }
   return event;
 };
 

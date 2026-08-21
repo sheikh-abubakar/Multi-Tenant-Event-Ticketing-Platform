@@ -176,7 +176,10 @@ const getEventMap = async (req, res) => {
       }
     }
     const seatmap = await seatmapService.getEventSeatmap(req.params.eventId, req.organizationId, sessionId);
-    return res.json({ seatmap });
+    // Seat inventory changes independently for every session. Do not let a
+    // browser/proxy reuse a map response from another selected date.
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    return res.json({ seatmap, sessionId: sessionId || null });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });
   }

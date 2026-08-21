@@ -31,6 +31,7 @@ export default function Events() {
   const [saving, setSaving] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const [sessionDates, setSessionDates] = useState([]);
+  const [removedSessionIds, setRemovedSessionIds] = useState([]);
   const [newSessionDate, setNewSessionDate] = useState("");
   const [selectedSessionMap, setSelectedSessionMap] = useState({});
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -66,7 +67,7 @@ export default function Events() {
     setSaving(true);
     setError("");
 
-    const sessionsToCheck = [form.dateTime, ...sessionDates];
+    const sessionsToCheck = [form.dateTime, ...sessionDates.map((session) => session.date)];
     const hasFutureSession = sessionsToCheck.some(sDate => new Date(sDate) >= new Date());
     if (!hasFutureSession) {
       showToast("Event date and time cannot be in the past.");
@@ -83,7 +84,8 @@ export default function Events() {
           body.append(key, key === "dateTime" ? new Date(value).toISOString() : value);
         }
       });
-      body.append("sessionDates", JSON.stringify(sessionDates.map(d => new Date(d).toISOString())));
+      body.append("sessionDates", JSON.stringify(sessionDates.map((session) => new Date(session.date).toISOString())));
+      body.append("removedSessionIds", JSON.stringify(removedSessionIds));
       if (bannerFile) body.append("banner", bannerFile);
 
       const response = editingId
@@ -92,6 +94,7 @@ export default function Events() {
 
       setForm(emptyForm);
       setSessionDates([]);
+      setRemovedSessionIds([]);
       setNewSessionDate("");
       setBannerFile(null);
       setEditingId(null);
@@ -122,11 +125,15 @@ export default function Events() {
       referralRewardAmount: item.referralRewardAmount !== undefined ? String(item.referralRewardAmount) : "0",
     });
     if (item.sessions && item.sessions.length > 1) {
-      const additional = item.sessions.slice(1).map(s => formatLocalDateForInput(s.dateTime));
+      const additional = item.sessions.slice(1).map((session) => ({
+        id: String(session._id),
+        date: formatLocalDateForInput(session.dateTime),
+      }));
       setSessionDates(additional);
     } else {
       setSessionDates([]);
     }
+    setRemovedSessionIds([]);
   };
 
   const remove = async (id) => {
@@ -192,12 +199,15 @@ export default function Events() {
             </label>
             <div className="rounded-lg bg-black/5 p-3 space-y-2 border border-black/5">
               <span className="text-xs font-bold text-muted uppercase block">Additional Session Dates (Optional)</span>
-              {sessionDates.map((date, idx) => (
+              {sessionDates.map((session, idx) => (
                 <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-md shadow-sm border border-black/5 text-sm">
-                  <span>{new Date(date).toLocaleString()}</span>
+                  <span>{new Date(session.date).toLocaleString()}</span>
                   <button
                     type="button"
-                    onClick={() => setSessionDates(sessionDates.filter((_, i) => i !== idx))}
+                    onClick={() => {
+                      if (session.id) setRemovedSessionIds((ids) => [...ids, session.id]);
+                      setSessionDates(sessionDates.filter((_, i) => i !== idx));
+                    }}
                     className="text-red-500 hover:text-red-700 text-xs font-semibold"
                   >
                     Remove
@@ -219,7 +229,7 @@ export default function Events() {
                       showToast("Session date cannot be in the past.");
                       return;
                     }
-                    setSessionDates([...sessionDates, newSessionDate]);
+                    setSessionDates([...sessionDates, { id: null, date: newSessionDate }]);
                     setNewSessionDate("");
                   }}
                   className="px-3 py-1.5 bg-ink text-white font-bold rounded-lg text-xs"
@@ -443,6 +453,7 @@ export default function Events() {
                     setEditingId(null);
                     setForm(emptyForm);
                     setSessionDates([]);
+                    setRemovedSessionIds([]);
                     setNewSessionDate("");
                   }}
                   className="rounded-lg border px-4 py-2"

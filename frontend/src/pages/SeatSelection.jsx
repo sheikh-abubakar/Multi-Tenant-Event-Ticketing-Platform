@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import apiClient from "../api/client";
 import { cachedGet } from "../api/requestCache";
@@ -26,6 +26,7 @@ export default function SeatSelection() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const latestLoadId = useRef(0);
 
   const showToast = (message) => {
     setToast(message);
@@ -33,18 +34,36 @@ export default function SeatSelection() {
   };
 
   const load = useCallback(async () => {
+    const loadId = ++latestLoadId.current;
     try {
       const [mapResponse, cartItems, eventResponse] = await Promise.all([
         apiClient.get(`/o/${orgSlug}/events/${eventId}/seatmap?EventSeatMapSessionID=${sessionId}`),
         fetchCart(),
         apiClient.get(`/o/${orgSlug}/events/${eventId}?EventSeatMapSessionID=${sessionId}`),
       ]);
+      // Route/session changes can leave an earlier request in flight. Never
+      // allow its map to overwrite the response for the currently selected
+      // date.
+      if (loadId !== latestLoadId.current) return;
+      if (
+        sessionId
+        && mapResponse.data.sessionId
+        && String(mapResponse.data.sessionId) !== String(sessionId)
+      ) {
+        throw new Error("Received a seat map for a different event session.");
+      }
       setMap(mapResponse.data.seatmap);
-      // Filter cart items only for this event to display in the sidebar
-      const eventItems = cartItems.filter(item => String(item.eventId) === String(eventId));
+      // A seat selection belongs to one event *and one session*.  Filtering
+      // only by event made A1 selected/held in every date of a multi-session
+      // event in this browser, even though the server inventory was separate.
+      const eventItems = cartItems.filter((item) =>
+        String(item.eventId) === String(eventId)
+        && String(item.eventSessionId || "") === String(sessionId || ""),
+      );
       setCart({ items: eventItems });
       setEvent(eventResponse.data.event);
     } catch (err) {
+      if (loadId !== latestLoadId.current) return;
       setError(err.response?.data?.message || "Could not load this seating plan.");
     }
   }, [orgSlug, eventId, sessionId]);
@@ -66,6 +85,14 @@ export default function SeatSelection() {
     () => new Set(cart.items.map((item) => seatKey(item.blockId, item.seatId))),
     [cart],
   );
+  // A multi-session event has independent inventory per session.  The event
+  // record's dateTime is only its primary/default date, so never use it for
+  // the seat-selection heading when the URL targets a particular session.
+  const activeSession = useMemo(
+    () => event?.sessions?.find((session) => String(session._id) === String(sessionId)),
+    [event, sessionId],
+  );
+  const activeDateTime = activeSession?.dateTime || event?.dateTime;
   const total = cart.items.reduce(
     (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 1),
     0,
@@ -98,7 +125,10 @@ export default function SeatSelection() {
       
       // Reload cart items from LocalStorage
       const cartItems = await fetchCart();
-      const eventItems = cartItems.filter(item => String(item.eventId) === String(eventId));
+      const eventItems = cartItems.filter((item) =>
+        String(item.eventId) === String(eventId)
+        && String(item.eventSessionId || "") === String(sessionId || ""),
+      );
       setCart({ items: eventItems });
       
       // Reload map to show updated database status of seat
@@ -142,7 +172,10 @@ export default function SeatSelection() {
       
       // Reload cart items
       const cartItems = await fetchCart();
-      const eventItems = cartItems.filter(item => String(item.eventId) === String(eventId));
+      const eventItems = cartItems.filter((item) =>
+        String(item.eventId) === String(eventId)
+        && String(item.eventSessionId || "") === String(sessionId || ""),
+      );
       setCart({ items: eventItems });
       
       // Reload map
@@ -201,9 +234,9 @@ export default function SeatSelection() {
             <h1 className="ss-title">
               {event?.name || "Choose Your Seats"}
             </h1>
-            {event?.dateTime && (
+            {activeDateTime && (
               <p className="ss-subtitle">
-                {new Date(event.dateTime).toLocaleDateString("en-US", {
+                {new Date(activeDateTime).toLocaleDateString("en-US", {
                   weekday: "long",
                   year: "numeric",
                   month: "long",

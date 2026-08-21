@@ -129,11 +129,13 @@ const lockSeat = async (userId, cartId, seatData) => {
     let targetSeatMap = event.selectedSeatMap;
     let sessionDoc = null;
     if (event.sessions && event.sessions.length > 0) {
+      // Never resolve a supplied session id to a different date.  This is an
+      // inventory boundary, not a UI convenience.
       sessionDoc = eventSessionId
         ? event.sessions.find((session) => String(session._id) === String(eventSessionId))
-        : event.sessions.find((session) => new Date(session.dateTime) >= new Date());
+        : (event.sessions.length === 1 ? event.sessions[0] : null);
       if (!sessionDoc) {
-        throw new Error("No upcoming event session is available for this seat selection");
+        throw new Error("A valid event session is required for this seat selection");
       }
       targetSeatMap = sessionDoc.selectedSeatMap;
     }
@@ -159,14 +161,20 @@ const lockSeat = async (userId, cartId, seatData) => {
     seat.status = "checkout-held";
 
     if (sessionDoc) {
-      sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
-      event.markModified("sessions");
+      // Session maps are Mixed nested data. A positional update guarantees
+      // this exact date is changed without writing another session's map.
+      await Event.updateOne(
+        { _id: event._id, "sessions._id": sessionDoc._id },
+        { $set: { "sessions.$.selectedSeatMap": targetSeatMap } },
+        { session: dbSession },
+      );
     } else {
-      event.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
-      event.markModified("selectedSeatMap");
+      await Event.updateOne(
+        { _id: event._id },
+        { $set: { selectedSeatMap: targetSeatMap } },
+        { session: dbSession },
+      );
     }
-
-    await event.save({ session: dbSession });
 
     // Sync item to User's Cart
     const cart = await getOrCreateCart(userId, cartId);
@@ -221,11 +229,14 @@ const unlockSeat = async (userId, cartId, seatData) => {
     if (event) {
       let targetSeatMap = event.selectedSeatMap;
       let sessionDoc = null;
-      if (eventSessionId && event.sessions && event.sessions.length > 0) {
-        sessionDoc = event.sessions.find(s => String(s._id) === String(eventSessionId));
-        if (sessionDoc) {
-          targetSeatMap = sessionDoc.selectedSeatMap;
+      if (event.sessions && event.sessions.length > 0) {
+        sessionDoc = eventSessionId
+          ? event.sessions.find(s => String(s._id) === String(eventSessionId))
+          : (event.sessions.length === 1 ? event.sessions[0] : null);
+        if (!sessionDoc) {
+          throw new Error("A valid event session is required to release this seat");
         }
+        targetSeatMap = sessionDoc.selectedSeatMap;
       }
 
       if (targetSeatMap) {
@@ -237,13 +248,18 @@ const unlockSeat = async (userId, cartId, seatData) => {
         }
 
         if (sessionDoc) {
-          sessionDoc.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
-          event.markModified("sessions");
+          await Event.updateOne(
+            { _id: event._id, "sessions._id": sessionDoc._id },
+            { $set: { "sessions.$.selectedSeatMap": targetSeatMap } },
+            { session: dbSession },
+          );
         } else {
-          event.selectedSeatMap = JSON.parse(JSON.stringify(targetSeatMap));
-          event.markModified("selectedSeatMap");
+          await Event.updateOne(
+            { _id: event._id },
+            { $set: { selectedSeatMap: targetSeatMap } },
+            { session: dbSession },
+          );
         }
-        await event.save({ session: dbSession });
       }
     }
 

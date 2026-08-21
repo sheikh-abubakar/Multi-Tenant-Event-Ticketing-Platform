@@ -199,12 +199,15 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
     let targetSeatMap = event.selectedSeatMap;
     let sessionDoc = null;
     if (event.sessions && event.sessions.length > 0) {
-      sessionDoc = event.sessions.find(s => String(s._id) === String(sessionId)) ||
-                   event.sessions.find(s => new Date(s.dateTime) >= new Date()) ||
-                   event.sessions[0];
-      if (sessionDoc) {
-        targetSeatMap = sessionDoc.selectedSeatMap;
+      sessionDoc = sessionId
+        ? event.sessions.find((session) => String(session._id) === String(sessionId))
+        : (event.sessions.length === 1 ? event.sessions[0] : null);
+      if (!sessionDoc) {
+        const error = new Error("A valid event session is required for this booking");
+        error.statusCode = 400;
+        throw error;
       }
+      targetSeatMap = sessionDoc.selectedSeatMap;
     }
 
     if (!targetSeatMap) {

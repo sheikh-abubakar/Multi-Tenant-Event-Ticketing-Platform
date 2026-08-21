@@ -172,12 +172,15 @@ const addSeat = async (req, organizationId, eventId, { blockId, seatId, override
 
   let targetSeatMap = event.selectedSeatMap;
   if (event.sessions && event.sessions.length > 0) {
-    const session = event.sessions.find(s => String(s._id) === String(cleanSessionId)) ||
-                    event.sessions.find(s => new Date(s.dateTime) >= new Date()) ||
-                    event.sessions[0];
-    if (session) {
-      targetSeatMap = session.selectedSeatMap;
+    const session = cleanSessionId
+      ? event.sessions.find((candidate) => String(candidate._id) === String(cleanSessionId))
+      : (event.sessions.length === 1 ? event.sessions[0] : null);
+    if (!session) {
+      const error = new Error("A valid event session is required for this seat selection");
+      error.statusCode = 400;
+      throw error;
     }
+    targetSeatMap = session.selectedSeatMap;
   }
 
   if (event.purchaseMode !== "seatmap" || !targetSeatMap) { const error = new Error("This event does not use seat selection"); error.statusCode = 400; throw error; }

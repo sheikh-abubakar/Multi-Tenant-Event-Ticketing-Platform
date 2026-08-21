@@ -318,8 +318,9 @@ const addActiveSeatReference = (activeHolds, reference = {}) => {
   activeHolds.add(seatHoldKey(eventId, resolvedSessionId, blockId, seatId));
 
   // Older cart/booking documents can pre-date multi-session support and have
-  // no session id.  Keep their seat protected in any matching session rather
-  // than risk releasing a valid active hold during the migration period.
+  // no session id. They belong to the event's original/primary session, not
+  // every session added later. The primary-session decision is made while
+  // reconciling a particular event below.
   if (!resolvedSessionId) {
     activeHolds.add(eventSeatHoldFallbackKey(eventId, blockId, seatId));
   }
@@ -383,9 +384,16 @@ const releaseOrphanedSeatHolds = async () => {
   let healedSoldCount = 0;
 
   for (const event of seatMapEvents) {
-    let eventChanged = false;
+    // For bookings created before session support, the first/original session
+    // is the only valid inventory owner. Never let a legacy fallback affect a
+    // later date's inventory.
+    const primarySession = (event.sessions || []).find(
+      (candidate) => new Date(candidate.dateTime).getTime() === new Date(event.dateTime).getTime(),
+    ) || event.sessions?.[0] || null;
+    const primarySessionId = primarySession ? String(primarySession._id) : null;
     const releaseFromMap = (seatMap, sessionId) => {
       let mapChanged = false;
+      const isPrimarySession = sessionId && String(sessionId) === primarySessionId;
       for (const block of seatMap?.blocks || []) {
         for (const seat of block.seats || []) {
           const exactKey = seatHoldKey(event._id, sessionId, block.id, seat.id);
@@ -393,7 +401,10 @@ const releaseOrphanedSeatHolds = async () => {
           // Repair both old stuck holds and any seat that an older cleanup
           // incorrectly returned to available after its booking was paid.
           // A confirmed booking is authoritative over the visual map state.
-          if (confirmedSeatKeys.has(exactKey) || confirmedSeatKeys.has(fallbackKey)) {
+          const hasConfirmedBooking = confirmedSeatKeys.has(exactKey)
+            || (!sessionId && confirmedSeatKeys.has(fallbackKey))
+            || (isPrimarySession && confirmedSeatKeys.has(fallbackKey));
+          if (hasConfirmedBooking) {
             if (seat.status !== "sold" && seat.status !== "organizer-held") {
               seat.status = "sold";
               mapChanged = true;
@@ -401,8 +412,20 @@ const releaseOrphanedSeatHolds = async () => {
             }
             continue;
           }
+          // Repair bad inventory copied to a newly-added session by the old
+          // broad fallback. A paid booking with this exact session would have
+          // matched above, so this sold state is not valid for this date.
+          if (sessionId && !isPrimarySession && seat.status === "sold") {
+            seat.status = "available";
+            mapChanged = true;
+            releasedCount += 1;
+            continue;
+          }
           if (seat.status !== "checkout-held") continue;
-          if (activeHolds.has(exactKey) || activeHolds.has(fallbackKey)) continue;
+          const hasActiveHold = activeHolds.has(exactKey)
+            || (!sessionId && activeHolds.has(fallbackKey))
+            || (isPrimarySession && activeHolds.has(fallbackKey));
+          if (hasActiveHold) continue;
 
           seat.status = "available";
           mapChanged = true;
@@ -412,23 +435,32 @@ const releaseOrphanedSeatHolds = async () => {
       return mapChanged;
     };
 
-    if (releaseFromMap(event.selectedSeatMap, null)) {
-      event.markModified("selectedSeatMap");
-      eventChanged = true;
+    // Once an event has sessions, `selectedSeatMap` is only the reusable
+    // layout/template.  It is not inventory and must never be swept or used
+    // to represent a seat hold.  Each session below is the sole owner of its
+    // own availability state.
+    if (!event.sessions?.length && releaseFromMap(event.selectedSeatMap, null)) {
+      await Event.updateOne(
+        { _id: event._id },
+        { $set: { selectedSeatMap: event.selectedSeatMap } },
+      );
     }
 
     for (const eventSession of event.sessions || []) {
       if (releaseFromMap(eventSession.selectedSeatMap, eventSession._id)) {
-        event.markModified("sessions");
-        eventChanged = true;
+        // Positional writes are intentional: session maps are Mixed fields
+        // and legacy documents can otherwise keep the stale value even after
+        // the in-memory scheduler has repaired it.
+        await Event.updateOne(
+          { _id: event._id, "sessions._id": eventSession._id },
+          { $set: { "sessions.$.selectedSeatMap": eventSession.selectedSeatMap } },
+        );
       }
     }
-
-    if (eventChanged) await event.save();
   }
 
   if (releasedCount) {
-    console.warn(`[Scheduler] Released ${releasedCount} orphaned checkout-held seat(s)`);
+    console.warn(`[Scheduler] Released ${releasedCount} stale seat state(s) from session inventory`);
   }
   if (healedSoldCount) {
     console.warn(`[Scheduler] Marked ${healedSoldCount} confirmed checkout-held seat(s) as sold`);

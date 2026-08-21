@@ -27,7 +27,8 @@ const BuyerLayout = ({ children }) => {
     try {
       const raw = localStorage.getItem("stagepass_cart");
       const items = raw ? JSON.parse(raw) : [];
-      const count = items.reduce((sum, item) => sum + (item.quantity || 1), 0);
+      const payableItems = items.filter(item => !(item.bundleId && item.itemType !== "bundle"));
+      const count = payableItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
       setCartCount(count);
     } catch (e) {
       setCartCount(0);

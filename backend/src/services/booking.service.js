@@ -1820,6 +1820,11 @@ const createUnifiedCheckout = async (organizationId, orgSlug, data) => {
     // The browser never decides a bundle's final price or included seats.
     const checkoutItems = [];
     for (const item of items) {
+      if (item.bundleId && item.itemType !== "bundle") {
+        const error = new Error("Invalid checkout items: partial bundle selections cannot be checked out individually.");
+        error.statusCode = 400;
+        throw error;
+      }
       if (item.itemType !== "bundle") {
         checkoutItems.push(item);
         continue;

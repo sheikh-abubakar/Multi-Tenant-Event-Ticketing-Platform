@@ -66,8 +66,8 @@ export default function CartPage() {
         }
       }
       items = await fetchCart();
-
-      setCartItems(items);
+      const payableItems = items.filter(item => !(item.bundleId && item.itemType !== "bundle"));
+      setCartItems(payableItems);
 
       // Fetch event info for all unique events in the cart
       const uniqueEventIds = [...new Set(items.map((i) => i.eventId))];

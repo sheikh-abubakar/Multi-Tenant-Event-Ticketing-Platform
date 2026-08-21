@@ -352,6 +352,10 @@ const getAllSessionCarts = async (req) => {
 
   const groupsMap = new Map();
   cartDoc.items.forEach((item) => {
+    // Exclude temporary seat selections from a bundle that has not been finalized yet.
+    if (item.bundleId && item.itemType !== "bundle") {
+      return;
+    }
     const key = `${item.eventId}:${item.eventSessionId || ""}`;
     if (!groupsMap.has(key)) {
       groupsMap.set(key, {

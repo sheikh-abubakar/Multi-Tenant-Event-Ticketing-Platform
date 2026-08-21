@@ -1302,6 +1302,23 @@ const handleStripeWebhook = async (event) => {
       stripeStatus: session.status,
     });
 
+    // Handle Wallet Top-up Checkout Session
+    if (session.metadata && session.metadata.type === "wallet_topup") {
+      const userId = session.metadata.userId;
+      const amount = parseFloat(session.metadata.amount);
+      const walletService = require("./wallet.service");
+      
+      await walletService.credit(
+        userId,
+        amount,
+        "Wallet top-up via Stripe",
+        { type: "credit" }
+      );
+      
+      console.log(`[Stripe Webhook] ✅ Credited $${amount} to user ${userId} wallet`);
+      return;
+    }
+
     // Check if session belongs to a seat change request
     const SeatChangeRequest = require("../models/SeatChangeRequest");
     const seatRequest = await SeatChangeRequest.findOne({ stripeSessionId: session.id });

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { ShoppingCart, WalletCards, User, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw, Image, SearchCheck, Ticket, Menu } from "lucide-react";
+import { ShoppingCart, WalletCards, User, X, LogOut, Building2, LayoutDashboard, Calendar, MapPin, Package, BarChart3, Users2, Settings, RefreshCw, Image, SearchCheck, Ticket, Menu, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import apiClient from "../api/client";
 import Logo from "./Logo";
@@ -111,6 +111,7 @@ const Layout = ({ children }) => {
       ["Coupons", `/o/${orgSlug}/manage/coupons`, Ticket],
       ["Analytics", `/o/${orgSlug}/manage/analytics`, BarChart3],
       ["Team", `/o/${orgSlug}/manage/team`, Users2],
+      ["Staff Passes", `/o/${orgSlug}/manage/passes`, ShieldCheck],
       ["Settings", `/o/${orgSlug}/manage/settings`, Settings],
     ];
 

@@ -295,9 +295,14 @@ const Analytics = () => {
 
     try {
       let bookingId = code.trim();
+      let isStaffPass = false;
+      let parsed = null;
+
       try {
-        const parsed = JSON.parse(bookingId);
-        if (parsed && parsed.bookingId) {
+        parsed = JSON.parse(bookingId);
+        if (parsed && parsed.type === "staff_pass") {
+          isStaffPass = true;
+        } else if (parsed && parsed.bookingId) {
           bookingId = parsed.bookingId;
         }
       } catch (e) {
@@ -307,12 +312,27 @@ const Analytics = () => {
         }
       }
 
-      const response = await apiClient.post(`/o/${orgSlug}/bookings/${bookingId}/verify`);
-      setScanResult({
-        success: true,
-        message: response.data.message || "Ticket verified successfully!",
-        booking: response.data.booking,
-      });
+      if (isStaffPass && parsed) {
+        const response = await apiClient.post(`/o/${orgSlug}/staff-passes/${parsed.passId}/verify`);
+        setScanResult({
+          success: true,
+          isStaffPass: true,
+          message: response.data.message || "Staff check-in approved!",
+          staffPass: response.data.pass,
+          userName: response.data.userName,
+          userEmail: response.data.userEmail,
+          passType: response.data.passType,
+          targetName: response.data.targetName,
+          sessionDetails: response.data.sessionDetails,
+        });
+      } else {
+        const response = await apiClient.post(`/o/${orgSlug}/bookings/${bookingId}/verify`);
+        setScanResult({
+          success: true,
+          message: response.data.message || "Ticket verified successfully!",
+          booking: response.data.booking,
+        });
+      }
 
       fetchAnalytics();
       if (selectedEventId) {
@@ -321,7 +341,7 @@ const Analytics = () => {
     } catch (err) {
       setScanResult({
         success: false,
-        message: err.response?.data?.message || "Verification failed. Invalid or expired ticket.",
+        message: err.response?.data?.message || "Verification failed. Invalid or expired ticket/pass.",
       });
     } finally {
       setVerifying(false);
@@ -386,7 +406,7 @@ const Analytics = () => {
 
   if (!data) return null;
 
-  const { metrics, bookingsPerEvent, recentBookings, revenueByDay } = data;
+  const { metrics, bookingsPerEvent, recentBookings, revenueByDay, staffCheckins } = data;
 
   return (
     <div className="analytics-page mx-auto" style={{ maxWidth: 1100 }}>
@@ -711,6 +731,82 @@ const Analytics = () => {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Verified Staff Entrance Log ── */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h3 style={{ marginTop: 0, marginBottom: 8, fontSize: 18 }}>
+          🧑‍✈️ Verified Staff Entrance Log
+        </h3>
+        <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>
+          Real-time gate check-in logs for credentialed organization admins and staff.
+        </p>
+        {!staffCheckins || staffCheckins.length === 0 ? (
+          <p style={{ color: "var(--muted)", fontSize: 14 }}>No staff check-ins logged yet.</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e8e0d0" }}>
+                  <th style={{ textAlign: "left", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>Staff Member</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>Pass Level</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>Access Scope</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>Session Date</th>
+                  <th style={{ textAlign: "right", padding: "8px 6px", color: "var(--muted)", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>Checked In At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staffCheckins.map((sc) => {
+                  let badgeBg = "rgba(59, 130, 246, 0.15)";
+                  let badgeColor = "#3b82f6";
+                  if (sc.passType === "VIP Pass") {
+                    badgeBg = "rgba(217, 119, 6, 0.15)";
+                    badgeColor = "#d97706";
+                  } else if (sc.passType === "Backstage Pass") {
+                    badgeBg = "rgba(124, 58, 237, 0.15)";
+                    badgeColor = "#7c3aed";
+                  } else if (sc.passType === "Organizer Pass") {
+                    badgeBg = "rgba(5, 150, 105, 0.15)";
+                    badgeColor = "#059669";
+                  }
+
+                  return (
+                    <tr key={sc.id} style={{ borderBottom: "1px solid #f0e8d8" }}>
+                      <td style={{ padding: "10px 6px" }}>
+                        <div style={{ fontWeight: 600 }}>{sc.name}</div>
+                        <div style={{ fontSize: 12, color: "var(--muted)" }}>{sc.email}</div>
+                      </td>
+                      <td style={{ padding: "10px 6px" }}>
+                        <span className="badge" style={{ background: badgeBg, color: badgeColor, border: `1px solid ${badgeColor}33` }}>
+                          {sc.passType}
+                        </span>
+                      </td>
+                      <td style={{ padding: "10px 6px" }}>
+                        {sc.targetName}
+                      </td>
+                      <td style={{ padding: "10px 6px", fontSize: 13 }}>
+                        {sc.sessionDate ? new Date(sc.sessionDate).toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }) : "All Sessions / Bundle"}
+                      </td>
+                      <td style={{ padding: "10px 6px", textAlign: "right", color: "var(--muted)", fontSize: 13 }}>
+                        {new Date(sc.checkinTime).toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1309,11 +1405,24 @@ const Analytics = () => {
               >
                 <div style={{ fontSize: 48, marginBottom: 12 }}>{scanResult.success ? "✅" : "❌"}</div>
                 <h4 style={{ margin: "0 0 8px", color: scanResult.success ? "#16a34a" : "#dc2626", fontWeight: 700 }}>
-                  {scanResult.success ? "Ticket Verified!" : "Invalid Ticket"}
+                  {scanResult.success ? (scanResult.isStaffPass ? "Staff Pass Verified!" : "Ticket Verified!") : (scanResult.isStaffPass ? "Invalid Staff Pass" : "Invalid Ticket")}
                 </h4>
                 <p style={{ margin: 0, fontSize: 14, color: scanResult.success ? "#16a34a" : "#dc2626" }}>{scanResult.message}</p>
 
-                {scanResult.success && scanResult.booking && (
+                {scanResult.success && scanResult.isStaffPass && scanResult.staffPass && (
+                  <div style={{ marginTop: 16, textAlign: "left", borderTop: "1px solid rgba(22,163,74,0.2)", paddingTop: 12, fontSize: 13, color: "#1e293b" }}>
+                    <div style={{ marginBottom: 4 }}><strong>Staff Member:</strong> {scanResult.userName}</div>
+                    <div style={{ marginBottom: 4 }}><strong>Email:</strong> {scanResult.userEmail}</div>
+                    <div style={{ marginBottom: 4 }}><strong>Pass Level:</strong> {scanResult.passType}</div>
+                    <div style={{ marginBottom: 4 }}><strong>Pass Code:</strong> {scanResult.staffPass.confirmationCode}</div>
+                    <div style={{ marginBottom: 4 }}><strong>Access Scope:</strong> {scanResult.targetName}</div>
+                    {scanResult.sessionDetails && (
+                      <div style={{ marginBottom: 4 }}><strong>Session Date:</strong> {scanResult.sessionDetails}</div>
+                    )}
+                  </div>
+                )}
+
+                {scanResult.success && !scanResult.isStaffPass && scanResult.booking && (
                   <div style={{ marginTop: 16, textAlign: "left", borderTop: "1px solid rgba(22,163,74,0.2)", paddingTop: 12, fontSize: 13, color: "#444" }}>
                     <div style={{ marginBottom: 4 }}><strong>Buyer:</strong> {scanResult.booking.buyerName}</div>
                     <div style={{ marginBottom: 4 }}><strong>Email:</strong> {scanResult.booking.buyerEmail}</div>

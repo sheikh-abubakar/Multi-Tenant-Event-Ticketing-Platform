@@ -454,4 +454,74 @@ const sendPasswordResetOTP = async (email, otpCode) => {
   return transporter.sendMail(mailOptions);
 };
 
-module.exports = { sendBookingConfirmation, sendPaymentReminder, sendUnifiedPaymentReminder, sendUnifiedBookingConfirmation, sendTeamInvitation, sendPasswordResetOTP };
+const sendStaffPass = async (pass, user, orgName, target, eventsList = [], pdfBuffer) => {
+  console.log("📬 [Email Service] Sending Staff Pass to:", user.email);
+  
+  const contentHtml = `
+    <p style="font-size: 16px; margin: 0 0 16px;">Hi <strong>${user.name}</strong>,</p>
+    <p style="font-size: 15px; margin: 0 0 24px; color: #3d3848; line-height: 1.6;">
+      You have been issued a new <strong>${pass.passType}</strong> by <strong>${orgName}</strong> on StagePass.
+      You can find your pass on your StagePass dashboard under "My Staff Passes", or check the attached PDF.
+    </p>
+
+    <div style="background: #f7f2e7; border-left: 4px solid #c99a3c; padding: 16px 20px; border-radius: 6px; margin-bottom: 24px;">
+      <p style="margin: 0; font-size: 12px; color: #6b6054; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;">Pass Confirmation Code</p>
+      <p style="margin: 4px 0 0; font-size: 24px; font-weight: 800; color: #15182e; letter-spacing: 0.04em;">${pass.confirmationCode}</p>
+    </div>
+
+    <div style="background: #ffffff; border: 1px solid #e8e0d0; border-radius: 10px; padding: 20px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+      <h3 style="margin: 0 0 16px; font-size: 18px; color: #15182e; font-family: Arial, sans-serif; font-weight: 700; border-bottom: 1px dashed #e8e0d0; padding-bottom: 8px;">Pass Details</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.6;">
+        <tr>
+          <td style="padding: 6px 0; color: #6b6054; width: 110px; vertical-align: top;"><strong>Pass Type</strong></td>
+          <td style="padding: 6px 0; color: #1e2030; font-weight: bold;">${pass.passType}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #6b6054; vertical-align: top;"><strong>Target</strong></td>
+          <td style="padding: 6px 0; color: #1e2030; font-weight: bold;">${pass.targetType === "bundle" ? `Bundle: ${target.name}` : `Event: ${target.name}`}</td>
+        </tr>
+        ${pass.targetType === "event" ? `
+        <tr>
+          <td style="padding: 6px 0; color: #6b6054; vertical-align: top;"><strong>Date & Time</strong></td>
+          <td style="padding: 6px 0; color: #1e2030;">${moment.tz(target.dateTime, target.timezone || "Asia/Karachi").format("dddd, MMMM D, YYYY [at] h:mm A")}</td>
+        </tr>
+        ` : ""}
+      </table>
+    </div>
+
+    <p style="font-size: 14px; color: #5d5668;">We have attached your official check-in pass PDF to this email. You can present either the PDF QR code or view the pass on your mobile dashboard at the gate entrance.</p>
+  `;
+
+  const html = renderEmailTemplate(
+    `Your Staff Pass for ${target.name} is ready! 🎫`,
+    "Staff Entry Pass",
+    contentHtml
+  );
+
+  const attachments = [
+    {
+      filename: `StaffPass_${pass.confirmationCode}.pdf`,
+      content: pdfBuffer,
+    }
+  ];
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || '"StagePass" <noreply@stagepass.com>',
+    to: user.email,
+    subject: `Your StagePass Staff Pass — ${pass.passType} for ${target.name}`,
+    html,
+    attachments,
+  };
+
+  return transporter.sendMail(mailOptions);
+};
+
+module.exports = {
+  sendBookingConfirmation,
+  sendPaymentReminder,
+  sendUnifiedPaymentReminder,
+  sendUnifiedBookingConfirmation,
+  sendTeamInvitation,
+  sendPasswordResetOTP,
+  sendStaffPass,
+};

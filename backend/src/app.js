@@ -32,6 +32,7 @@ const cartSyncRoutes = require("./routes/cartSync.routes");
 const notificationRoutes = require("./routes/notification.routes");
 const withdrawalRoutes = require("./routes/withdrawal.routes");
 const topupRoutes = require("./routes/topup.routes");
+const staffPassRoutes = require("./routes/staffPass.routes");
 const { logger } = require("./config/logger");
 const { requestId, requestLogger } = require("./middlewares/requestLogger");
 
@@ -137,6 +138,8 @@ app.use("/api/o/:orgSlug/analytics", analyticsRoutes);
 app.use("/api/o/:orgSlug", calendarRoutes);
 app.use("/api", publicRoutes);
 app.use("/api", refundRoutes);
+app.use("/api/o/:orgSlug/staff-passes", staffPassRoutes);
+app.use("/api", staffPassRoutes);
 app.use("/api/wallet/withdrawals", withdrawalRoutes);
 app.use("/api/wallet/topups", topupRoutes);
 app.use("/api/referrals", referralRoutes);

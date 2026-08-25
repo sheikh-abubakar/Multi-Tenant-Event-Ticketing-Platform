@@ -3,6 +3,7 @@ const Booking = require("../models/Booking");
 const Event = require("../models/Event");
 const Venue = require("../models/Venue");
 const SeatChangeRequest = require("../models/SeatChangeRequest");
+const StaffPass = require("../models/StaffPass");
 
 /**
  * Analytics service — all queries are tenant-scoped by organizationId.
@@ -57,6 +58,7 @@ const getOwnerAnalytics = async (organizationId) => {
     refundStats,
     refundsByEvent,
     approvedSwapsCount,
+    verifiedStaffPassesResult,
   ] = await Promise.all([
     // Total confirmed bookings
     Booking.countDocuments({ organizationId: orgId, status: "confirmed" }),
@@ -218,6 +220,14 @@ const getOwnerAnalytics = async (organizationId) => {
       },
     ]),
     SeatChangeRequest.countDocuments({ organizationId: orgId, status: "approved" }),
+
+    // Verified staff passes for check-in log
+    StaffPass.find({ organizationId: orgId, status: "verified" })
+      .populate("userId", "name email")
+      .populate("eventId", "name dateTime sessions")
+      .populate("bundleId", "name")
+      .sort({ updatedAt: -1 })
+      .lean(),
   ]);
 
   // ── 2. Shape the response ─────────────────────────────────────
@@ -322,6 +332,32 @@ const getOwnerAnalytics = async (organizationId) => {
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 10);
 
+  const staffCheckins = (verifiedStaffPassesResult || []).map((pass) => {
+    let targetName = "";
+    let sessionDate = null;
+    if (pass.targetType === "event" && pass.eventId) {
+      targetName = pass.eventId.name;
+      let displayDate = pass.eventId.dateTime;
+      if (pass.eventSessionId && pass.eventId.sessions?.length) {
+        const sess = pass.eventId.sessions.find(s => s._id.toString() === pass.eventSessionId.toString());
+        if (sess) displayDate = sess.dateTime;
+      }
+      sessionDate = displayDate;
+    } else if (pass.bundleId) {
+      targetName = `Bundle: ${pass.bundleId.name}`;
+    }
+
+    return {
+      id: pass._id.toString(),
+      name: pass.userId?.name || "Unknown",
+      email: pass.userId?.email || "Unknown",
+      passType: pass.passType,
+      targetName,
+      sessionDate,
+      checkinTime: pass.updatedAt,
+    };
+  });
+
   const result = {
     metrics: {
       totalBookings: totalBookingsResult,
@@ -340,6 +376,7 @@ const getOwnerAnalytics = async (organizationId) => {
     recentBookings: shapedRecentBookings,
     revenueByDay: filledRevenueByDay,
     refundsByEvent,
+    staffCheckins,
   };
 
   setCache(cacheKey, result);

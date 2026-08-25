@@ -65,6 +65,10 @@ const MediaGalleryPage = lazy(() => import("./pages/Admin/MediaGalleryPage"));
 // Coupons Management
 const Coupons = lazy(() => import("./pages/Coupons"));
 
+// Staff Passes Management
+const StaffPassesManager = lazy(() => import("./pages/Admin/StaffPassesManager"));
+const MyStaffPasses = lazy(() => import("./pages/MyStaffPasses"));
+
 function App() {
   const { user, token } = useAuth();
   const [searchParams] = useSearchParams();
@@ -286,6 +290,15 @@ function App() {
         <Route path="/my/referrals" element={<ProtectedRoute><MyReferrals /></ProtectedRoute>} />
         <Route path="/my/notifications" element={<ProtectedRoute><MyNotifications /></ProtectedRoute>} />
         <Route path="/my/bookings" element={<ProtectedRoute><BuyerDashboard bookingsOnly /></ProtectedRoute>} />
+        <Route path="/my/passes" element={<ProtectedRoute><MyStaffPasses /></ProtectedRoute>} />
+        <Route
+          path="/o/:orgSlug/manage/passes"
+          element={
+            <ProtectedRoute>
+              <StaffPassesManager />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
       </Suspense>
     </Layout>

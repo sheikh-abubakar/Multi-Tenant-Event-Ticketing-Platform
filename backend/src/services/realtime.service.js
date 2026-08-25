@@ -37,7 +37,7 @@ const initializeRealtime = (httpServer) => {
         if (!organization) return acknowledge({ ok: false, message: "Organization not found" });
 
         const membership = await OrganizationMember.findOne({ userId: socket.userId, organizationId: organization._id }).lean();
-        if (!membership || !hasPermission("settings:read", membership.permissions || [])) {
+        if (!membership || !hasPermission("events:read", membership.permissions || [])) {
           return acknowledge({ ok: false, message: "Not authorized for analytics updates" });
         }
 

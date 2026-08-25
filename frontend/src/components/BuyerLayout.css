@@ -37,8 +37,7 @@
     overflow-x: hidden;
     white-space: nowrap;
   }
-  .buyer-sidebar:hover,
-  .buyer-sidebar:focus-within {
+  .buyer-sidebar:hover {
     width: 270px;
     padding: 27px 18px 18px;
   }
@@ -54,12 +53,17 @@
     /* Keep the wordmark from flashing while the sidebar closes. */
     transition: none;
   }
-  .buyer-sidebar:hover .buyer-sidebar__brand,
-  .buyer-sidebar:focus-within .buyer-sidebar__brand {
+  .buyer-sidebar__brand text {
+    display: none;
+  }
+  .buyer-sidebar:hover .buyer-sidebar__brand {
     width: 132px !important;
     min-width: 132px;
     max-width: 132px;
     overflow: visible !important;
+  }
+  .buyer-sidebar:hover .buyer-sidebar__brand text {
+    display: block;
   }
   
   .buyer-sidebar__eyebrow {

@@ -334,80 +334,52 @@ export default function StaffPassesManager() {
               </div>
 
               <div className="form-group">
-                <label>Scope / Target Access</label>
-                <div className="passes-radio-group">
-                  <label className={`passes-radio-label ${targetType === "event" ? "is-selected" : ""}`}>
-                    <input type="radio" name="targetType" value="event" checked={targetType === "event"} onChange={() => setTargetType("event")} />
-                    Single Event
-                  </label>
-                  <label className={`passes-radio-label ${targetType === "bundle" ? "is-selected" : ""}`}>
-                    <input type="radio" name="targetType" value="bundle" checked={targetType === "bundle"} onChange={() => setTargetType("bundle")} />
-                    Event Bundle
-                  </label>
-                </div>
+                <label>Select Event</label>
+                <select value={selectedEvent} onChange={(e) => handleEventChange(e.target.value)} required>
+                  <option value="" disabled>Choose an event...</option>
+                  {events
+                    .filter((ev) => {
+                      if (editingPass && ev._id === editingPass.eventId?._id) return true;
+                      if (ev.sessions && ev.sessions.length > 0) {
+                        return ev.sessions.some((s) => new Date(s.dateTime) > new Date());
+                      }
+                      return new Date(ev.dateTime) > new Date();
+                    })
+                    .map((ev) => (
+                      <option key={ev._id} value={ev._id}>{ev.name}</option>
+                    ))}
+                </select>
               </div>
 
-              {targetType === "event" ? (
-                <>
-                  <div className="form-group">
-                    <label>Select Event</label>
-                    <select value={selectedEvent} onChange={(e) => handleEventChange(e.target.value)} required>
-                      <option value="" disabled>Choose an event...</option>
-                      {events
-                        .filter((ev) => {
-                          if (editingPass && ev._id === editingPass.eventId?._id) return true;
-                          if (ev.sessions && ev.sessions.length > 0) {
-                            return ev.sessions.some((s) => new Date(s.dateTime) > new Date());
-                          }
-                          return new Date(ev.dateTime) > new Date();
-                        })
-                        .map((ev) => (
-                          <option key={ev._id} value={ev._id}>{ev.name}</option>
+              {(() => {
+                const currentEvent = events.find((e) => e._id === selectedEvent);
+                if (currentEvent?.sessions && currentEvent.sessions.length > 0) {
+                  const futureSessions = currentEvent.sessions.filter((s) => {
+                    if (editingPass && s._id.toString() === editingPass.eventSessionId?.toString()) return true;
+                    return new Date(s.dateTime) > new Date();
+                  });
+
+                  return (
+                    <div className="form-group" style={{ marginTop: "16px" }}>
+                      <label>Select Event Session</label>
+                      <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)} required>
+                        <option value="" disabled>Choose a session...</option>
+                        {futureSessions.map((s, idx) => (
+                          <option key={s._id} value={s._id}>
+                            Session {idx + 1}: {new Date(s.dateTime).toLocaleString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </option>
                         ))}
-                    </select>
-                  </div>
-
-                  {(() => {
-                    const currentEvent = events.find((e) => e._id === selectedEvent);
-                    if (currentEvent?.sessions && currentEvent.sessions.length > 0) {
-                      const futureSessions = currentEvent.sessions.filter((s) => {
-                        if (editingPass && s._id.toString() === editingPass.eventSessionId?.toString()) return true;
-                        return new Date(s.dateTime) > new Date();
-                      });
-
-                      return (
-                        <div className="form-group" style={{ marginTop: "16px" }}>
-                          <label>Select Event Session</label>
-                          <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)} required>
-                            <option value="" disabled>Choose a session...</option>
-                            {futureSessions.map((s, idx) => (
-                              <option key={s._id} value={s._id}>
-                                Session {idx + 1}: {new Date(s.dateTime).toLocaleString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                </>
-              ) : (
-                <div className="form-group">
-                  <label>Select Bundle</label>
-                  <select value={selectedBundle} onChange={(e) => setSelectedBundle(e.target.value)} required>
-                    <option value="" disabled>Choose a bundle...</option>
-                    {bundles.map((b) => (
-                      <option key={b._id} value={b._id}>{b.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+                      </select>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               <div className="form-group">
                 <label>Pass Type / Badge Level</label>

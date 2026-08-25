@@ -14,7 +14,8 @@ const staffPassSchema = new mongoose.Schema(
     },
     targetType: {
       type: String,
-      enum: ["event", "bundle"],
+      enum: ["event"],
+      default: "event",
       required: true,
     },
     eventId: {

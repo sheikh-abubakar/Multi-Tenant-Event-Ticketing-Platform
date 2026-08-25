@@ -163,14 +163,14 @@ const MyWallet = () => {
       )}
 
       {/* Available Balance Card */}
-      <div className="wallet-balance-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="wallet-balance-card">
         <div>
           <span>AVAILABLE BALANCE</span>
           <strong>{loading ? "—" : money(wallet?.balance, wallet?.currency)}</strong>
           <small>{wallet?.currency || "USD"} StagePass credit</small>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-end" }}>
-          <div style={{ display: "flex", gap: "12px" }}>
+        <div className="wallet-balance-card__actions-container">
+          <div className="wallet-balance-card__actions">
             <button
               type="button"
               onClick={() => {
@@ -221,7 +221,7 @@ const MyWallet = () => {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginTop: "24px" }} className="reward-columns">
+      <div className="reward-columns" style={{ marginTop: "24px" }}>
         {/* Transaction Ledger */}
         <div className="buyer-ledger">
           <div className="buyer-ledger__head">

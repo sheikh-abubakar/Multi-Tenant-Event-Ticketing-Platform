@@ -19,19 +19,12 @@ const generatePassCode = () => {
 // 1. Create a Staff Pass in Draft state (Owner Only)
 const createPass = async (req, res) => {
   try {
-    const { userId, targetType, eventId, bundleId, eventSessionId, passType } = req.body;
+    const { userId, eventId, eventSessionId, passType } = req.body;
     const organizationId = req.organizationId;
+    const targetType = "event";
 
-    if (!userId || !targetType || !passType) {
-      return res.status(400).json({ message: "userId, targetType, and passType are required" });
-    }
-
-    if (targetType === "event" && !eventId) {
-      return res.status(400).json({ message: "eventId is required for event-specific pass" });
-    }
-
-    if (targetType === "bundle" && !bundleId) {
-      return res.status(400).json({ message: "bundleId is required for bundle-specific pass" });
+    if (!userId || !eventId || !passType) {
+      return res.status(400).json({ message: "userId, eventId, and passType are required" });
     }
 
     // Verify recipient is a member of the organization
@@ -40,19 +33,14 @@ const createPass = async (req, res) => {
       return res.status(400).json({ message: "Selected user is not a member of this organization" });
     }
 
-    // Verify target exists
-    if (targetType === "event") {
-      const event = await Event.findOne({ _id: eventId, organizationId });
-      if (!event) return res.status(404).json({ message: "Event not found" });
-      
-      // If event has multiple sessions and a session was selected, verify it exists
-      if (eventSessionId && event.sessions?.length) {
-        const sessionExists = event.sessions.some(s => s._id.toString() === eventSessionId.toString());
-        if (!sessionExists) return res.status(400).json({ message: "Selected event session not found" });
-      }
-    } else {
-      const bundle = await EventBundle.findOne({ _id: bundleId, organizationId });
-      if (!bundle) return res.status(404).json({ message: "Event bundle not found" });
+    // Verify event exists
+    const event = await Event.findOne({ _id: eventId, organizationId });
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    
+    // If event has multiple sessions and a session was selected, verify it exists
+    if (eventSessionId && event.sessions?.length) {
+      const sessionExists = event.sessions.some(s => s._id.toString() === eventSessionId.toString());
+      if (!sessionExists) return res.status(400).json({ message: "Selected event session not found" });
     }
 
     const confirmationCode = generatePassCode();
@@ -61,9 +49,9 @@ const createPass = async (req, res) => {
       organizationId,
       userId,
       targetType,
-      eventId: targetType === "event" ? eventId : null,
-      bundleId: targetType === "bundle" ? bundleId : null,
-      eventSessionId: targetType === "event" ? (eventSessionId || null) : null,
+      eventId,
+      bundleId: null,
+      eventSessionId: eventSessionId || null,
       passType,
       status: "draft",
       confirmationCode,
@@ -99,47 +87,19 @@ const updatePass = async (req, res) => {
       pass.userId = userId;
     }
 
-    if (targetType) {
-      pass.targetType = targetType;
-      if (targetType === "event") {
-        if (!eventId) return res.status(400).json({ message: "eventId is required" });
-        const event = await Event.findOne({ _id: eventId, organizationId });
-        if (!event) return res.status(404).json({ message: "Event not found" });
-        
-        // If event has multiple sessions and a session was selected, verify it exists
-        if (eventSessionId && event.sessions?.length) {
-          const sessionExists = event.sessions.some(s => s._id.toString() === eventSessionId.toString());
-          if (!sessionExists) return res.status(400).json({ message: "Selected event session not found" });
-        }
-        pass.eventId = eventId;
-        pass.eventSessionId = eventSessionId || null;
-        pass.bundleId = null;
-      } else {
-        if (!bundleId) return res.status(400).json({ message: "bundleId is required" });
-        const bundle = await EventBundle.findOne({ _id: bundleId, organizationId });
-        if (!bundle) return res.status(404).json({ message: "Event bundle not found" });
-        pass.bundleId = bundleId;
-        pass.eventId = null;
-        pass.eventSessionId = null;
+    pass.targetType = "event";
+    if (eventId) {
+      const event = await Event.findOne({ _id: eventId, organizationId });
+      if (!event) return res.status(404).json({ message: "Event not found" });
+      
+      // If event has multiple sessions and a session was selected, verify it exists
+      if (eventSessionId && event.sessions?.length) {
+        const sessionExists = event.sessions.some(s => s._id.toString() === eventSessionId.toString());
+        if (!sessionExists) return res.status(400).json({ message: "Selected event session not found" });
       }
-    } else {
-      if (eventId) {
-        const event = await Event.findOne({ _id: eventId, organizationId });
-        if (!event) return res.status(404).json({ message: "Event not found" });
-        pass.eventId = eventId;
-        
-        // If event has multiple sessions and a session was selected, verify it exists
-        if (eventSessionId && event.sessions?.length) {
-          const sessionExists = event.sessions.some(s => s._id.toString() === eventSessionId.toString());
-          if (!sessionExists) return res.status(400).json({ message: "Selected event session not found" });
-        }
-        pass.eventSessionId = eventSessionId || null;
-      }
-      if (bundleId) {
-        const bundle = await EventBundle.findOne({ _id: bundleId, organizationId });
-        if (!bundle) return res.status(404).json({ message: "Event bundle not found" });
-        pass.bundleId = bundleId;
-      }
+      pass.eventId = eventId;
+      pass.eventSessionId = eventSessionId || null;
+      pass.bundleId = null;
     }
 
     if (passType) {

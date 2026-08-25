@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const mongoose = require("mongoose");
 const QRCode = require("qrcode");
+const { encryptPayload } = require("../utils/crypto");
 const Event = require("../models/Event");
 const Organization = require("../models/Organization");
 const EventBundle = require("../models/EventBundle");
@@ -308,14 +309,15 @@ const createSeatmapCheckout = async (eventId, organizationId, orgSlug, data) => 
       booking.status = "confirmed";
       booking.paymentStatus = "paid";
 
-      const qrData = JSON.stringify({
+      const payload = {
         bookingId: booking._id.toString(),
         confirmationCode: booking.confirmationCode,
         eventId: booking.eventId.toString(),
         buyerEmail: booking.buyerEmail,
-      });
+      };
+      const encrypted = encryptPayload(payload);
       try {
-        booking.qrCodeUrl = await QRCode.toDataURL(qrData);
+        booking.qrCodeUrl = await QRCode.toDataURL(`booking:${encrypted}`);
       } catch (qrError) {
         console.error("QR Code generation failed:", qrError.message);
       }
@@ -681,14 +683,15 @@ const createCheckoutSession = async (eventId, organizationId, orgSlug, data) => 
       booking.status = "confirmed";
       booking.paymentStatus = "paid";
 
-      const qrData = JSON.stringify({
+      const payload = {
         bookingId: booking._id.toString(),
         confirmationCode: booking.confirmationCode,
         eventId: booking.eventId.toString(),
         buyerEmail: booking.buyerEmail,
-      });
+      };
+      const encrypted = encryptPayload(payload);
       try {
-        booking.qrCodeUrl = await QRCode.toDataURL(qrData);
+        booking.qrCodeUrl = await QRCode.toDataURL(`booking:${encrypted}`);
       } catch (qrError) {
         console.error("QR Code generation failed:", qrError.message);
       }
@@ -868,16 +871,17 @@ const confirmBooking = async (stripeSessionId) => {
       throw error;
     }
 
-    const qrData = JSON.stringify({
+    const payload = {
       bookingId: booking._id.toString(),
       confirmationCode: booking.confirmationCode,
       eventId: booking.eventId.toString(),
       buyerEmail: booking.buyerEmail,
-    });
+    };
+    const encrypted = encryptPayload(payload);
 
     let qrCodeUrl = null;
     try {
-      qrCodeUrl = await QRCode.toDataURL(qrData);
+      qrCodeUrl = await QRCode.toDataURL(`booking:${encrypted}`);
     } catch (qrError) {
       console.error("QR Code generation failed:", qrError.message);
     }
@@ -1670,14 +1674,15 @@ const createBundleCheckout = async (bundleId, organizationId, orgSlug, data) => 
         booking.status = "confirmed";
         booking.paymentStatus = "paid";
 
-        const qrData = JSON.stringify({
+        const payload = {
           bookingId: booking._id.toString(),
           confirmationCode: booking.confirmationCode,
           eventId: booking.eventId.toString(),
           buyerEmail: booking.buyerEmail,
-        });
+        };
+        const encrypted = encryptPayload(payload);
         try {
-          booking.qrCodeUrl = await QRCode.toDataURL(qrData);
+          booking.qrCodeUrl = await QRCode.toDataURL(`booking:${encrypted}`);
         } catch (qrError) {
           console.error("QR Code generation failed:", qrError.message);
         }
@@ -2065,14 +2070,15 @@ const createUnifiedCheckout = async (organizationId, orgSlug, data) => {
         booking.status = "confirmed";
         booking.paymentStatus = "paid";
 
-        const qrData = JSON.stringify({
+        const payload = {
           bookingId: booking._id.toString(),
           confirmationCode: booking.confirmationCode,
           eventId: booking.eventId.toString(),
           buyerEmail: booking.buyerEmail,
-        });
+        };
+        const encrypted = encryptPayload(payload);
         try {
-          booking.qrCodeUrl = await QRCode.toDataURL(qrData);
+          booking.qrCodeUrl = await QRCode.toDataURL(`booking:${encrypted}`);
         } catch (qrError) {
           console.error("QR Code generation failed:", qrError.message);
         }

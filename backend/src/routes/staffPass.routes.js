@@ -21,5 +21,6 @@ router.put("/:passId", authenticate, resolveTenant, loadMembership, checkRole(["
 router.delete("/:passId", authenticate, resolveTenant, loadMembership, checkRole(["owner"]), staffPassController.deletePass);
 router.post("/:passId/send", authenticate, resolveTenant, loadMembership, checkRole(["owner"]), staffPassController.sendPass);
 router.post("/:passId/verify", authenticate, resolveTenant, loadMembership, checkRole(["owner"]), staffPassController.verifyPass);
+router.post("/verify-scanned", authenticate, resolveTenant, loadMembership, checkRole(["owner"]), staffPassController.verifyScanned);
 
 module.exports = router;

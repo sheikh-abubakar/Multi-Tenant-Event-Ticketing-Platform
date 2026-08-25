@@ -347,14 +347,16 @@ const approveRequest = async (requestId, organizationId) => {
 
   // Regenerate QR Code
   const QRCode = require("qrcode");
-  const qrData = JSON.stringify({
+  const { encryptPayload } = require("../utils/crypto");
+  const payload = {
     bookingId: booking._id.toString(),
     confirmationCode: booking.confirmationCode,
     eventId: booking.eventId.toString(),
     buyerEmail: booking.buyerEmail,
-  });
+  };
+  const encrypted = encryptPayload(payload);
   try {
-    booking.qrCodeUrl = await QRCode.toDataURL(qrData);
+    booking.qrCodeUrl = await QRCode.toDataURL(`booking:${encrypted}`);
   } catch (qrError) {
     console.error("QR Code regeneration failed:", qrError.message);
   }

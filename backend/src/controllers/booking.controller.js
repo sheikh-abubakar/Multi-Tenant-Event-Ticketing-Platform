@@ -6,6 +6,7 @@ const { invalidateOrgCache } = require("../services/analytics.service");
 const { paymentTrace, bookingContext } = require("../utils/paymentTrace");
 const { notifyOrganizationBookingUpdate } = require("../services/organizationUpdate.service");
 const { notifyUser, notifyOrganization } = require("../services/notification.service");
+const { decryptPayload } = require("../utils/crypto");
 
 const create = async (req, res) => {
   try {
@@ -221,6 +222,66 @@ const createUnifiedCheckout = async (req, res) => {
   }
 };
 
+const verifyScanned = async (req, res) => {
+  try {
+    const { scannedData } = req.body;
+    if (!scannedData) {
+      return res.status(400).json({ message: "scannedData is required" });
+    }
+
+    let bookingId = "";
+    let confirmationCode = "";
+
+    if (scannedData.startsWith("booking:")) {
+      const ciphertext = scannedData.substring("booking:".length);
+      const decrypted = decryptPayload(ciphertext);
+      bookingId = decrypted.bookingId;
+      confirmationCode = decrypted.confirmationCode;
+    } else {
+      // Backward compatibility: legacy unencrypted JSON QR codes
+      try {
+        const parsed = JSON.parse(scannedData);
+        bookingId = parsed.bookingId;
+        confirmationCode = parsed.confirmationCode;
+      } catch (e) {
+        return res.status(400).json({ message: "Failed to parse scanned ticket data" });
+      }
+    }
+
+    if (!bookingId || !confirmationCode) {
+      return res.status(400).json({ message: "Invalid or missing parameters in scanned QR" });
+    }
+
+    // Verify the decrypted confirmationCode against the booking record
+    const Booking = require("../models/Booking");
+    const bookingDoc = await Booking.findOne({ _id: bookingId, organizationId: req.organizationId });
+    if (!bookingDoc) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+    if (bookingDoc.confirmationCode !== confirmationCode) {
+      return res.status(400).json({ message: "Verification failed: Confirmation code mismatch." });
+    }
+
+    // Delegate to the standard verifyTicket service (handles status checks + mark verified)
+    const booking = await bookingService.verifyTicket(bookingId, req.organizationId);
+
+    await recordPlatformAudit({
+      organizationId: booking.organizationId,
+      action: "booking.verified",
+      targetType: "booking",
+      targetId: booking._id,
+      metadata: { buyerEmail: booking.buyerEmail },
+    });
+    invalidateOrgCache(booking.organizationId.toString());
+    notifyOrganizationBookingUpdate(booking.organizationId, { type: "ticket-verified", bookingId: booking._id.toString() });
+    await notifyUser(booking.userId, { type: "ticket.verified", title: "Ticket checked in", message: `Your ticket for ${booking.eventName || "the event"} has been verified at entry.`, link: "/my/bookings", metadata: { bookingId: String(booking._id) } });
+    await notifyOrganization(booking.organizationId, { type: "ticket.verified", title: "Ticket verified", message: `${booking.buyerName || booking.buyerEmail}'s ticket was checked in.`, link: `/o/${req.params.orgSlug}/manage/analytics`, metadata: { bookingId: String(booking._id) } }, req.user._id);
+    return res.json({ message: "Ticket verified successfully", booking });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   create,
   createCheckout,
@@ -231,6 +292,7 @@ module.exports = {
   getByEvent,
   handleWebhook,
   verify,
+  verifyScanned,
   getBundleBookings,
   createUnifiedCheckout,
 };

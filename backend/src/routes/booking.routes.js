@@ -37,4 +37,13 @@ router.post(
   bookingController.verify
 );
 
-module.exports = router;
+router.post(
+  "/verify-scanned",
+  authenticate,
+  resolveTenant,
+  loadMembership,
+  checkPermission("events:update"),
+  bookingController.verifyScanned
+);
+
+module.exports = router;

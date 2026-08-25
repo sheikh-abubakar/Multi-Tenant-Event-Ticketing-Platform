@@ -294,26 +294,11 @@ const Analytics = () => {
     setScanResult(null);
 
     try {
-      let bookingId = code.trim();
-      let isStaffPass = false;
-      let parsed = null;
+      const trimmed = code.trim();
 
-      try {
-        parsed = JSON.parse(bookingId);
-        if (parsed && parsed.type === "staff_pass") {
-          isStaffPass = true;
-        } else if (parsed && parsed.bookingId) {
-          bookingId = parsed.bookingId;
-        }
-      } catch (e) {
-        if (bookingId.includes("/bookings/")) {
-          const parts = bookingId.split("/bookings/");
-          bookingId = parts[parts.length - 1].split(/[?#]/)[0];
-        }
-      }
-
-      if (isStaffPass && parsed) {
-        const response = await apiClient.post(`/o/${orgSlug}/staff-passes/${parsed.passId}/verify`);
+      // --- Encrypted QR: staff_pass:<ciphertext> ---
+      if (trimmed.startsWith("staff_pass:")) {
+        const response = await apiClient.post(`/o/${orgSlug}/staff-passes/verify-scanned`, { scannedData: trimmed });
         setScanResult({
           success: true,
           isStaffPass: true,
@@ -325,13 +310,57 @@ const Analytics = () => {
           targetName: response.data.targetName,
           sessionDetails: response.data.sessionDetails,
         });
-      } else {
-        const response = await apiClient.post(`/o/${orgSlug}/bookings/${bookingId}/verify`);
+
+      // --- Encrypted QR: booking:<ciphertext> ---
+      } else if (trimmed.startsWith("booking:")) {
+        const response = await apiClient.post(`/o/${orgSlug}/bookings/verify-scanned`, { scannedData: trimmed });
         setScanResult({
           success: true,
           message: response.data.message || "Ticket verified successfully!",
           booking: response.data.booking,
         });
+
+      // --- Legacy fallback: plain JSON QR codes (old unencrypted tickets/passes) ---
+      } else {
+        let bookingId = trimmed;
+        let isStaffPass = false;
+        let parsed = null;
+
+        try {
+          parsed = JSON.parse(trimmed);
+          if (parsed && parsed.type === "staff_pass") {
+            isStaffPass = true;
+          } else if (parsed && parsed.bookingId) {
+            bookingId = parsed.bookingId;
+          }
+        } catch (e) {
+          if (bookingId.includes("/bookings/")) {
+            const parts = bookingId.split("/bookings/");
+            bookingId = parts[parts.length - 1].split(/[?#]/)[0];
+          }
+        }
+
+        if (isStaffPass && parsed) {
+          const response = await apiClient.post(`/o/${orgSlug}/staff-passes/verify-scanned`, { scannedData: trimmed });
+          setScanResult({
+            success: true,
+            isStaffPass: true,
+            message: response.data.message || "Staff check-in approved!",
+            staffPass: response.data.pass,
+            userName: response.data.userName,
+            userEmail: response.data.userEmail,
+            passType: response.data.passType,
+            targetName: response.data.targetName,
+            sessionDetails: response.data.sessionDetails,
+          });
+        } else {
+          const response = await apiClient.post(`/o/${orgSlug}/bookings/${bookingId}/verify`);
+          setScanResult({
+            success: true,
+            message: response.data.message || "Ticket verified successfully!",
+            booking: response.data.booking,
+          });
+        }
       }
 
       fetchAnalytics();
@@ -347,6 +376,7 @@ const Analytics = () => {
       setVerifying(false);
     }
   };
+
 
   const handleManualVerify = async (bookingId) => {
     try {

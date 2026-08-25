@@ -11,6 +11,8 @@ const { generatePassPDF } = require("../utils/pdfGenerator");
 const emailService = require("../config/email");
 const { notifyUser, notifyOrganization } = require("../services/notification.service");
 
+const { encryptPayload, decryptPayload } = require("../utils/crypto");
+
 // Helper to generate a unique pass code
 const generatePassCode = () => {
   return `PASS-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
@@ -150,13 +152,14 @@ const sendPass = async (req, res) => {
       return res.status(400).json({ message: "Pass has already been sent/activated" });
     }
 
-    // Generate QR Code containing verification data
-    const qrData = JSON.stringify({
+    // Generate secure encrypted QR Code payload to prevent Google Lens exposure
+    const payload = {
       passId: pass._id.toString(),
       confirmationCode: pass.confirmationCode,
       type: "staff_pass",
-    });
-    const qrCodeUrl = await QRCode.toDataURL(qrData);
+    };
+    const encryptedPayload = encryptPayload(payload);
+    const qrCodeUrl = await QRCode.toDataURL(`staff_pass:${encryptedPayload}`);
 
     // Save QR Code and set status to active
     pass.qrCodeUrl = qrCodeUrl;
@@ -359,6 +362,123 @@ const verifyPass = async (req, res) => {
   }
 };
 
+const verifyScanned = async (req, res) => {
+  try {
+    const { scannedData } = req.body;
+    const organizationId = req.organizationId;
+
+    // Strict constraint check: Only the Owner role of the organization can verify/scan passes
+    const requesterMember = await OrganizationMember.findOne({ userId: req.user._id, organizationId });
+    if (!requesterMember || requesterMember.role !== "owner") {
+      return res.status(403).json({ message: "Verification failed: Only the organization Owner is authorized to scan and verify staff passes." });
+    }
+
+    if (!scannedData) {
+      return res.status(400).json({ message: "scannedData is required" });
+    }
+
+    let passId = "";
+    let confirmationCode = "";
+
+    if (scannedData.startsWith("staff_pass:")) {
+      const ciphertext = scannedData.substring("staff_pass:".length);
+      const decrypted = decryptPayload(ciphertext);
+      passId = decrypted.passId;
+      confirmationCode = decrypted.confirmationCode;
+    } else {
+      // Backward compatibility fallback for unencrypted legacy codes (JSON)
+      try {
+        const decrypted = JSON.parse(scannedData);
+        if (decrypted && decrypted.type === "staff_pass") {
+          passId = decrypted.passId;
+          confirmationCode = decrypted.confirmationCode;
+        } else {
+          return res.status(400).json({ message: "Invalid pass QR code format" });
+        }
+      } catch (e) {
+        return res.status(400).json({ message: "Failed to parse scanned pass data" });
+      }
+    }
+
+    if (!passId || !confirmationCode) {
+      return res.status(400).json({ message: "Invalid or missing parameters in scanned QR" });
+    }
+
+    const pass = await StaffPass.findOne({ _id: passId, organizationId });
+    if (!pass) {
+      return res.status(404).json({ message: "Pass not found or invalid" });
+    }
+
+    if (pass.confirmationCode !== confirmationCode) {
+      return res.status(400).json({ message: "Verification failed: Confirmation code mismatch." });
+    }
+
+    if (pass.status === "verified") {
+      return res.status(400).json({ message: "Verification failed: This staff pass has already been used and verified." });
+    }
+
+    if (pass.status !== "active") {
+      return res.status(400).json({ message: `This staff pass is currently ${pass.status}` });
+    }
+
+    // Fetch target details
+    let targetName = "";
+    let sessionDetails = "";
+    if (pass.targetType === "event") {
+      const event = await Event.findById(pass.eventId).lean();
+      if (event) {
+        targetName = event.name;
+        let displayDate = event.dateTime;
+        if (pass.eventSessionId && event.sessions?.length) {
+          const matchedSession = event.sessions.find(s => s._id.toString() === pass.eventSessionId.toString());
+          if (matchedSession) {
+            displayDate = matchedSession.dateTime;
+          }
+        }
+        sessionDetails = new Date(displayDate).toLocaleString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+    } else {
+      const bundle = await EventBundle.findById(pass.bundleId).lean();
+      if (bundle) targetName = `Bundle: ${bundle.name}`;
+    }
+
+    const holder = await User.findById(pass.userId).select("name email");
+    if (!holder) {
+      return res.status(404).json({ message: "Pass holder user details not found" });
+    }
+
+    // Mark pass as verified/used and save
+    pass.status = "verified";
+    await pass.save();
+
+    // Invalidate analytics cache so verified pass details show up instantly on dashboard
+    try {
+      const { invalidateOrgCache } = require("../services/analytics.service");
+      invalidateOrgCache(organizationId);
+    } catch (cacheErr) {
+      console.error("Failed to invalidate analytics cache:", cacheErr.message);
+    }
+
+    return res.json({
+      message: "Staff Check-in Approved!",
+      passType: pass.passType,
+      userName: holder.name,
+      userEmail: holder.email,
+      targetName,
+      sessionDetails,
+      pass,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createPass,
   updatePass,
@@ -367,4 +487,5 @@ module.exports = {
   getOrgPasses,
   getUserPasses,
   verifyPass,
+  verifyScanned,
 };

@@ -58,6 +58,24 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    city: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    address: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    latitude: {
+      type: Number,
+      default: null,
+    },
+    longitude: {
+      type: Number,
+      default: null,
+    },
   },
   { timestamps: true }
 );

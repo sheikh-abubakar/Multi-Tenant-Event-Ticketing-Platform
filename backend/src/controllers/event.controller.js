@@ -3,8 +3,66 @@ const { uploadBufferToS3 } = require("../utils/s3Upload");
 const { recordPlatformAudit } = require("../utils/platformAudit");
 const EventBundle = require("../models/EventBundle");
 const Event = require("../models/Event");
+const Booking = require("../models/Booking");
+const Venue = require("../models/Venue");
 const MediaAsset = require("../models/MediaAsset");
-const { notifyOrganization } = require("../services/notification.service");
+const { notifyOrganization, notifyUser } = require("../services/notification.service");
+const { logger } = require("../config/logger");
+
+/**
+ * Background job: find all users who have previously booked at this venue
+ * and send them a personal venue-affinity notification.
+ * Runs async after response is sent so it never slows down the API.
+ */
+const notifyVenueAffinityUsers = async (event, creatorUserId) => {
+  try {
+    if (!event.venueId) return;
+
+    // Fetch the venue name for the notification message
+    const venue = await Venue.findById(event.venueId).select("name city").lean();
+    if (!venue) return;
+
+    // Find all past events at this same venue
+    const pastEventIds = await Event.find({ venueId: event.venueId, _id: { $ne: event._id } })
+      .select("_id")
+      .lean();
+
+    if (!pastEventIds.length) return;
+
+    // Find all unique users who have confirmed bookings at those past events
+    const pastBookings = await Booking.find({
+      eventId: { $in: pastEventIds.map(e => e._id) },
+      status: "confirmed",
+    }).select("userId").lean();
+
+    // Deduplicate user IDs and exclude the event creator
+    const creatorStr = String(creatorUserId);
+    const uniqueUserIds = [...new Set(
+      pastBookings
+        .map(b => String(b.userId))
+        .filter(id => id !== creatorStr)
+    )];
+
+    if (!uniqueUserIds.length) return;
+
+    logger.info(`Venue affinity: notifying ${uniqueUserIds.length} past booker(s) about new event "${event.name}" at venue "${venue.name}"`);
+
+    // Send a personal notification to each past booker
+    await Promise.all(uniqueUserIds.map(userId =>
+      notifyUser(userId, {
+        type: "venue.upcoming_event",
+        title: `New Event at ${venue.name}! 🎉`,
+        message: `Hey! "${event.name}" has just been announced at ${venue.name}, ${venue.city} — a venue you've visited before. Grab your tickets early!`,
+        link: `/events/${event._id}`,
+        metadata: { eventId: String(event._id), venueId: String(event.venueId), venueName: venue.name },
+        dedupeKey: `venue-affinity:${event._id}:${userId}`,
+      })
+    ));
+  } catch (err) {
+    // Never let notification failures affect any response
+    logger.error("Venue affinity notification failed", { error: err.message });
+  }
+};
 
 // If a file was uploaded (req.file.buffer, set by multer's
 // memoryStorage), streams it to Cloudinary and returns the hosted
@@ -36,6 +94,10 @@ const create = async (req, res) => {
     const event = await eventService.createEvent(req.body, req.organizationId, bannerImageUrl);
     await recordPlatformAudit({ actorUserId: req.user._id, organizationId: req.organizationId, action: "event.created", targetType: "event", targetId: event._id, metadata: { eventName: event.name } });
     await notifyOrganization(req.organizationId, { type: "event.created", title: "Event created", message: `${req.user.name || req.user.email} created ${event.name}.`, link: `/o/${req.params.orgSlug}/manage/events`, metadata: { eventId: String(event._id) } }, req.user._id);
+
+    // Fire venue-affinity notifications in the background (non-blocking)
+    notifyVenueAffinityUsers(event, req.user._id).catch(() => {});
+
     return res.status(201).json({ event });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

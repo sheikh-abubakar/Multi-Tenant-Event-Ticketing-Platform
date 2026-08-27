@@ -26,6 +26,84 @@ const findSessionLayoutSource = (event, preferredSession = null) => {
   return event.sessions?.find((session) => session.selectedSeatMap?.blocks?.length)?.selectedSeatMap || null;
 };
 
+const triggerRecommendationNotifications = async (event, organizationId) => {
+  try {
+    const Booking = require("../models/Booking");
+    const { notifyUser } = require("./notification.service");
+    const Organization = require("../models/Organization");
+    const Venue = require("../models/Venue");
+    const mongoose = require("mongoose");
+
+    const org = await Organization.findById(organizationId).lean();
+    const orgSlug = org ? org.slug : "default";
+
+    const venue = await Venue.findById(event.venueId).lean();
+    const venueName = venue ? venue.name : "Favorite Venue";
+
+    // Find users whose top 3 venues with at least 2 bookings contains this venueId
+    const interestedUsers = await Booking.aggregate([
+      { $match: { status: "confirmed", userId: { $ne: null } } },
+      {
+        $lookup: {
+          from: "events",
+          localField: "eventId",
+          foreignField: "_id",
+          as: "eventInfo"
+        }
+      },
+      { $unwind: "$eventInfo" },
+      {
+        $group: {
+          _id: { userId: "$userId", venueId: "$eventInfo.venueId" },
+          bookingCount: { $sum: 1 }
+        }
+      },
+      { $sort: { "_id.userId": 1, bookingCount: -1 } },
+      {
+        $group: {
+          _id: "$_id.userId",
+          topVenues: {
+            $push: {
+              venueId: "$_id.venueId",
+              count: "$bookingCount"
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          topVenues: { $slice: ["$topVenues", 3] }
+        }
+      },
+      {
+        $match: {
+          topVenues: {
+            $elemMatch: {
+              venueId: new mongoose.Types.ObjectId(event.venueId),
+              count: { $gte: 2 }
+            }
+          }
+        }
+      }
+    ]);
+
+    const userIds = interestedUsers.map(r => r._id);
+
+    // Send notification to each user
+    for (const userId of userIds) {
+      await notifyUser(userId, {
+        type: "recommendation.new_event",
+        title: `Recommended Event at ${venueName}`,
+        message: `A new event "${event.name}" was just announced at your favorite venue ${venueName}! Check it out.`,
+        link: `/o/${orgSlug}/events/${event._id}`,
+        metadata: { eventId: String(event._id), venueId: String(event.venueId) }
+      });
+    }
+  } catch (err) {
+    console.error("Failed to send recommendation notifications:", err);
+  }
+};
+
 const createEvent = async (data, organizationId, bannerImageUrl) => {
   const { name, description, dateTime, venueId, accessCode, privateCodeExpiry, sessionDates, bookingOpeningDateTime } = data;
 
@@ -82,7 +160,7 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     }
   }
 
-  return Event.create({
+  const event = await Event.create({
     organizationId,
     venueId,
     name,
@@ -99,6 +177,13 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     sessions: sessionsList,
     referralRewardAmount: data.referralRewardAmount !== undefined ? Number(data.referralRewardAmount) || 0 : 0,
   });
+
+  // Trigger recommendation notifications asynchronously in background
+  triggerRecommendationNotifications(event, organizationId).catch((err) => {
+    console.error("Async recommendation notifications failed:", err.message);
+  });
+
+  return event;
 };
 
 const listEvents = async (organizationId, assignedVenueIds = null, { includeSeatMap = true } = {}) => {

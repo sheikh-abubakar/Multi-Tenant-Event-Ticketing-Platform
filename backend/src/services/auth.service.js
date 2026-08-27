@@ -3,6 +3,7 @@ const { OAuth2Client } = require("google-auth-library");
 const User = require("../models/User");
 const { generateToken } = require("../utils/jwt");
 const { sendPasswordResetOTP } = require("../config/email");
+const { geocodeAddress } = require("../utils/geocoder");
 
 /**
  * Auth Service — all business logic for signup/login lives here.
@@ -19,6 +20,10 @@ const toAuthUser = (user) => ({
   hasPassword: Boolean(user.passwordHash),
   requiresPasswordSetup: Boolean(user.requiresPasswordSetup),
   platformRole: user.platformRole || "user",
+  city: user.city || null,
+  address: user.address || null,
+  latitude: user.latitude || null,
+  longitude: user.longitude || null,
 });
 
 const signup = async ({ name, email, password }) => {
@@ -122,7 +127,7 @@ const signInWithGoogle = async (credential) => {
   return { token: generateToken(user._id), user: toAuthUser(user), isNewUser };
 };
 
-const updateProfile = async (userId, { name }) => {
+const updateProfile = async (userId, { name, city, address }) => {
   const user = await User.findById(userId);
   if (!user) {
     const error = new Error("User not found");
@@ -130,7 +135,26 @@ const updateProfile = async (userId, { name }) => {
     throw error;
   }
 
-  user.name = name.trim();
+  if (name !== undefined) user.name = name.trim();
+  
+  // If city or address are changing, geocode new location coordinates
+  if (city !== undefined || address !== undefined) {
+    const newCity = city !== undefined ? city.trim() : user.city;
+    const newAddress = address !== undefined ? address.trim() : user.address;
+
+    user.city = newCity || null;
+    user.address = newAddress || null;
+
+    if (newCity) {
+      const coords = await geocodeAddress(newAddress, newCity);
+      user.latitude = coords ? coords.latitude : null;
+      user.longitude = coords ? coords.longitude : null;
+    } else {
+      user.latitude = null;
+      user.longitude = null;
+    }
+  }
+
   await user.save();
 
   return {

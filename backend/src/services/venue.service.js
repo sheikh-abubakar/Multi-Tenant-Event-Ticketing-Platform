@@ -1,4 +1,5 @@
 const Venue = require("../models/Venue");
+const { geocodeAddress } = require("../utils/geocoder");
 
 /**
  * IMPORTANT PATTERN — read this before writing any other tenant-scoped
@@ -34,7 +35,21 @@ const createVenue = async (data, organizationId) => {
     throw error;
   }
 
-  return Venue.create({ organizationId, name, address, city, capacity, timezone });
+  // Geocode address & city
+  const coords = await geocodeAddress(address, city);
+  const latitude = coords ? coords.latitude : null;
+  const longitude = coords ? coords.longitude : null;
+
+  return Venue.create({ 
+    organizationId, 
+    name, 
+    address, 
+    city, 
+    capacity, 
+    timezone,
+    latitude,
+    longitude 
+  });
 };
 
 const listVenues = async (organizationId, assignedVenueIds = null) => {
@@ -62,6 +77,19 @@ const updateVenue = async (venueId, organizationId, updates) => {
   const safeUpdates = {};
   for (const field of allowedFields) {
     if (updates[field] !== undefined) safeUpdates[field] = updates[field];
+  }
+
+  // If address or city changes, recalculate coordinates
+  if (updates.address !== undefined || updates.city !== undefined) {
+    const currentVenue = await Venue.findOne({ _id: venueId, organizationId });
+    if (currentVenue) {
+      const newAddress = updates.address !== undefined ? updates.address : currentVenue.address;
+      const newCity = updates.city !== undefined ? updates.city : currentVenue.city;
+
+      const coords = await geocodeAddress(newAddress, newCity);
+      safeUpdates.latitude = coords ? coords.latitude : null;
+      safeUpdates.longitude = coords ? coords.longitude : null;
+    }
   }
 
   // findOneAndUpdate with organizationId in the filter: if venueId

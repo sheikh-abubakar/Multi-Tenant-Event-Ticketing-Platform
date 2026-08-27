@@ -10,10 +10,25 @@ const UserProfile = () => {
   const needsPasswordSetup = false;
 
   // Profile fields state
-  const [profileForm, setProfileForm] = useState({ name: user?.name || "" });
+  const [profileForm, setProfileForm] = useState({
+    name: user?.name || "",
+    city: user?.city || "",
+    address: user?.address || "",
+  });
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState("");
+
+  // Sync profile form state when auth user changes
+  useEffect(() => {
+    if (user) {
+      setProfileForm({
+        name: user.name || "",
+        city: user.city || "",
+        address: user.address || "",
+      });
+    }
+  }, [user]);
 
   // Password fields state
   const [passwordForm, setPasswordForm] = useState({
@@ -156,8 +171,30 @@ const UserProfile = () => {
                   id="name"
                   type="text"
                   value={profileForm.name}
-                  onChange={(e) => setProfileForm({ name: e.target.value })}
+                  onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
                   required
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="city">City</label>
+                <input
+                  id="city"
+                  type="text"
+                  value={profileForm.city}
+                  onChange={(e) => setProfileForm({ ...profileForm, city: e.target.value })}
+                  placeholder="e.g. Lahore"
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="address">Area / Neighborhood</label>
+                <input
+                  id="address"
+                  type="text"
+                  value={profileForm.address}
+                  onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
+                  placeholder="e.g. Johar Town"
                 />
               </div>
 

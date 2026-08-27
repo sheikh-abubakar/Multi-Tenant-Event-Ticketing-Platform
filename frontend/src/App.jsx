@@ -68,6 +68,7 @@ const Coupons = lazy(() => import("./pages/Coupons"));
 // Staff Passes Management
 const StaffPassesManager = lazy(() => import("./pages/Admin/StaffPassesManager"));
 const MyStaffPasses = lazy(() => import("./pages/MyStaffPasses"));
+const Recommendations = lazy(() => import("./pages/Recommendations"));
 
 function App() {
   const { user, token } = useAuth();
@@ -290,6 +291,7 @@ function App() {
         <Route path="/my/referrals" element={<ProtectedRoute><MyReferrals /></ProtectedRoute>} />
         <Route path="/my/notifications" element={<ProtectedRoute><MyNotifications /></ProtectedRoute>} />
         <Route path="/my/bookings" element={<ProtectedRoute><BuyerDashboard bookingsOnly /></ProtectedRoute>} />
+        <Route path="/my/recommendations" element={<ProtectedRoute><Recommendations /></ProtectedRoute>} />
         <Route path="/my/passes" element={<ProtectedRoute><MyStaffPasses /></ProtectedRoute>} />
         <Route
           path="/o/:orgSlug/manage/passes"

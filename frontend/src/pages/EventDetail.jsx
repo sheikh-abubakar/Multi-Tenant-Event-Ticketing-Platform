@@ -410,7 +410,7 @@ const EventDetail = () => {
                   <span className="ed-sm-meta-icon">📍</span>
                   <div>
                     <p className="ed-sm-meta-label">Venue</p>
-                    <p className="ed-sm-meta-val">{event.venueId.name}{event.venueId.city ? `, ${event.venueId.city}` : ""}</p>
+                    <p className="ed-sm-meta-val">{event.venueId.address || event.venueId.name}{event.venueId.city ? `, ${event.venueId.city}` : ""}</p>
                   </div>
                 </div>
               )}
@@ -561,7 +561,7 @@ const EventDetail = () => {
           <div className="ed-hero-overlay-info">
             <div className="ed-hero-badges">
               <span className="ed-hero-badge">{dateStr} · {time}</span>
-              {event.venueId && <span className="ed-hero-badge">📍 {event.venueId.name}{event.venueId.city ? `, ${event.venueId.city}` : ""}</span>}
+              {event.venueId && <span className="ed-hero-badge">📍 {event.venueId.address || event.venueId.name}{event.venueId.city ? `, ${event.venueId.city}` : ""}</span>}
               {totalRemaining > 0 && <span className="ed-hero-badge ed-hero-badge--tickets">{totalRemaining} tickets left</span>}
             </div>
             <h1 className="ed-hero-title">{event.name}</h1>

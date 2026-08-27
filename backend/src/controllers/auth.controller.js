@@ -66,12 +66,12 @@ const googleSignIn = async (req, res) => {
 
 const updateProfile = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, city, address } = req.body;
     if (!name) {
       return res.status(400).json({ message: "Name is required" });
     }
 
-    const result = await authService.updateProfile(req.user._id, { name });
+    const result = await authService.updateProfile(req.user._id, { name, city, address });
     return res.status(200).json(result);
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message });

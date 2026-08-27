@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell, Building2, CalendarDays, ChevronDown, ChevronRight, Gift,
-  LogOut, Menu, Plus, ShoppingCart, Ticket, User, WalletCards, X, ShieldCheck,
+  LogOut, Menu, Plus, ShoppingCart, Ticket, User, WalletCards, X, ShieldCheck, Sparkles,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import apiClient from "../api/client";
@@ -84,6 +84,7 @@ const BuyerLayout = ({ children }) => {
     ["My Bookings", "/my/bookings", Ticket],
     ["Wallet", "/my/wallet", WalletCards],
     ["Referrals & Rewards", "/my/referrals", Gift],
+    ["Recommendations", "/my/recommendations", Sparkles],
     ["My Staff Passes", "/my/passes", ShieldCheck],
   ];
 

@@ -141,6 +141,15 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     }
   }
 
+  let parsedCategories = [];
+  if (data.categories) {
+    try {
+      parsedCategories = typeof data.categories === "string" ? JSON.parse(data.categories) : data.categories;
+    } catch (e) {
+      parsedCategories = [];
+    }
+  }
+
   const venue = await Venue.findOne({ _id: venueId, organizationId });
   if (!venue) {
     const error = new Error("Venue not found in this organization");
@@ -176,6 +185,7 @@ const createEvent = async (data, organizationId, bannerImageUrl) => {
     bookingOpeningDateTime: bookingOpeningDateTime ? new Date(bookingOpeningDateTime) : null,
     sessions: sessionsList,
     referralRewardAmount: data.referralRewardAmount !== undefined ? Number(data.referralRewardAmount) || 0 : 0,
+    categories: parsedCategories,
   });
 
   // Trigger recommendation notifications asynchronously in background
@@ -191,7 +201,11 @@ const listEvents = async (organizationId, assignedVenueIds = null, { includeSeat
   if (Array.isArray(assignedVenueIds)) {
     filter.venueId = { $in: assignedVenueIds };
   }
-  const events = await Event.find(filter).populate("venueId", "name city").sort({ dateTime: 1 }).lean();
+  const events = await Event.find(filter)
+    .populate("venueId", "name city")
+    .populate("categories", "name slug icon")
+    .sort({ dateTime: 1 })
+    .lean();
 
   return events.map((event) => {
     let remainingTickets = 0;
@@ -225,8 +239,9 @@ const listEvents = async (organizationId, assignedVenueIds = null, { includeSeat
 
 const getEventById = async (eventId, organizationId) => {
   const event = await Event.findOne({ _id: eventId, organizationId })
-    .select("name description dateTime bannerImageUrl youtubeUrl ticketTypes purchaseMode venueId timezone accessCode privateCodeExpiry bookingOpeningDateTime sessions createdAt updatedAt")
+    .select("name description dateTime bannerImageUrl youtubeUrl ticketTypes purchaseMode venueId timezone accessCode privateCodeExpiry bookingOpeningDateTime categories sessions createdAt updatedAt")
     .populate("venueId", "name city")
+    .populate("categories", "name slug icon")
     .lean();
   if (!event) {
     const error = new Error("Event not found");
@@ -237,7 +252,7 @@ const getEventById = async (eventId, organizationId) => {
 };
 
 const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => {
-  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode", "privateCodeExpiry", "sessionDates", "youtubeUrl", "bookingOpeningDateTime", "referralRewardAmount"];
+  const allowedFields = ["name", "description", "dateTime", "venueId", "accessCode", "privateCodeExpiry", "sessionDates", "youtubeUrl", "bookingOpeningDateTime", "referralRewardAmount", "categories"];
   const safeUpdates = {};
 
   for (const field of allowedFields) {
@@ -250,6 +265,12 @@ const updateEvent = async (eventId, organizationId, updates, bannerImageUrl) => 
         safeUpdates[field] = updates[field] ? new Date(updates[field]) || null : null;
       } else if (field === "referralRewardAmount") {
         safeUpdates[field] = Number(updates[field]) || 0;
+      } else if (field === "categories") {
+        try {
+          safeUpdates[field] = typeof updates[field] === "string" ? JSON.parse(updates[field]) : updates[field];
+        } catch (e) {
+          safeUpdates[field] = [];
+        }
       } else {
         safeUpdates[field] = updates[field];
       }

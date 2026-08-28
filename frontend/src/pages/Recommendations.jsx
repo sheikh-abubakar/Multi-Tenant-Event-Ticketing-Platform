@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Sparkles, Compass, MapPin, Calendar, ArrowRight, Star, Heart, TrendingUp, Zap } from "lucide-react";
 import apiClient from "../api/client";
 import "./BuyerHub.css";
+import "./BrowseHub.css";
 
 const Recommendations = () => {
   const [recommendations, setRecommendations] = useState(null);
@@ -61,6 +62,7 @@ const Recommendations = () => {
     favoriteVenues,
     userCity,
     affinityEvents = [],
+    interestEvents = [],
     nearbyEvents = [],
     localEvents = [],
     globalEvents = []
@@ -69,10 +71,11 @@ const Recommendations = () => {
   const isPersonalized = type === "personalized";
 
   const hasAffinity = affinityEvents.length > 0;
+  const hasInterest = interestEvents.length > 0;
   const hasNearby = nearbyEvents.length > 0;
   const hasLocal = localEvents.length > 0;
   const hasGlobal = globalEvents.length > 0;
-  const totalEventsCount = affinityEvents.length + nearbyEvents.length + localEvents.length + globalEvents.length;
+  const totalEventsCount = affinityEvents.length + interestEvents.length + nearbyEvents.length + localEvents.length + globalEvents.length;
 
   const renderEventGrid = (eventsList, sectionType) => {
     if (!eventsList || eventsList.length === 0) return null;
@@ -86,7 +89,9 @@ const Recommendations = () => {
 
           // Dynamically compute card badge text based on proximity section and affinity scores
           let badgeText = "Popular";
-          if (event.score > 20 && isPersonalized) {
+          if (sectionType === "interest") {
+            badgeText = "Interest Pick";
+          } else if (event.score > 20 && isPersonalized) {
             badgeText = "Affinity Pick";
           } else if (sectionType === "nearby") {
             badgeText = "Nearby";
@@ -215,9 +220,9 @@ const Recommendations = () => {
 
                   <span 
                     style={{ 
-                      background: "rgba(201, 154, 60, 0.1)", 
+                      background: "var(--gold)", 
                       border: "1px solid rgba(201, 154, 60, 0.2)",
-                      color: "var(--gold)", 
+                      color: "#1c1709", 
                       padding: "8px 16px", 
                       borderRadius: 12, 
                       fontSize: 12, 
@@ -228,12 +233,10 @@ const Recommendations = () => {
                       transition: "all 0.2s"
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "var(--gold)";
-                      e.currentTarget.style.color = "var(--paper)";
+                      e.currentTarget.style.background = "var(--gold-soft)";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "rgba(201, 154, 60, 0.1)";
-                      e.currentTarget.style.color = "var(--gold)";
+                      e.currentTarget.style.background = "var(--gold)";
                     }}
                   >
                     <span>Get Tickets</span>
@@ -387,6 +390,33 @@ const Recommendations = () => {
                 </div>
               </div>
               {renderEventGrid(affinityEvents, "affinity")}
+            </>
+          )}
+
+          {/* Section 0.5: Based on your Favorite Categories (Category Affinity) */}
+          {hasInterest && (
+            <>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                marginBottom: 20,
+                padding: "14px 20px",
+                background: "linear-gradient(135deg, rgba(201,154,60,0.12) 0%, rgba(201,154,60,0.04) 100%)",
+                borderRadius: 16,
+                border: "1px solid rgba(201,154,60,0.2)",
+              }}>
+                <Zap size={20} style={{ color: "#e8a020" }} />
+                <div>
+                  <h2 style={{ color: "var(--paper)", fontSize: 20, fontFamily: "var(--font-display)", margin: 0 }}>
+                    Based on your Favorite Categories
+                  </h2>
+                  <p style={{ color: "rgba(247,242,231,0.55)", fontSize: 13, margin: "4px 0 0" }}>
+                    Events matching categories you interact with frequently
+                  </p>
+                </div>
+              </div>
+              {renderEventGrid(interestEvents, "interest")}
             </>
           )}
 

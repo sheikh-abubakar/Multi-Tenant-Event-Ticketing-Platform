@@ -64,6 +64,52 @@ const notifyVenueAffinityUsers = async (event, creatorUserId) => {
   }
 };
 
+/**
+ * Background job: find all users who have categories interests (score >= 3)
+ * matching any of the event's categories and send them a category-affinity notification.
+ */
+const notifyCategoryAffinityUsers = async (event, creatorUserId) => {
+  try {
+    if (!event.categories || event.categories.length === 0) return;
+
+    const User = require("../models/User");
+    const Category = require("../models/Category");
+    const creatorStr = String(creatorUserId);
+
+    // Find all users who have categoryInterests with score >= 5 for any category of this event
+    const usersToNotify = await User.find({
+      categoryInterests: {
+        $elemMatch: {
+          categoryId: { $in: event.categories },
+          score: { $gte: 5 }
+        }
+      },
+      _id: { $ne: creatorUserId } // exclude creator
+    }).select("_id").lean();
+
+    if (!usersToNotify.length) return;
+
+    // Load category names to build notification message
+    const matchedCategories = await Category.find({ _id: { $in: event.categories } }).select("name").lean();
+    const categoryNamesStr = matchedCategories.map(c => c.name).join(", ");
+
+    logger.info(`Category affinity: notifying ${usersToNotify.length} interested user(s) about new event "${event.name}" in category: ${categoryNamesStr}`);
+
+    await Promise.all(usersToNotify.map(user =>
+      notifyUser(user._id, {
+        type: "category.upcoming_event",
+        title: `New Event in ${categoryNamesStr}! 🎉`,
+        message: `Hey! "${event.name}" has just been announced under your favorite category: ${categoryNamesStr}. Check it out!`,
+        link: `/events/${event._id}`,
+        metadata: { eventId: String(event._id), categories: event.categories.map(String) },
+        dedupeKey: `category-affinity:${event._id}:${user._id}`,
+      })
+    ));
+  } catch (err) {
+    logger.error("Category affinity notification failed", { error: err.message });
+  }
+};
+
 // If a file was uploaded (req.file.buffer, set by multer's
 // memoryStorage), streams it to Cloudinary and returns the hosted
 // image URL. Returns undefined if no file was attached to this
@@ -97,6 +143,9 @@ const create = async (req, res) => {
 
     // Fire venue-affinity notifications in the background (non-blocking)
     notifyVenueAffinityUsers(event, req.user._id).catch(() => {});
+
+    // Fire category-affinity notifications in the background (non-blocking)
+    notifyCategoryAffinityUsers(event, req.user._id).catch(() => {});
 
     return res.status(201).json({ event });
   } catch (error) {

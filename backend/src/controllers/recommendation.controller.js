@@ -86,7 +86,7 @@ const getEventStartingPrice = (event) => {
 const getRemainingTickets = (event) => {
   let remainingTickets = 0;
   if (event.purchaseMode === "seatmap") {
-    if (event.selectedSeatMap && event.selectedSeatMap.blocks) {
+    if (event.selectedSeatMap && Array.isArray(event.selectedSeatMap.blocks) && event.selectedSeatMap.blocks.length > 0) {
       event.selectedSeatMap.blocks.forEach((block) => {
         block.seats?.forEach((seat) => {
           if (seat.status === "available") {
@@ -94,6 +94,9 @@ const getRemainingTickets = (event) => {
           }
         });
       });
+    } else {
+      // Fallback: If seatmap is not seeded/configured yet, default to venue capacity
+      remainingTickets = event.venueId?.capacity || 0;
     }
   } else {
     remainingTickets = event.ticketTypes?.reduce(
@@ -177,6 +180,21 @@ const getRecommendations = async (req, res) => {
 
     const averagePrice = totalBookings > 0 ? totalSpend / totalBookings : 0;
 
+    // Compile category interests scores
+    const categoryScores = {};
+    const favoriteCategoryIds = new Set();
+    if (userDoc && userDoc.categoryInterests) {
+      userDoc.categoryInterests.forEach(item => {
+        if (item.categoryId) {
+          const score = item.score || 0;
+          categoryScores[item.categoryId.toString()] = score;
+          if (score >= 5) {
+            favoriteCategoryIds.add(item.categoryId.toString());
+          }
+        }
+      });
+    }
+
     // 2. Fetch all upcoming public events
     const allUpcomingEvents = await Event.find({
       $or: [
@@ -197,6 +215,7 @@ const getRecommendations = async (req, res) => {
 
     // Arrays for sections
     const affinityEvents = [];  // Venue-affinity picks (user's past venues) - shown first
+    const interestEvents = [];  // Category-affinity picks (user's favorite categories) - shown second
     const nearbyEvents = [];
     const localEvents = [];
     const globalEvents = [];
@@ -240,7 +259,19 @@ const getRecommendations = async (req, res) => {
       // C. Event Popularity (2 points per booked ticket/seat, max 50 points)
       popularityScore = Math.min(50, ticketsBooked * 2);
 
-      const totalScore = venueCountScore + venueSpendScore + priceMatchScore + popularityScore;
+      // D. Category Affinity Score (Capped at 25 bonus points)
+      let categoryAffinityScore = 0;
+      if (event.categories && event.categories.length > 0) {
+        event.categories.forEach(catId => {
+          const catIdStr = catId.toString();
+          if (categoryScores[catIdStr]) {
+            categoryAffinityScore += categoryScores[catIdStr] * 5;
+          }
+        });
+        categoryAffinityScore = Math.min(25, categoryAffinityScore);
+      }
+
+      const totalScore = venueCountScore + venueSpendScore + priceMatchScore + popularityScore + categoryAffinityScore;
 
       // Calculate Driving/Road Distance (Optimized to skip OSRM calls for far-away locations)
       let distanceKM = null;
@@ -281,6 +312,7 @@ const getRecommendations = async (req, res) => {
         purchaseMode: event.purchaseMode,
         ticketTypes: event.ticketTypes,
         venueId: event.venueId,
+        categories: event.categories,
         organizationId: event.organizationId,
         organizationSlug: event.organizationId?.slug,
         startingPrice,
@@ -308,6 +340,20 @@ const getRecommendations = async (req, res) => {
       // Sort by score descending (most-visited venue's events first)
       affinityEvents.sort((a, b) => b.score - a.score);
     }
+
+    // 3c. Populate Interest Section SECOND (events matching user's favorite categories score >= 5)
+    // This section is based on personal category interests and overrides popularity filter constraints.
+    filteredEvents.forEach((event) => {
+      if (!addedEventIds.has(event._id.toString()) && event.categories && event.categories.length > 0) {
+        const matchesFavorite = event.categories.some(catId => favoriteCategoryIds.has(catId.toString()));
+        if (matchesFavorite) {
+          interestEvents.push(event);
+          addedEventIds.add(event._id.toString());
+        }
+      }
+    });
+    // Sort interest events by score descending (most relevant first)
+    interestEvents.sort((a, b) => b.score - a.score);
 
     // 4. Populate Proximity Section (Strictly within 15 km driving distance, not already in affinity)
     filteredEvents.forEach((event) => {
@@ -360,6 +406,7 @@ const getRecommendations = async (req, res) => {
       favoriteVenues: hasHistory ? favoriteVenues : undefined,
       userCity: userDoc ? userDoc.city : null,
       affinityEvents,
+      interestEvents,
       nearbyEvents,
       localEvents,
       globalEvents

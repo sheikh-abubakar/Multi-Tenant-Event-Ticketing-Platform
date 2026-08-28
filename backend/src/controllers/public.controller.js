@@ -17,13 +17,14 @@ const getAllPublicEvents = async (req, res) => {
         { "sessions.dateTime": { $gte: now } }
       ]
     })
-      .select("name description dateTime bannerImageUrl ticketTypes venueId organizationId purchaseMode selectedSeatMap sessions createdAt updatedAt")
+      .select("name description dateTime bannerImageUrl ticketTypes venueId organizationId purchaseMode selectedSeatMap sessions categories createdAt updatedAt")
       .populate({
         path: "organizationId",
         match: { isDeleted: { $ne: true } },
         select: "name slug",
       })
       .populate("venueId", "name city")
+      .populate("categories", "name slug icon")
       .sort({ dateTime: 1 })
       .lean();
 
@@ -71,6 +72,7 @@ const getAllPublicEvents = async (req, res) => {
         venueId: event.venueId,
         organizationId: event.organizationId,
         organizationSlug: event.organizationId?.slug,
+        categories: event.categories || [],
         createdAt: event.createdAt,
         updatedAt: event.updatedAt,
       };
@@ -140,7 +142,8 @@ const getPublicEventById = async (req, res) => {
   try {
     const event = await Event.findById(req.params.eventId)
       .populate("organizationId", "name slug")
-      .populate("venueId", "name city address");
+      .populate("venueId", "name city address")
+      .populate("categories", "name slug icon");
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });

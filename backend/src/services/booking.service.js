@@ -1087,6 +1087,9 @@ const confirmBooking = async (stripeSessionId) => {
       dedupeKey: `platform-checkout-confirmed:${stripeSessionId}`,
     });
     await notifyOrganizationsOfConfirmedBookings(confirmedBookings);
+    incrementCategoryInterests(buyerId, confirmedBookings.map(b => b.eventId).filter(Boolean)).catch((err) => {
+      console.error("Async increment category interests failed:", err.message);
+    });
   }
 
   // Return the first booking to satisfy controller redirect / page title info
@@ -2222,6 +2225,54 @@ const createUnifiedCheckout = async (organizationId, orgSlug, data) => {
     throw error;
   } finally {
     dbSession.endSession();
+  }
+};
+
+const incrementCategoryInterests = async (userId, eventIds) => {
+  try {
+    if (!userId || !eventIds || !eventIds.length) return;
+    const Event = require("../models/Event");
+    const User = require("../models/User");
+    const mongoose = require("mongoose");
+
+    const events = await Event.find({ _id: { $in: eventIds } }).select("categories").lean();
+    const categoryIds = [];
+    events.forEach(ev => {
+      if (ev.categories && ev.categories.length > 0) {
+        ev.categories.forEach(catId => {
+          categoryIds.push(catId.toString());
+        });
+      }
+    });
+
+    const uniqueCategoryIds = [...new Set(categoryIds)];
+    if (!uniqueCategoryIds.length) return;
+
+    const user = await User.findById(userId);
+    if (!user) return;
+
+    if (!user.categoryInterests) {
+      user.categoryInterests = [];
+    }
+
+    uniqueCategoryIds.forEach(catIdStr => {
+      const existing = user.categoryInterests.find(item => item.categoryId?.toString() === catIdStr);
+      if (existing) {
+        existing.score += 10;
+        existing.lastInteracted = new Date();
+      } else {
+        user.categoryInterests.push({
+          categoryId: new mongoose.Types.ObjectId(catIdStr),
+          score: 10,
+          lastInteracted: new Date()
+        });
+      }
+    });
+
+    await user.save();
+    console.log(`Updated category interests (+10) for user ${userId} for booking events`);
+  } catch (err) {
+    console.error("Failed to increment category interests on booking:", err.message);
   }
 };
 

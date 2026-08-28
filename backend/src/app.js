@@ -34,6 +34,7 @@ const withdrawalRoutes = require("./routes/withdrawal.routes");
 const topupRoutes = require("./routes/topup.routes");
 const staffPassRoutes = require("./routes/staffPass.routes");
 const recommendationRoutes = require("./routes/recommendation.routes");
+const categoryRoutes = require("./routes/category.routes");
 const { logger } = require("./config/logger");
 const { requestId, requestLogger } = require("./middlewares/requestLogger");
 
@@ -146,6 +147,7 @@ app.use("/api/wallet/topups", topupRoutes);
 app.use("/api/referrals", referralRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/recommendations", recommendationRoutes);
+app.use("/api/categories", categoryRoutes);
 
 app.use((req, res) => {
   logger.warn("Route not found", { requestId: req.requestId, method: req.method, url: req.originalUrl });

@@ -76,6 +76,20 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    categoryInterests: [{
+      categoryId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Category"
+      },
+      score: {
+        type: Number,
+        default: 0
+      },
+      lastInteracted: {
+        type: Date,
+        default: Date.now
+      }
+    }]
   },
   { timestamps: true }
 );

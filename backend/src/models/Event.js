@@ -128,6 +128,18 @@ const eventSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    categories: {
+      type: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Category"
+      }],
+      validate: {
+        validator: function(val) {
+          return val.length <= 4;
+        },
+        message: '{PATH} exceeds the limit of 4 categories'
+      }
+    },
   },
   { timestamps: true }
 );

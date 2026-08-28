@@ -16,7 +16,7 @@ const formatLocalDateForInput = (dateStr) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
-const emptyForm = { name: "", description: "", dateTime: "", venueId: "", accessCode: "", privateCodeExpiry: "", youtubeUrl: "", bookingOpeningDateTime: "", referralRewardAmount: "0" };
+const emptyForm = { name: "", description: "", dateTime: "", venueId: "", accessCode: "", privateCodeExpiry: "", youtubeUrl: "", bookingOpeningDateTime: "", referralRewardAmount: "0", categories: [] };
 
 export default function Events() {
   const { orgSlug } = useParams();
@@ -30,6 +30,8 @@ export default function Events() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
+  const [allCategories, setAllCategories] = useState([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [sessionDates, setSessionDates] = useState([]);
   const [removedSessionIds, setRemovedSessionIds] = useState([]);
   const [newSessionDate, setNewSessionDate] = useState("");
@@ -46,14 +48,16 @@ export default function Events() {
 
   const load = async () => {
     try {
-      const [eventsResponse, venuesResponse, meResponse] = await Promise.all([
+      const [eventsResponse, venuesResponse, meResponse, categoriesResponse] = await Promise.all([
         apiClient.get(`/o/${orgSlug}/events/manage`),
         apiClient.get(`/o/${orgSlug}/venues`),
         apiClient.get(`/o/${orgSlug}/whoami`),
+        apiClient.get("/categories"),
       ]);
       setEvents(eventsResponse.data.events);
       setVenues(venuesResponse.data.venues);
       setPermissions(meResponse.data.membership.permissions || []);
+      setAllCategories(categoriesResponse.data.categories || []);
     } catch (err) {
       setError(err.response?.data?.message || "Could not load events.");
     }
@@ -81,6 +85,8 @@ export default function Events() {
       Object.entries(form).forEach(([key, value]) => {
         if (key === "privateCodeExpiry" || key === "bookingOpeningDateTime") {
           body.append(key, value ? new Date(value).toISOString() : "");
+        } else if (key === "categories") {
+          body.append(key, JSON.stringify(value || []));
         } else {
           body.append(key, key === "dateTime" ? new Date(value).toISOString() : value);
         }
@@ -126,6 +132,7 @@ export default function Events() {
       youtubeUrl: item.youtubeUrl || "",
       bookingOpeningDateTime: formatLocalDateForInput(item.bookingOpeningDateTime),
       referralRewardAmount: item.referralRewardAmount !== undefined ? String(item.referralRewardAmount) : "0",
+      categories: item.categories ? item.categories.map(c => c._id || c) : [],
     });
     if (item.sessions && item.sessions.length > 1) {
       const additional = item.sessions.slice(1).map((session) => ({
@@ -266,6 +273,70 @@ export default function Events() {
                 ))}
               </select>
             </label>
+            <div className="block text-sm font-semibold">
+              <div className="flex justify-between items-center">
+                <span>Categories (Max 4)</span>
+                <span className="text-xs text-muted font-normal">Choose from list or add new below</span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {allCategories.map((cat) => {
+                  const isChecked = form.categories.includes(cat._id);
+                  return (
+                    <label key={cat._id} className="flex items-center gap-2 p-2 rounded-lg bg-black/5 hover:bg-black/10 cursor-pointer text-xs font-normal border border-black/5">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          let updated = [...form.categories];
+                          if (e.target.checked) {
+                            if (updated.length >= 4) {
+                              showToast("You can select a maximum of 4 categories.");
+                              return;
+                            }
+                            updated.push(cat._id);
+                          } else {
+                            updated = updated.filter(id => id !== cat._id);
+                          }
+                          setForm({ ...form, categories: updated });
+                        }}
+                        className="rounded"
+                      />
+                      <span>{cat.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              
+              {/* Add New Category inline option */}
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Create new category, e.g. Rock Concert"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className="flex-1 rounded-md border border-black/15 px-3 py-1.5 text-xs font-normal bg-white"
+                  style={{ color: "#111326" }}
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!newCategoryName.trim()) return;
+                    try {
+                      const response = await apiClient.post("/categories", { name: newCategoryName.trim() });
+                      const newCat = response.data.category;
+                      setAllCategories(prev => [...prev, newCat].sort((a, b) => a.name.localeCompare(b.name)));
+                      setNewCategoryName("");
+                      showToast(`Created category "${newCat.name}" successfully!`);
+                    } catch (err) {
+                      showToast(err.response?.data?.message || "Failed to create category.");
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-gold text-ink font-bold rounded-lg text-xs hover:bg-gold-soft transition"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
             <label className="block text-sm font-semibold">
               Description
               <textarea

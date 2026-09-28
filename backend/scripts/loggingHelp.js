@@ -17,7 +17,7 @@ STAGEPASS LOGGING GUIDE
 Winston log folder
 ------------------
 ssh -i D:\stagepass-key.pem ubuntu@13.235.80.159
-
+ssh -i "$HOME\.ssh\meridian_github_actions" ubuntu@13.235.80.159
 backend/logs/
   combined-YYYY-MM-DD.log  all application, request, warning, and error logs
   error-YYYY-MM-DD.log     error-level logs only
